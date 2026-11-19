@@ -8,13 +8,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
       - name: Alətləri qur
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq openjdk-21-jdk-headless aapt apksigner dalvik-exchange zip zipalign
+          # paket serveri bəzən ilişir: hər cəhd 4 dəqiqə ilə məhdud, 3 dəfə yoxlanır
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for i in 1 2 3; do
+            if timeout 240 sudo apt-get $APT update -qq && timeout 240 sudo apt-get $APT install -y -qq openjdk-21-jdk-headless aapt apksigner dalvik-exchange zip zipalign; then break; fi
+            [ $i = 3 ] && exit 1; echo "Təkrar cəhd $i"; sleep 10
+          done
           curl -sSL -o /tmp/android.jar https://raw.githubusercontent.com/Sable/android-platforms/master/android-34/android.jar
 
       - name: Yığ və imzala
