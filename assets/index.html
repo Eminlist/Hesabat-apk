@@ -1,0 +1,2560 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Hesabat</title>
+<style>
+  :root {
+    --bg: #F4F6F8; --card: #FFFFFF; --text: #14202B; --muted: #6B7785; --line: #E3E8ED;
+    --brand: #0F766E; --brand-2: #115E59; --brand-soft: #E6F4F2;
+    --debt: #C2410C; --debt-soft: #FFF1EA; --pay: #15803D; --pay-soft: #EAF7EE;
+    --exp: #7C3AED; --exp-soft: #F3EEFE;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0E1418; --card: #172128; --text: #E6EDF2; --muted: #93A1AD; --line: #27333C;
+    --brand: #0D5F59; --brand-2: #0B4E49; --brand-soft: #123532;
+    --debt: #F97316; --debt-soft: #3A2116; --pay: #22C55E; --pay-soft: #13301F;
+    --exp: #A78BFA; --exp-soft: #2A2142;
+  }
+  :root[data-theme="dark"] .shade { background: rgba(0,0,0,.6); }
+  :root[data-theme="dark"] nav button.on, :root[data-theme="dark"] .avatar, :root[data-theme="dark"] .mini { color: #5EEAD4; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, Roboto, sans-serif; overscroll-behavior: none; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  input, textarea, select { font: inherit; color: var(--text); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { background: var(--brand); color: #fff; padding: 14px 16px 18px; }
+  header h1 { margin: 0 0 12px; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: rgba(255,255,255,.12); border-radius: 12px; padding: 10px 12px; }
+  .stat small { display: block; opacity: .85; font-size: 12px; }
+  .stat b { font-size: 19px; font-weight: 650; }
+  button.stat { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; }
+
+  main { padding: 12px 16px 140px; }
+  .search { width: 100%; padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin-bottom: 12px; }
+  .list { background: var(--card); border-radius: 14px; overflow: hidden; border: 1px solid var(--line); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--line); width: 100%; text-align: left; }
+  .row:last-child { border-bottom: 0; }
+  .row:active { background: var(--bg); }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-weight: 700; flex: none; }
+  .grow { flex: 1; min-width: 0; }
+  .grow .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grow .s { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .amt { font-weight: 650; text-align: right; white-space: nowrap; }
+  .amt small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+  .debt { color: var(--debt); } .pay { color: var(--pay); } .exp { color: var(--exp); } .zero { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+  .section-title { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin: 18px 4px 8px; font-weight: 600; }
+
+  .fab { position: fixed; right: 16px; bottom: 76px; background: var(--brand); color: #fff; border-radius: 22px; padding: 9px 16px; font-size: 14px; font-weight: 650; box-shadow: 0 4px 12px rgba(15,118,110,.3); z-index: 5; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; background: var(--card); border-top: 1px solid var(--line); }
+  nav button { flex: 1; padding: 10px 0 12px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button svg { width: 22px; height: 22px; }
+  nav button.on { color: var(--brand); font-weight: 650; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+  .kv:last-child { border-bottom: 0; }
+  .kv.total { font-weight: 700; font-size: 17px; }
+  .monthbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .monthbar b { font-size: 17px; }
+  .iconbtn { width: 40px; height: 40px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; font-size: 18px; }
+
+  .btn { display: block; width: 100%; padding: 13px; border-radius: 12px; font-weight: 650; text-align: center; margin-top: 10px; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.ghost { background: var(--card); border: 1px solid var(--line); }
+  .btn.danger { background: var(--debt-soft); color: var(--debt); }
+  .btn.debtb { background: var(--debt); color: #fff; }
+  .btn.payb { background: var(--pay); color: #fff; }
+  .btn.expb { background: var(--exp); color: #fff; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .two .btn { margin-top: 0; }
+  .note { font-size: 13px; color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.ok { background: var(--pay-soft); color: var(--pay); }
+
+  /* full-screen page & sheets */
+  .page { position: fixed; inset: 0; background: var(--bg); overflow-y: auto; z-index: 10; padding-bottom: 30px; }
+  .page header { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; }
+  .page header h1 { margin: 0; flex: 1; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .page header button { color: #fff; font-size: 22px; width: 36px; height: 36px; border-radius: 10px; }
+  .bal { text-align: center; padding: 6px 0 2px; }
+  .bal small { opacity: .85; }
+  .bal b { display: block; font-size: 32px; }
+  .shade { position: fixed; inset: 0; background: rgba(10,20,30,.45); z-index: 20; display: flex; align-items: flex-end; }
+  .sheet { background: var(--card); width: 100%; border-radius: 18px 18px 0 0; padding: 18px 16px 22px; max-height: 92vh; overflow-y: auto; }
+  .sheet h2 { margin: 0 0 14px; font-size: 18px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  .field { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color-scheme: light dark; }
+  .field.big { font-size: 24px; font-weight: 650; }
+  .field:focus { outline: 2px solid var(--brand); border-color: transparent; }
+  .seg { display: flex; background: var(--bg); border-radius: 12px; padding: 4px; gap: 4px; }
+  .seg button { flex: 1; padding: 9px; border-radius: 9px; font-weight: 600; color: var(--muted); }
+  .seg button.on.debt { background: var(--debt); color: #fff; }
+  .seg button.on.pay { background: var(--pay); color: #fff; }
+  .del { color: var(--muted); font-size: 18px; width: 32px; height: 32px; border-radius: 8px; flex: none; }
+  .dayhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 14px 4px 6px; font-size: 13px; color: var(--muted); }
+  .dayhead b { color: var(--text); font-weight: 600; }
+  .dayhead .num span { margin-left: 8px; font-weight: 650; }
+  .hrow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .hrow h1 { margin: 0; }
+  .hinc { flex: 1; min-width: 0; text-align: center; color: #fff; line-height: 1.15; }
+  .hinc small { display: block; font-size: 12px; opacity: .8; }
+  .hinc b { display: block; font-size: 19px; margin-top: 5px; }
+  .hbtn { position: relative; color: #fff; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.12); }
+  .hbtn span { position: absolute; top: -4px; right: -4px; background: var(--debt); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 9px; display: grid; place-items: center; padding: 0 4px; }
+  .mini { flex: none; padding: 7px 12px; border-radius: 10px; background: var(--brand-soft); color: var(--brand); font-weight: 650; font-size: 13px; }
+  [data-hold] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  [data-hold] { background: var(--card); position: relative; z-index: 1; touch-action: pan-y; }
+  .list { position: relative; }
+  .swipe-bg { position: absolute; left: 0; right: 0; background: #F59E0B; color: #fff; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-right: 20px; font-weight: 700; z-index: 0; transition: background .15s; }
+  .swipe-bg.far { background: var(--debt); }
+  .more summary { font-weight: 650; cursor: pointer; }
+  .pinpage { position: fixed; inset: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; z-index: 50; text-align: center; }
+  .pinpage .logo { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  .pinpage h1 { margin: 16px 0 2px; font-size: 24px; }
+  .pinpage h2 { margin: 0 0 6px; font-size: 15px; font-weight: 500; color: var(--muted); }
+  .pinpage .seg { background: var(--card); border: 1px solid var(--line); }
+  .pinpage .seg button { color: var(--text); }
+  .pinpage .seg button.on.pay { background: var(--brand); color: #fff; }
+  .dots { display: flex; gap: 14px; justify-content: center; margin: 20px 0 6px; }
+  .dots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--brand); }
+  .dots i.on { background: var(--brand); }
+  /* smooth entry: a page slides in from the right, a tab fades up, a sheet rises from the bottom */
+  @keyframes pageIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes tabIn { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes shadeIn { from { background: transparent; } }
+  @keyframes sheetIn { from { transform: translateY(100%); } to { transform: none; } }
+  #app[data-anim="page"] .page { animation: pageIn .24s ease-out; }
+  #app[data-anim="back"] main, #app[data-anim="tab"] main { animation: tabIn .22s ease-out; }
+  #app[data-sheet-anim="1"] .shade { animation: shadeIn .22s ease-out; }
+  #app[data-sheet-anim="1"] .sheet { animation: sheetIn .26s cubic-bezier(.2,.8,.3,1); }
+  @media (prefers-reduced-motion: reduce) { #app * { animation: none !important; } }
+  .hinc { cursor: pointer; }
+  .shake { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  .pinerr { min-height: 20px; font-size: 14px; color: var(--debt); margin-bottom: 10px; }
+  .pad { display: grid; grid-template-columns: repeat(3, 76px); gap: 16px 28px; }
+  .pad button { width: 76px; height: 76px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); color: var(--text); font-size: 28px; font-weight: 500; display: grid; place-items: center; }
+  .pad button:active { background: var(--brand-soft); }
+  .pad button.ic { background: none; border: 0; color: var(--brand); }
+  .pad button.ic:active { background: var(--brand-soft); }
+  html[data-theme=dark] .pinpage { --brand: #14B8A6; }
+  .pinlink { margin-top: 24px; color: var(--brand); font-weight: 600; font-size: 15px; }
+  .tplbox { background: var(--bg); border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
+  .tplbox a { color: var(--brand); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .chip { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 600; }
+  .chip:active { background: var(--brand-soft); }
+  .hidden { display: none !important; }
+  /* folding blocks on the customers page look like cards with a coloured stripe on the left */
+  .section-title[data-a^=toggle] { background: var(--card) !important; border: 1px solid var(--line) !important; border-left: 5px solid currentColor !important; border-radius: 14px; padding: 16px 14px !important; width: 100% !important; margin: 10px 0 !important; font-size: 15px; text-transform: none; letter-spacing: 0; }
+  .section-title[data-a^=toggle] span:first-child { color: var(--text); }
+  .section-title[data-a^=toggle] .num { font-size: 17px; font-weight: 700; }
+  /* the report's cards get the same stripe, each in its own colour */
+  .card.row[data-a=openDays], .card.row[data-a=openMonth], .card.row[data-a=openYear], .card.row[data-a=openTop], .card.row[data-a=openLoans] { border-left: 5px solid #14B8A6; }
+  .card.row[data-a=openMonth] { border-left-color: var(--pay); }
+  .card.row[data-a=openYear], .card.row[data-a=openTop] { border-left-color: #F59E0B; }
+  .card.row[data-a=openLoans] { border-left-color: var(--debt); }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script src="i18n.js"></script>
+<script>
+'use strict';
+// ---------- storage ----------
+const hasNative = typeof window.Android !== 'undefined';
+const APP_VERSION = '17.7';
+let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], removed: {} };
+
+function load() {
+  let raw = '';
+  try { raw = hasNative ? Android.load() : (localStorage.getItem('ustaHesab') || ''); } catch (e) {}
+  if (raw) {
+    try { const d = JSON.parse(raw); if (d && d.people && d.tx) db = Object.assign(db, d); } catch (e) { alert(tr('Məlumat oxunmadı: {e}', { e: e.message })); }
+  }
+  if (!Array.isArray(db.trash)) db.trash = [];
+  if (!Array.isArray(db.cats)) db.cats = [];
+  if (!Array.isArray(db.loans)) db.loans = [];
+  if (!Array.isArray(db.tpls)) db.tpls = [];
+  if (!Array.isArray(db.cards)) db.cards = [];
+  if (!Array.isArray(db.hides)) db.hides = [];
+  if (!db.removed || typeof db.removed !== 'object') db.removed = {};
+}
+function save() {
+  saveLocal();
+  scheduleSync();
+}
+function saveLocal() {
+  const json = JSON.stringify(db);
+  let ok = true;
+  try { ok = hasNative ? Android.save(json) : (localStorage.setItem('ustaHesab', json), true); } catch (e) { ok = false; }
+  if (!ok) toast('Yadda saxlanmadı!');
+  updateShortcuts();
+}
+// the two lines shown when the app icon is long-pressed
+function updateShortcuts() {
+  if (!hasNative || !Android.updateShortcuts) return;
+  const d = byDay(db.tx.filter(t => t.date === today()))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
+  const fav = db.cats.find(c => c.star);
+  const spent = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === today() && (!fav || t.cid === fav.id) ? t.amount : 0), 0);
+  Android.updateShortcuts(tr(`Bu günkü gəlir: ${money(income(d))}`), fav ? tr('{name} bu gün: {sum}', { name: fav.name, sum: money(spent) }) : tr(`Bu gün xərclədiyim: ${money(spent)}`), fav ? fav.id : '');
+  // the home-screen widget: today's income (it shows the "zero" text once the day is over)
+  if (Android.setWidget) Android.setWidget(today(), tr('Bu günkü gəlir'), money(income(d)), money(0));
+  // debts with a payment day still open: the phone reminds on that day (and every day after, until paid)
+  if (Android.setDueList) Android.setDueList(JSON.stringify({ title: tr('Ödəniş günü çatıb'), more: tr('{0} müştərinin ödəniş günü çatıb'), items: dueItems() }));
+}
+function dueItems() {
+  const out = [];
+  for (const p of db.people) for (const d of debtState(p.id).debts) if (d.left > 0 && d.t.due) out.push({ d: d.t.due, line: p.name + ' — ' + money(d.left) });
+  return out.sort((a, b) => a.d.localeCompare(b.d));
+}
+window.onLaunchTarget = function (target) {
+  if (!target || state.pin) return;
+  state.sheet = null; state.person = null; state.trash = false; state.loans = false;
+  state.tab = target === 'people' ? 'people' : 'mine';
+  state.cat = target.startsWith('cat:') && db.cats.some(c => c.id === target.slice(4)) ? target.slice(4) : null;
+  render(); window.scrollTo(0, 0);
+};
+function toast(m) { m = tr(m); if (hasNative) Android.toast(m); else console.log(m); }
+// dialogs speak the chosen language too
+const nativeConfirm = window.confirm.bind(window), nativeAlert = window.alert.bind(window);
+window.confirm = m => nativeConfirm(tr(String(m)));
+window.alert = m => nativeAlert(tr(String(m)));
+
+// ---------- Google Drive sync ----------
+// Every record carries u (last change time); db.removed keeps ids that left a list and when.
+// Merging keeps the newest copy of each record and drops it if it was removed after that.
+const sync = { account: '', status: 'idle', msg: '', last: 0, running: false, again: false, timer: null };
+try { sync.last = +localStorage.getItem('lastSync') || 0; } catch (e) {}
+function mergeDb(a, b) {
+  const removed = Object.assign({}, a.removed);
+  for (const [id, t] of Object.entries(b.removed || {})) if (!(removed[id] >= t)) removed[id] = t;
+  const out = Object.assign({}, a, { removed });
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash']) {
+    const m = new Map();
+    for (const r of (a[key] || []).concat(b[key] || [])) {
+      const cur = m.get(r.id);
+      if (!cur || (r.u || 0) > (cur.u || 0)) m.set(r.id, r);
+    }
+    out[key] = [...m.values()].filter(r => !(removed[r.id] >= (r.u || 0)));
+  }
+  out.trash.sort((x, y) => y.at - x.at);
+  for (const k of ['card', 'cur', 'lang']) if (b[k] && (!a[k] || (b[k].u || 0) > (a[k].u || 0))) out[k] = b[k];
+  return out;
+}
+function scheduleSync() {
+  if (!sync.account) return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(runSync, 3000);
+}
+function runSync() {
+  if (!sync.account || !hasNative) return;
+  if (sync.running) { sync.again = true; return; }
+  sync.running = true; sync.status = 'syncing'; refreshSyncUi();
+  Android.syncStart();
+}
+window.onSyncRemote = function (text) {
+  if (text) {
+    try {
+      const remote = JSON.parse(text);
+      if (remote && Array.isArray(remote.people)) { const before = JSON.stringify(db); db = mergeDb(db, remote); if (JSON.stringify(db) !== before) { saveLocal(); renderKeep(); } }
+    } catch (e) {
+      // a damaged Drive copy would block every later sync; the phone's data replaces it
+      toast('Drive-dakı fayl zədəli idi, telefondakı məlumatla yeniləndi');
+    }
+  }
+  Android.syncUpload(JSON.stringify(db));
+};
+window.onSyncStatus = function (st, msg) {
+  sync.running = false; sync.status = st; sync.msg = msg || '';
+  if (st === 'ok') { sync.last = Date.now(); try { localStorage.setItem('lastSync', sync.last); } catch (e) {} }
+  refreshSyncUi();
+  if (sync.again) { sync.again = false; scheduleSync(); }
+};
+window.onSyncLinked = function (name) {
+  sync.account = name; sync.status = 'idle'; toast('Google hesabı qoşuldu');
+  render(); runSync();
+};
+let openedMonth = null;
+window.onAppResume = function () {
+  updateShortcuts();
+  // a new month started while the app was open: jump to it so last month's totals don't linger
+  const cur = today().slice(0, 7);
+  if (openedMonth && openedMonth !== cur) { state.month = cur; state.day = null; state.mineDay = null; render(); }
+  openedMonth = cur;
+  if (state.tab === 'settings' && !state.sheet && !state.person && !state.trash) render();
+  // the linked file is stored natively first, so pick it up even if onSyncLinked was missed
+  if (!sync.account && hasNative && Android.syncLinked) {
+    sync.account = Android.syncLinked();
+    if (sync.account) { render(); return runSync(); }
+  }
+  if (sync.account && Date.now() - sync.last > 60000) runSync();
+};
+function refreshSyncUi() {
+  if (state.tab === 'settings' && !state.person && !state.trash && !state.sheet) render();
+}
+
+// ---------- day / night theme (remembered on this phone only) ----------
+let theme = 'light';
+try { theme = localStorage.getItem('theme') || 'light'; } catch (e) {}
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  if (hasNative && Android.setDarkBars) Android.setDarkBars(theme === 'dark');
+}
+applyTheme();
+
+// ---------- helpers ----------
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => (n < 10 ? '0' : '') + n;
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'İyun', 'İyul', 'Avqust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
+// ---------- languages ----------
+// Pages are written in Azerbaijani; after each render the text is swapped for the chosen language.
+// A text that holds numbers or a month is looked up with {0}, {1}… and {m} in their place.
+const LANGS = [['az', 'Azərbaycan', '🇦🇿', '₼'], ['tr', 'Türkçe', '🇹🇷', '₺'], ['ru', 'Русский', '🇷🇺', '₽'], ['en', 'English', '🇬🇧', '$'],
+  ['uk', 'Українська', '🇺🇦', '₴'], ['ka', 'ქართული', '🇬🇪', '₾'], ['kk', 'Қазақша', '🇰🇿', '₸'], ['uz', 'Oʻzbekcha', '🇺🇿', 'soʻm'],
+  ['tk', 'Türkmençe', '🇹🇲', 'TMT'], ['de', 'Deutsch', '🇩🇪', '€']];
+const lang = () => (db.lang && db.lang.v) || 'az';
+const NUM_RE = /−?\+?\d+(?:[  ]\d{3})*(?:,\d+)?(?: (?:₼|\$|€|₽|₺|₾|₴|₸|soʻm|TMT))?/g;
+const MONTH_RE = new RegExp('(?<!\\p{L})(' + MONTHS.join('|') + ')(?!\\p{L})', 'gu');
+const CUR_RE = /(?<!\p{L})(₼|\$|€|₽|₺|₾|₴|₸|soʻm|TMT)(?!\p{L})/gu;
+let trMiss = null; // set to a Set to collect untranslated keys while crawling
+function tr(text, vars) {
+  const L = lang(), d = (window.I18N || {})[L];
+  let out = text;
+  if (L !== 'az' || trMiss) {
+    const lead = text.match(/^\s*/)[0], tail = text.match(/\s*$/)[0], core = text.trim();
+    if (core && /\p{L}/u.test(core)) {
+      let r = trCore(core, d);
+      // lines like "Kamil · 22 Oktyabr 2026 · iş 90 ₼" are translated piece by piece
+      if (r == null && / [·—] /.test(core)) r = core.split(/( [·—] )/).map(p => / [·—] /.test(p) ? p : (trCore(p, d) ?? p)).join('');
+      if (r != null) out = lead + r + tail;
+    }
+  }
+  if (vars) out = out.replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? vars[k] : m);
+  return out;
+}
+// mg: the form used inside a date ("22 октября"), where a language has one
+function trCore(core, d) {
+  if (!/\p{L}/u.test(core)) return core;
+  if (d && d[core] != null) return d[core];
+  // a folding arrow in front ("▸ Borclular (20)") is kept and the rest translated
+  const arrow = core.match(/^([▸▾] )(.+)$/s);
+  if (arrow && !trCore.inner) { trCore.inner = true; const r = trCore(arrow[2], d); trCore.inner = false; if (r != null) return arrow[1] + r; }
+  const nums = [], months = [], curs = [];
+  const key = core.replace(NUM_RE, x => '{' + (nums.push(x) - 1) + '}').replace(MONTH_RE, x => { months.push(x); return '{m}'; }).replace(CUR_RE, x => { curs.push(x); return '{c}'; });
+  if (key !== core && d && d[key] != null) {
+    let mi = 0, ci = 0;
+    return d[key].replace(/\{(\d+)\}/g, (_, i) => nums[+i]).replace(/\{(m|mg)\}/g, (_, g) => monthName(months[mi++], g === 'mg')).replace(/\{c\}/g, () => curs[ci++]);
+  }
+  if (trMiss && !/^\{\d+\}$/.test(key) && !/ [·—] /.test(key)) trMiss.add(key);
+  return null;
+}
+function monthName(az, g) { const i = MONTHS.indexOf(az), m = (window.I18N || {})[lang()]; if (!m || !m.MONTHS) return az; return (g && m.MONTHS_G ? m.MONTHS_G : m.MONTHS)[i]; }
+function translatePage(root) {
+  document.documentElement.lang = lang(); // keeps CSS upper-casing right (German i is not İ)
+  if (lang() === 'az' && !trMiss) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (n.parentNode && /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.parentNode.nodeName)) continue;
+    const t = tr(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t;
+  }
+  root.querySelectorAll('[placeholder],[title]').forEach(el => {
+    for (const a of ['placeholder', 'title']) if (el.hasAttribute(a)) { const v = el.getAttribute(a), t = tr(v); if (t !== v) el.setAttribute(a, t); }
+  });
+}
+
+// chosen currency sign (kept in the data, so it syncs and survives a reinstall)
+const CURRENCIES = [['₼', 'Azərbaycan manatı', 'AZN'], ['₺', 'Türk lirəsi', 'TRY'], ['₽', 'Rus rublu', 'RUB'], ['$', 'ABŞ dolları', 'USD'], ['€', 'Avro', 'EUR'],
+  ['₴', 'Ukrayna qrivnası', 'UAH'], ['₾', 'Gürcü larisi', 'GEL'], ['₸', 'Qazax tengesi', 'KZT'], ['soʻm', 'Özbək somu', 'UZS'], ['TMT', 'Türkmən manatı', 'TMT']];
+const cur = () => (db.cur && db.cur.v) || '₼';
+function money(q) { // q = qəpik (integer)
+  const neg = q < 0; q = Math.abs(Math.round(q));
+  const m = Math.floor(q / 100), c = q % 100;
+  const s = String(m).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (neg ? '−' : '') + s + (c ? ',' + pad(c) : '') + ' ' + cur();
+}
+function parseAmount(s) {
+  s = String(s || '').replace(/\s/g, '').replace(',', '.');
+  const v = parseFloat(s);
+  return isFinite(v) && v > 0 ? Math.round(v * 100) : 0;
+}
+// "21 Oktyabr 2026, 14:35" – the day it's booked on, plus the hour it was typed in
+function stamp(t) {
+  const c = t.created ? new Date(t.created) : null;
+  return fmtDate(t.date) + (c ? ', ' + pad(c.getHours()) + ':' + pad(c.getMinutes()) : '');
+}
+function fmtDate(d) { const [y, m, dd] = d.split('-'); return +dd + ' ' + MONTHS[+m - 1] + ' ' + y; }
+const monthKey = d => d.slice(0, 7);
+// names compared without caring about İ/I/ı and capitals
+const norm = s => String(s || '').trim().replace(/[İIı]/g, 'i').toLowerCase();
+const initials = n => n.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+
+// ---------- calculations ----------
+function balanceOf(pid) { return cached('b' + pid, () => calcBalance(pid)); }
+function calcBalance(pid) {
+  let b = 0;
+  for (const t of txOf(pid)) b += t.type === 'debt' || t.type === 'adj' ? t.amount : t.type === 'pay' ? -t.amount : 0;
+  return b;
+}
+function totals(filterMonth) {
+  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0 };
+  for (const t of db.tx) {
+    if (filterMonth && monthKey(t.date) !== filterMonth) continue;
+    if (t.type in r) r[t.type] += t.amount;
+    if (t.type === 'inc' && t.other) r.oth += t.amount; // "Digər gəlir": already inside inc, kept apart only for showing
+    if (t.type === 'adj' && t.wo) { if (!t.woKeep) r.debt += t.amount; continue; } // a written-off debt comes off the month it was cleared in (unless kept)
+    if (t.type === 'adj') r.debt += t.amount; // a changed debt amount: lowering it comes off this month's income
+    if (t.type === 'loss') r.exp += t.amount; // a loss comes off the income
+    if (t.cost) { r.exp += t.cost; r.cost += t.cost; if (t.type === 'inc') r.icost += t.cost; }
+  }
+  return r;
+}
+// day -> { debt, pay, exp } for transactions matching filter, newest day first
+function byDay(list) {
+  const m = {};
+  for (const t of list) {
+    if (t.corr) continue; // a deleted old debt counts against the month only, never against a single day
+    const d = m[t.date] || (m[t.date] = { date: t.date, debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0, dayLoss: 0, items: [] });
+    // a loss is listed on its day but comes off the month's income only, never off a day's
+    if (t.type === 'adj' && t.wo) continue; // ...but off no single day
+    if (t.type === 'loss') { d.dayLoss += t.amount + (t.cost || 0); d.items.push(t); continue; }
+    if (t.type in d) d[t.type] += t.amount;
+    if (t.type === 'inc' && t.other) d.oth += t.amount;
+    if (t.type === 'adj') d.debt += t.amount;
+    if (t.cost) { d.exp += t.cost; d.cost += t.cost; if (t.type === 'inc') d.icost += t.cost; }
+    d.items.push(t);
+  }
+  return Object.values(m).sort((a, b) => b.date.localeCompare(a.date));
+}
+// business income: work written to ustas + extra income − business expenses
+const income = r => r.debt + (r.inc || 0) - r.exp;
+// Hesabat tab: income without business expenses, but spare parts never count as income
+const workNet = r => r.debt - ((r.cost || 0) - (r.icost || 0));
+const incNet = r => (r.inc || 0) - (r.icost || 0);
+const gross = r => workNet(r) + incNet(r) - (r.loss || 0);
+// incNet split for showing: cash jobs and "Digər gəlir" (the total stays incNet)
+const cashNet = r => incNet(r) - (r.oth || 0);
+const hasCash = r => (r.inc || 0) - (r.oth || 0) !== 0;
+// lines "Nağd işlər" / "Digər gəlirlər" of a totals box
+const incLines = r => (hasCash(r) ? `<div class="kv"><span>Nağd işlər</span><b class="num pay">${money(cashNet(r))}</b></div>` : '')
+  + (r.oth ? `<div class="kv"><span>Digər gəlirlər</span><b class="num pay">${money(r.oth)}</b></div>` : '');
+const incIcon = t => t.other ? '➕' : '💵';
+const incWord = t => t.other ? 'Digər gəlir' : 'Nağd';
+// phone numbers compared by their digits; 050…, +994 50… and 50… are the same number
+const phoneKey = s => { let d = String(s || '').replace(/\D/g, ''); if (d.startsWith('994')) d = d.slice(3); else if (d.startsWith('0')) d = d.slice(1); return d; };
+function phoneMatch(phone, q) {
+  const qd = String(q || '').replace(/\D/g, ''), pd = String(phone || '').replace(/\D/g, '');
+  if (qd.length < 2 || !pd) return false;
+  return pd.includes(qd) || (!!phoneKey(qd) && phoneKey(pd).includes(phoneKey(qd)));
+}
+function waNum(phone) {
+  let num = String(phone || '').replace(/\D/g, '');
+  if (num.startsWith('0')) num = '994' + num.slice(1);
+  else if (num.length === 9) num = '994' + num;
+  return num;
+}
+const got = r => r.pay + (r.inc || 0);
+function parseSigned(s) {
+  s = String(s || '').replace(/\s/g, '').replace(',', '.').replace('−', '-');
+  if (s === '') return null;
+  const v = parseFloat(s);
+  return isFinite(v) ? Math.round(v * 100) : null;
+}
+const amountInput = q => q ? String(q / 100).replace('.', ',') : '';
+function outstanding() { return db.people.reduce((s, p) => s + Math.max(0, balanceOf(p.id)), 0); }
+// newest entry first: by its date, then by when it was typed in
+function recentKey(p) { return cached('r' + p.id, () => calcRecentKey(p)); }
+function calcRecentKey(p) {
+  let k = '';
+  for (const t of txOf(p.id)) { const kk = t.date + '|' + String(t.created || 0).padStart(15, '0'); if (kk > k) k = kk; }
+  return k || new Date(p.created || 0).toISOString().slice(0, 10) + '|' + String(p.created || 0).padStart(15, '0');
+}
+function lastActivity(pid) { return cached('l' + pid, () => { let d = ''; for (const t of txOf(pid)) if (t.date > d) d = t.date; return d; }); }
+
+// ---------- state & routing ----------
+const state = { tab: 'people', q: '', person: null, cat: null, loans: false, trash: false, month: today().slice(0, 7), sheet: null };
+// open/closed sections are remembered on this phone, also after the app is closed
+const FOLDS = ['showToday', 'showPaid'];
+try { const f = JSON.parse(localStorage.getItem('folds') || '{}'); FOLDS.forEach(k => { state[k] = !!f[k]; }); } catch (e) {}
+try { state.hideInc = !!localStorage.getItem('hideInc'); } catch (e) {}
+function toggleFold(k) {
+  state[k] = !state[k];
+  try { const f = {}; FOLDS.forEach(x => { f[x] = !!state[x]; }); localStorage.setItem('folds', JSON.stringify(f)); } catch (e) {}
+  render();
+}
+const app = document.getElementById('app');
+
+window.onBack = function () {
+  if (state.pin) { if (state.pin.mode === 'unlock') return false; state.pin = null; render(); return true; }
+  if (state.sheet) { actions.closeSheet(); return true; }
+  if (state.trash) { state.trash = false; render(); return true; }
+  if (state.person) { actions.back(); return true; }
+  if (state.cat) { state.cat = null; render(); return true; }
+  if (state.loans) { state.loans = false; render(); return true; }
+  if (state.tab !== 'people') { state.tab = 'people'; render(); return true; }
+  return false;
+};
+
+const TRASH_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>';
+const ICONS = {
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  report: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>',
+  mine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 6V4h12v2"/><circle cx="16" cy="15" r="1.5"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>'
+};
+
+// the record an open sheet is about no longer exists (deleted on another phone)
+function sheetGone(s) {
+  if (!s.id || ['pickDate', 'cur', 'lang'].includes(s.kind)) return false;
+  const list = { person: 'people', loan: 'loans', cat: 'cats', tx: 'tx' }[s.kind === 'menu' ? s.target : s.kind];
+  return !!list && !db[list].some(x => x.id === s.id);
+}
+let lastView = '', lastSheet = '';
+// while the page is drawn, entries are grouped by customer once and each customer's figures are kept
+let memo = null;
+function cached(key, f) { if (!memo) return f(); if (!memo.has(key)) memo.set(key, f()); return memo.get(key); }
+function txOf(pid) {
+  if (!memo) return db.tx.filter(t => t.pid === pid);
+  if (!memo.byPid) { memo.byPid = new Map(); for (const t of db.tx) { const l = memo.byPid.get(t.pid); if (l) l.push(t); else memo.byPid.set(t.pid, [t]); } }
+  return memo.byPid.get(pid) || [];
+}
+function render() { memo = new Map(); try { drawPage(); } finally { memo = null; } }
+function drawPage() {
+  let h = '';
+  if (state.pin) { app.innerHTML = renderPin(); translatePage(app); return; }
+  if (state.trash) h = renderTrash();
+  else if (state.person) h = renderPerson();
+  else if (state.cat) h = renderCat();
+  else if (state.loans) h = renderLoans();
+  else {
+    h = renderHeader();
+    h += '<main>' + (state.tab === 'people' ? renderPeople() : state.tab === 'report' ? renderReport() : state.tab === 'mine' ? renderMine() : renderSettings()) + '</main>';
+    if (state.tab === 'people') h += '<button class="fab" data-a="newPerson">+ Müştəri əlavə et</button>';
+    if (state.tab === 'mine') h += '<button class="fab" data-a="newCat">+ Bölmə</button>';
+    h += '<nav>' + [['people', 'Müştərilər'], ['mine', 'Xərclərim'], ['report', 'Hesabat'], ['settings', 'Ayarlar']].map(([k, l]) =>
+      `<button class="${state.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${ICONS[k]}${l}</button>`).join('') + '</nav>';
+  }
+  if (state.sheet && sheetGone(state.sheet)) state.sheet = null;
+  if (state.sheet) h += renderSheet();
+  const keepScroll = state.person || state.cat || state.loans || state.trash ? null : window.scrollY;
+  // animate only when the view itself changes, not on every redraw of the same view
+  const view = state.pin ? 'pin' : state.trash ? 'trash' : state.person ? 'p:' + state.person : state.cat ? 'c:' + state.cat : state.loans ? 'loans' : 'tab:' + state.tab;
+  const sheetKey = state.sheet ? state.sheet.kind : '';
+  const wasPage = lastView && !lastView.startsWith('tab:');
+  app.dataset.anim = view === lastView ? '' : !view.startsWith('tab:') ? 'page' : wasPage ? 'back' : 'tab';
+  app.dataset.sheetAnim = sheetKey && sheetKey !== lastSheet ? '1' : '';
+  lastView = view; lastSheet = sheetKey;
+  app.innerHTML = h;
+  translatePage(app);
+  if (keepScroll != null) window.scrollTo(0, keepScroll);
+  const auto = app.querySelector('[data-autofocus]');
+  if (auto) setTimeout(() => { if (document.activeElement === document.body) auto.focus(); }, 60);
+}
+
+// redraw without losing what is typed in an open form (used when synced data arrives)
+function renderKeep() {
+  const vals = [...app.querySelectorAll('input[id],textarea[id]')].map(e => [e.id, e.value]), focus = document.activeElement && document.activeElement.id;
+  const sh = app.querySelector('.sheet'), top = sh ? sh.scrollTop : 0;
+  render();
+  vals.forEach(([id, v]) => { const e = document.getElementById(id); if (e) e.value = v; });
+  const sh2 = app.querySelector('.sheet'); if (sh2) sh2.scrollTop = top;
+  if (focus) { const e = document.getElementById(focus); if (e) e.focus(); }
+}
+// what ustas still owe for work written in this month
+function monthOwed(month) {
+  let sum = 0;
+  for (const p of db.people) for (const d of debtState(p.id).debts) if (d.left > 0 && monthKey(d.t.date) === month) sum += d.left;
+  return sum;
+}
+// "16.09.2026 – 23.10.2026": from the first written job to today
+// every month from the first entry to this one, newest first
+function allMonths() {
+  let first = today().slice(0, 7);
+  for (const t of db.tx) if (t.date && monthKey(t.date) < first) first = monthKey(t.date);
+  const out = []; let [y, m] = first.split('-').map(Number);
+  for (let k = first; k <= today().slice(0, 7); m === 12 ? (y++, m = 1) : m++, k = y + '-' + pad(m)) out.push(k);
+  return out.reverse();
+}
+function allPeriod() {
+  let first = '';
+  for (const t of db.tx) if ((t.type === 'debt' || t.type === 'inc') && !t.corr && (!first || t.date < first)) first = t.date;
+  if (!first) return '';
+  const f = d => d.split('-').reverse().join('.');
+  return `<div style="font-size:12px;opacity:.85;margin-top:2px">${f(first)} – ${f(today())}</div>`;
+}
+function renderHeader() {
+  const d = byDay(db.tx.filter(t => t.date === today()))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
+  const n = db.trash.length;
+  return `<header><div class="hrow"><h1>Hesabat</h1>${state.tab !== 'settings' ? (() => { const cm = state.tab === 'people' ? today().slice(0, 7) : state.month; return `<div class="hinc" data-a="toggleHideInc"><small>${state.tab === 'report' ? 'Ümumi gəlir' : 'Gəlirim'} — ${MONTHS[+cm.slice(5) - 1]}</small><b class="num">${state.hideInc ? '• • • •' : money(income(totals(cm)))}</b></div>`; })() : ''}<div style="display:flex;gap:8px"><button class="hbtn" data-a="toggleTheme" title="Gecə / gündüz">${theme === 'dark' ? '☀️' : '🌙'}</button><button class="hbtn" data-a="openTrash" title="Zibil qutusu">${TRASH_ICON}${n ? `<span>${n}</span>` : ''}</button></div></div><div class="stats">
+    ${state.tab === 'settings'
+      ? (() => { const c = CURRENCIES.find(x => x[0] === cur()) || CURRENCIES[0], l = LANGS.find(x => x[0] === (db.lang && db.lang.v || 'az')); return `<button class="stat" data-a="openLang" style="text-align:left;color:#fff"><small>🌐 Dil ›</small><b style="font-size:19px">${l[2]} ${l[1]}</b></button>
+         <button class="stat" data-a="openCur" style="text-align:left;color:#fff"><small>💱 Valyuta ›</small><b style="font-size:19px">${c[0]} ${c[2]}</b></button>`; })()
+      : state.tab === 'mine'
+      ? `<button class="stat" data-a="openMineDays" style="text-align:left;color:#fff"><small>Xərclərim — ${MONTHS[+state.month.slice(5) - 1]} ›</small><b class="num">${money(mineTotal(state.month))}</b></button>
+         <button class="stat" data-a="openToday" style="text-align:left;color:#fff"><small>Bu günkü gəlir ›</small><b class="num">${money(income(d))}</b></button>`
+      : state.tab === 'report'
+      ? `${(() => { const owe = monthOwed(state.month), left = income(totals(state.month)) - owe; return `<div class="stat"><small>Müştərilərin borcu</small><b class="num">${money(owe)}</b></div>
+         <div class="stat"><small>Əlimə gələn</small><b class="num">${money(left)}</b></div>`; })()}
+         <button class="stat" data-a="openAllMonths" style="text-align:left;color:#fff"><small>Bütün dövrün gəliri ›</small><b class="num">${money(gross(totals()))}</b>${allPeriod()}</button>
+         <button class="stat" data-a="openAllLeft" style="text-align:left;color:#fff"><small>Bütün dövrün qalığı ›</small><b class="num">${money(allMonths().reduce((x, m) => x + gross(totals(m)) - mineTotal(m), 0))}</b>${allPeriod()}</button>`
+      : (() => { const sp = openDebtSplit(); return `<button class="stat" data-a="openDebtors" style="text-align:left;color:#fff"><small>Müştərilərin ümumi borcu <span>›</span></small><b class="num">${money(sp.before + sp.now)}</b></button>
+         <button class="stat" data-a="openMonthDebtors" style="text-align:left;color:#fff"><small>Bu ayın borcu — ${MONTHS[+today().slice(5, 7) - 1]} <span>›</span></small><b class="num">${money(sp.now)}</b></button>`; })()}
+    ${state.tab === 'settings' ? '' : state.tab === 'mine'
+      ? (() => { const fav = db.cats.find(c => c.star); return fav
+        ? `<button class="stat" data-a="openCat" data-v="${fav.id}" style="text-align:left;color:#fff"><small>⭐ ${esc(fav.name)} — bu gün</small><b class="num">${money(db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.cid === fav.id && t.date === today() ? t.amount : 0), 0))}</b></button>`
+        : `<div class="stat"><small>Bu gün xərclədiyim</small><b class="num">${money(db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === today() ? t.amount : 0), 0))}</b></div>`; })()
+      : state.tab === 'report' ? '' : `<button class="stat" data-a="openReceived" style="text-align:left;color:#fff"><small>Bu gün alınan <span>›</span></small><b class="num">${money(d.pay + db.tx.reduce((s, t) => s + (t.type === 'inc' && t.date === today() ? t.amount : 0), 0))}</b></button>`}
+    ${state.tab === 'report' || state.tab === 'settings' ? '' : state.tab === 'mine'
+      ? (() => { const left = income(totals(state.month)) - mineTotal(state.month); return `<div class="stat"><small>Qalıq</small><b class="num" style="${left < 0 ? 'color:#FFD7C7' : ''}">${money(left)}</b></div>`; })()
+      : `<button class="stat" data-a="openToday" style="text-align:left;color:#fff"><small>Bu günkü gəlir ›</small><b class="num">${money(income(d))}</b></button>`}
+  </div></header>`;
+}
+
+// how long the oldest still-unpaid debt has been open (payments cover the oldest debts first)
+// Splits a usta's payments over their debts: a payment made with "Bu borc ödənildi" covers its own
+// debt, every other payment covers the oldest debts first. Returns the fully paid debt ids and the
+// date of the oldest debt still open.
+function debtState(pid) { return cached('d' + pid, () => calcDebtState(pid)); }
+function calcDebtState(pid) {
+  const tx = txOf(pid).slice().sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+  const debts = tx.filter(t => t.type === 'debt' || (t.type === 'adj' && t.amount > 0)).map(t => ({ t, left: t.amount }));
+  let free = 0;
+  for (const t of tx) {
+    const amt = t.type === 'pay' ? t.amount : t.type === 'adj' && t.amount < 0 ? -t.amount : 0;
+    if (!amt) continue;
+    const own = t.forDebt && debts.find(d => d.t.id === t.forDebt);
+    if (own) { const use = Math.min(own.left, amt); own.left -= use; free += amt - use; } else free += amt;
+  }
+  for (const d of debts) { const use = Math.min(d.left, free); d.left -= use; free -= use; }
+  const open = debts.find(d => d.left > 0);
+  return { paid: new Set(debts.filter(d => d.left <= 0).map(d => d.t.id)), since: open ? open.t.date : null, debts };
+}
+const paidDebtIds = pid => debtState(pid).paid;
+// unpaid money split by when the debt was written: this month vs. earlier months
+function openDebtSplit() {
+  const cur = today().slice(0, 7);
+  let now = 0, before = 0;
+  for (const p of db.people) for (const d of debtState(p.id).debts) {
+    if (d.left <= 0) continue;
+    if (monthKey(d.t.date) === cur) now += d.left; else before += d.left;
+  }
+  return { now, before };
+}
+const debtSince = pid => debtState(pid).since;
+function debtAge(pid) {
+  const d = debtSince(pid);
+  if (!d) return '';
+  const n = Math.floor((new Date(today()) - new Date(d)) / 864e5);
+  const txt = n <= 0 ? 'bu gündən' : n + ' gündür';
+  return `<span class="${n > 7 ? 'debt' : ''}" style="font-weight:600">⏱ ${txt}</span>`;
+}
+function todayHidden() {
+  try { const o = JSON.parse(localStorage.getItem('todayHidden') || '{}'); return new Set(o.date === today() ? o.ids : []); } catch (e) { return new Set(); }
+}
+// swiping a row out of "Bu gün yazılanlar" only takes it off that list: a debtor moves down to the debtors,
+// a cash job or a loss leaves the list, and every amount keeps counting in the income
+function hideToday(hold) {
+  const ids = [...todayHidden(), hold];
+  try { localStorage.setItem('todayHidden', JSON.stringify({ date: today(), ids })); } catch (e) {}
+  render(); toast('Siyahıdan çıxarıldı, gəlir qalır');
+}
+// search: the text anywhere in the name, or each typed word as the start of a word in it
+// ("pr fer" finds "Proqramist-Fərhad"); ə/e, ö/o, ü/u, ı/i, ç/c, ş/s, ğ/g count as the same letter
+const fold = s => norm(s).replace(/[əöüçşğ]/g, c => ({ ə: 'e', ö: 'o', ü: 'u', ç: 'c', ş: 's', ğ: 'g' })[c]);
+function smartMatch(name, query) {
+  const n = fold(name), parts = fold(query).split(/\s+/).filter(Boolean);
+  if (!parts.length || n.includes(parts.join(' '))) return true;
+  const words = n.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return parts.every(p => words.some(w => w.startsWith(p)));
+}
+function renderPeople() {
+  if (!db.people.length) return '<div class="empty">Hələ müştəri yoxdur.<br>Aşağıdakı “+ Müştəri əlavə et” düyməsini basın.</div>';
+  const q = norm(state.q);
+  const list = db.people.map(p => ({ p, b: balanceOf(p.id), d: lastActivity(p.id) }))
+    .filter(x => !q || smartMatch(x.p.name, state.q) || phoneMatch(x.p.phone, state.q))
+    .sort((a, b) => recentKey(b.p).localeCompare(recentKey(a.p)) || a.p.name.localeCompare(b.p.name, 'az'));
+  let h = `<input class="search" id="q" placeholder="Axtar..." value="${esc(state.q)}">`;
+  if (!list.length) return h + '<div class="empty">Tapılmadı</div>';
+  // what this usta earned me today: debt written minus its spare parts
+  const todayLine = (pid, paid) => {
+    let debt = 0;
+    for (const t of db.tx) if (t.pid === pid && t.date === today() && t.type === 'debt') debt += t.amount - (t.cost || 0);
+    return debt ? `<b style="color:var(--${paid ? 'pay' : 'debt'})">Bu gün: +${money(debt)}</b>` : '';
+  };
+  // a customer who paid on the spot today still belongs to today's block
+  const todayWork = pid => db.tx.reduce((x, t) => x + (t.pid === pid && t.date === today() && t.type === 'debt' ? t.amount : 0), 0);
+  // how much of the still-open debts is paid already (0..1); a ring and a bar show it
+  const paidPart = pid => { let tot = 0, left = 0; for (const x of debtState(pid).debts) if (x.left > 0) { tot += x.t.amount; left += x.left; } return tot ? 1 - left / tot : 1; };
+  const hasDebt = pid => txOf(pid).some(t => t.type === 'debt');
+  // the name's letter, with a small corner sign: red = nothing paid, yellow fills as it is paid, green ✓ = paid in full
+  const corner = css => `<span style="position:absolute;right:-3px;bottom:-3px;width:22px;height:22px;border-radius:50%;border:3px solid var(--card);display:grid;place-items:center;font-size:12px;font-weight:900;${css}</span>`;
+  const badge = (p, b) => `<div class="avatar" style="position:relative;overflow:visible">${esc(initials(p.name))}${b > 0
+    ? (paidPart(p.id) > 0 ? corner(`background:conic-gradient(#F59E0B 0 ${Math.round(paidPart(p.id) * 100)}%, #5b4a1f 0)">`) : corner('background:#EF4444">'))
+    : hasDebt(p.id) ? corner('background:#22C55E;color:#fff">✓') : ''}</div>`;
+  const bar = (pid, b) => b > 0 ? `<div style="height:7px;border-radius:4px;background:var(--line);margin-top:8px;overflow:hidden"><div style="height:100%;width:${Math.round(paidPart(pid) * 100)}%;background:#F59E0B;border-radius:4px"></div></div>`
+    : hasDebt(pid) ? '<div style="height:7px;border-radius:4px;background:#22C55E;margin-top:8px"></div>' : '';
+  const rows = (items, fresh) => '<div class="list">' + items.map(({ p, b, d }) => `
+    <button class="row" data-a="open" data-v="${p.id}" data-hold="person:${p.id}">
+      ${badge(p, b)}
+      <div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${fresh
+        ? [todayLine(p.id, b <= 0), b > 0 ? debtAge(p.id) : ''].filter(Boolean).join(' · ')
+        : `${b > 0 ? debtAge(p.id) + ' · ' : ''}${d ? 'Son: ' + (d === today() ? '<b style="color:var(--pay)">bu gün</b>' : fmtDate(d)) : 'Əməliyyat yoxdur'}${p.phone ? ' · ' + esc(p.phone) : ''}`}</div>${bar(p.id, b)}</div>
+      ${b <= 0 && txOf(p.id).some(t => t.wo) ? '<div class="amt zero" style="font-size:14px">📉 Borc silindi</div>' : fresh && b <= 0 ? `<div class="amt num pay">${money(todayWork(p.id))}<small>nağd alındı</small></div>` : b === 0 && hasDebt(p.id) ? '<div class="amt pay" style="font-size:15px">✓ Ödənilib</div>' : `<div class="amt num ${b > 0 ? 'debt' : b < 0 ? 'pay' : 'zero'}">${money(Math.abs(b))}<small>${fresh && b > 0 ? 'ümumi borc' : b > 0 ? 'borcu var' : b < 0 ? 'artıq ödəyib' : 'hesab bağlı'}</small></div>`}
+    </button>`).join('') + '</div>';
+  const owing = list.filter(x => x.b > 0);
+  // settled ustas from earlier months stay out of the list (search still finds them)
+  const cur = today().slice(0, 7);
+  const recent = x => (x.d || new Date(x.p.created || 0).toISOString().slice(0, 10)).slice(0, 7) === cur;
+  const lossOnly = id => { let l = false; for (const t of db.tx) if (t.pid === id) { if (t.type !== 'loss') return false; l = true; } return l; };
+  // rows swiped out of "Bu gün yazılanlar" (this phone, today only); their money still counts
+  const hid = todayHidden();
+  // someone whose debt was written off did not pay: they stay out of "Bu ay ödəyənlər" (a search still finds them)
+  const writtenOff = id => txOf(id).some(t => t.wo);
+  const allPaid = list.filter(x => x.b <= 0 && (q || (!lossOnly(x.p.id) && !writtenOff(x.p.id) && (!todayWork(x.p.id) || hid.has('person:' + x.p.id))))), paid = q ? allPaid : allPaid.filter(recent);
+  const hidden = allPaid.length - paid.length;
+  // ustas with something written today get their own block on top
+  // only work written today puts a customer here; a payment alone doesn't
+  const fresh = list.filter(x => todayWork(x.p.id) && (q || !hid.has('person:' + x.p.id))), older = owing.filter(x => !fresh.includes(x));
+  // today's block is folded too; cash jobs sit in it with the same kind of line as an usta
+  const cashAll = db.tx.filter(t => t.type === 'inc' && t.date === today());
+  const cash = q ? [] : cashAll.filter(t => !hid.has('tx:' + t.id)).sort((x, y) => (y.created || 0) - (x.created || 0));
+  // today's losses sit in the block too and come off its total
+  const lossAll = db.tx.filter(t => t.type === 'loss' && t.date === today());
+  const losses = q ? [] : lossAll.filter(t => !hid.has('tx:' + t.id)).sort((x, y) => (y.created || 0) - (x.created || 0));
+  if (!q && (cashAll.length || lossAll.length || db.tx.some(t => t.type === 'debt' && t.pid && t.date === today())) || fresh.length) {
+    const openToday = state.showToday || q;
+    // the total is the whole day's income, the same as "Bu günkü gəlir" (rows taken off the list and removed names included)
+    const day = byDay(db.tx.filter(t => t.date === today()))[0], gain = day ? income(day) : 0;
+    h += `<button class="section-title" data-a="toggleToday" style="display:flex;width:calc(100% - 8px);justify-content:space-between;align-items:center;background:none;border:0;padding-left:4px;padding-right:4px;cursor:pointer;margin-top:4px;color:var(--pay)">
+        <span>${openToday ? '▾' : '▸'} 🆕 Bu gün yazılanlar (${fresh.length + cash.length + losses.length})</span><span class="num">${gain < 0 ? '' : '+'}${money(gain)}</span></button>`;
+    if (openToday) {
+      h += '<div data-today="1">';
+      h += fresh.length ? rows(fresh, true) : '';
+      if (cash.length) h += '<div class="list" style="margin-top:' + (fresh.length ? 10 : 0) + 'px">' + cash.map(t => `
+    <button class="row" data-a="editTx" data-v="${t.id}" data-hold="tx:${t.id}">
+      <div class="avatar" style="background:var(--pay-soft);color:var(--pay)">${incIcon(t)}</div>
+      <div class="grow"><div class="t">${esc(t.note || 'Nağd iş')}</div><div class="s"><b style="color:var(--pay)">Bu gün: +${money(t.amount - (t.cost || 0))}</b>${t.cost ? ` · <span class="exp">xərc ${money(t.cost)}</span>` : ''} · ${stamp(t).split(', ').pop()}</div></div>
+      <div class="amt num pay">${money(t.amount)}<small>${t.other ? 'digər gəlir' : 'nağd alındı'}</small></div>
+    </button>`).join('') + '</div>';
+      if (losses.length) h += '<div class="list" style="margin-top:10px">' + losses.map(t => `
+    <button class="row" data-a="editTx" data-v="${t.id}" data-hold="tx:${t.id}">
+      <div class="avatar" style="background:var(--debt-soft);color:var(--debt)">📉</div>
+      <div class="grow"><div class="t">${t.pid ? esc(nameOf(t.pid)) : esc(t.note || 'Ziyan')}</div><div class="s"><b style="color:var(--debt)">Ziyan</b>${t.pid && t.note ? ' · ' + esc(t.note) : ''}${t.cost ? ` · <span class="exp">xərc ${money(t.cost)}</span>` : ''} · ${stamp(t).split(', ').pop()}</div></div>
+      <div class="amt num debt">−${money(t.amount + (t.cost || 0))}<small>ziyan</small></div>
+    </button>`).join('') + '</div>';
+      h += '</div>';
+    }
+  }
+  // debtors are listed only from the "Müştərilərin ümumi borcu" card; a search still finds them here
+  if (q && older.length) h += '<div class="section-title" style="margin-top:4px">Borclular (' + older.length + ')</div>' + rows(older);
+  if (paid.length) {
+    const openPaid = state.showPaid || q;
+    // money these ustas paid this month
+    const ids = new Set(paid.map(x => x.p.id)), cm = today().slice(0, 7);
+    const paidSum = db.tx.reduce((x, t) => x + (t.type === 'pay' && ids.has(t.pid) && monthKey(t.date) === cm ? t.amount : 0), 0);
+    h += `<button class="section-title" data-a="togglePaid" style="display:flex;width:calc(100% - 8px);justify-content:space-between;align-items:center;background:none;border:0;padding-left:4px;padding-right:4px;cursor:pointer">
+        <span>${openPaid ? '▾' : '▸'} Bu ay ödəyənlər (${paid.length})</span><span class="num pay">${money(paidSum)}</span></button>` + (openPaid ? rows(paid) : '');
+  }
+  if (hidden) h += `<p class="note" style="text-align:center">Keçən aylarda hesabı bağlanan ${hidden} müştəri gizlədilib. Axtarışda adını yazsanız, görünəcək.</p>`;
+  return h;
+}
+
+// re-renders the remind sheet without losing what is typed in the card field
+function keepCard() { const v = document.getElementById('f_card').value; render(); document.getElementById('f_card').value = v; }
+function waLink(p, b, card) {
+  const num = waNum(p.phone);
+  // only what is still unpaid; a part-paid debt shows what is left of it
+  const debts = debtState(p.id).debts.filter(d => d.left > 0 && d.t.type === 'debt').sort((a, c) => c.t.date.localeCompare(a.t.date))
+    .map(({ t, left }) => `• ${tr(fmtDate(t.date))}${t.note ? ' — ' + t.note : ''}: ${money(left)}${left < t.amount ? ' ' + tr('({sum}-dan qalıb)', { sum: money(t.amount) }) : ''}`).join('\n');
+  const text = tr('Salam!') + '\n' + tr('Sizin {sum} borcunuz qalıb.', { sum: money(b) }) + '\n' + debts
+    + (card ? '\n\n' + tr('Kart nömrəsi:\n{card}', { card: card.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1\u00a0') }) + '\n' : '') + '\n' + tr('Təşəkkürlər.');
+  return 'https://wa.me/' + num + '?text=' + encodeURIComponent(text);
+}
+// One history row; "sub" rows are payments tucked under the debt they paid
+function txRow(t, paidIds, left, sub, part) {
+  return `
+        <button class="row" data-a="editTx" data-v="${t.id}" data-hold="tx:${t.id}"${sub ? ' style="padding-left:34px;background:var(--bg)"' : ''}>
+          <div class="grow"><div class="t ${t.type === 'adj' ? 'zero' : t.type}">${sub ? '↳ ' : ''}${t.type === 'debt' ? (t.addTo ? (t.amount ? 'Əlavə iş' : 'Əlavə xərc') : 'Borc yazıldı') : t.type === 'pay' ? 'Ödəniş alındı' : t.type === 'loss' ? '📉 Ziyan' : t.wo ? '📉 Borc silindi' : 'Məbləğ düzəlişi'}${t.type === 'debt' && t.amount && paidIds.has(t.id) ? ' <span class="badge ok">✓ ödənilib</span>' : t.type === 'debt' && left < t.amount ? ` <span class="badge" style="background:var(--debt-soft);color:var(--debt)">qalıb ${money(left)}</span>` : ''}</div>
+          ${t.note || t.type === 'debt' ? `<div class="s">${t.note ? esc(t.note) : 'Səbəb yazılmayıb (toxunun)'}</div>` : ''}
+          ${t.cost ? `<div class="s"><span class="exp">Xərc −${money(t.cost)}</span>${t.type === 'loss' ? '' : ` · qazanc ${money(t.amount - t.cost)}`}</div>` : ''}
+          ${t.type === 'debt' && t.due && !paidIds.has(t.id) ? `<div class="s"><span class="${t.due <= today() ? 'debt' : ''}" style="font-weight:600">📅 Ödəniş tarixi: ${fmtDate(t.due)}</span></div>` : ''}
+          <div class="s">🕒 ${stamp(t)}</div></div>
+          <div class="amt num ${t.type === 'adj' ? 'zero' : t.type === 'loss' ? 'debt' : t.type}">${t.type === 'loss' ? '−' + money(t.amount) : part != null && part !== Math.abs(t.amount) ? '−' + money(part) + `<small>${money(Math.abs(t.amount))}-dan</small>` : t.type === 'pay' ? '−' + money(t.amount) : t.type === 'adj' ? (t.amount > 0 ? '+' : '') + money(t.amount) : '+' + money(t.amount)}</div>
+          <span class="del" style="display:grid;place-items:center">✎</span>
+        </button>`;
+}
+// Which payments paid which debt, the same way debtState() counts: a payment tied to a debt
+// covers that debt first, everything else covers the oldest debts first. Returns debtId -> [{ t, use }].
+function payAlloc(tx) {
+  const asc = tx.slice().sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+  const debts = asc.filter(t => t.type === 'debt' || (t.type === 'adj' && t.amount > 0)).map(t => ({ t, left: t.amount }));
+  const by = {}, free = [];
+  for (const t of asc) {
+    const amt = t.type === 'pay' ? t.amount : t.type === 'adj' && t.amount < 0 ? -t.amount : 0;
+    if (!amt) continue;
+    const own = t.forDebt && debts.find(d => d.t.id === t.forDebt);
+    let rest = amt;
+    if (own) { const use = Math.min(own.left, rest); if (use) { own.left -= use; rest -= use; (by[own.t.id] = by[own.t.id] || []).push({ t, use }); } }
+    if (rest) free.push({ t, rest });
+  }
+  for (const d of debts) while (d.left > 0 && free.length) {
+    const f = free[0], use = Math.min(d.left, f.rest);
+    d.left -= use; f.rest -= use; (by[d.t.id] = by[d.t.id] || []).push({ t: f.t, use });
+    if (!f.rest) free.shift();
+  }
+  return { by, extra: free };
+}
+// Unpaid debts on top (by day); below, every paid debt in its own box with the payments that paid it
+function personHistory(tx) {
+  const st = debtState(tx[0].pid), paidIds = st.paid;
+  const left = {}; st.debts.forEach(d => { left[d.t.id] = d.left; });
+  const al = payAlloc(tx);
+  const isDebt = t => t.type === 'debt' || (t.type === 'adj' && t.amount > 0);
+  // work added later to a job ("addTo") sits in that job's box
+  // the job a line belongs to, also for extra work added onto an extra line
+  const rootOf = x => { let r = x; for (let i = 0; i < 20 && r.addTo; i++) { const up = tx.find(y => y.id === r.addTo); if (!up) break; r = up; } return r.id; };
+  const kids = id => tx.filter(x => x.addTo && x.id !== id && rootOf(x) === id).sort((a, c) => a.date.localeCompare(c.date) || a.created - c.created);
+  const top = t => !(t.addTo && tx.some(x => x.id === t.addTo));
+  const openGroup = t => !paidIds.has(t.id) || kids(t.id).some(k => !paidIds.has(k.id));
+  const pays = t => (al.by[t.id] || []).map(x => txRow(x.t, paidIds, 0, true, x.use)).join('');
+  const box = t => '<div class="list" style="margin-bottom:10px">' + txRow(t, paidIds, left[t.id] == null ? t.amount : left[t.id]) + pays(t)
+    + kids(t.id).map(k => txRow(k, paidIds, left[k.id] == null ? k.amount : left[k.id], true) + pays(k)).join('') + '</div>';
+  const groupSum = t => t.amount + kids(t.id).reduce((x, k) => x + k.amount, 0);
+  const open = tx.filter(t => isDebt(t) && top(t) && openGroup(t));
+  const done = tx.filter(t => isDebt(t) && top(t) && !openGroup(t));
+  let h = '<div class="section-title" style="color:var(--debt)">Borclar (' + open.length + ')</div>';
+  h += open.length ? byDay(open).map(d => `
+        <div class="dayhead"><b>${fmtDate(d.date)}</b><span class="num"><span class="debt">+${money(d.items.reduce((x, t) => x + groupSum(t), 0))}</span></span></div>
+        ${d.items.map(box).join('')}`).join('')
+    : '<div class="empty" style="padding:16px">Ödənilməmiş borc yoxdur 👍</div>';
+  if (done.length) h += '<div class="section-title" style="color:var(--pay)">Ödənilənlər (' + done.length + ')</div>' + done.map(box).join('');
+  const losses = tx.filter(t => t.type === 'loss');
+  if (losses.length) h += '<div class="section-title" style="color:var(--debt)">📉 Ziyan (' + losses.length + ')</div><div class="list">' + losses.map(t => txRow(t, paidIds, 0)).join('') + '</div>';
+  // money paid on top of every debt (overpayment) still has to be visible somewhere
+  const extra = al.extra.filter(f => f.rest > 0);
+  if (extra.length) h += '<div class="section-title">Artıq ödəniş</div><div class="list">' + extra.map(f => txRow(f.t, paidIds, 0, false, f.rest)).join('') + '</div>';
+  return h;
+}
+function renderPerson() {
+  // an usta whose name was deleted after paying still opens from the report, read-only
+  const p = db.people.find(x => x.id === state.person) || (db.tx.some(t => t.pid === state.person) ? { id: state.person, name: nameOf(state.person), gone: true } : null);
+  if (!p) { state.person = null; return ''; }
+  const b = balanceOf(p.id);
+  const tx = db.tx.filter(t => t.pid === p.id).sort((a, c) => c.date.localeCompare(a.date) || c.created - a.created);
+  const paidIds = paidDebtIds(p.id);
+  let sumDebt = 0, sumPay = 0, sumCost = 0;
+  tx.forEach(t => { if (t.type === 'debt') { sumDebt += t.amount; sumCost += t.cost || 0; } else if (t.type === 'adj' && !t.wo) sumDebt += t.amount; else if (t.type === 'pay') sumPay += t.amount; });
+  return `<div class="page">
+    <header><button data-a="back">←</button><h1>${esc(p.name)}</h1>${p.gone ? '<span style="width:40px"></span>' : '<button data-a="editPerson" title="Düzəlt">✎</button>'}</header>
+    <div style="background:var(--brand);color:#fff;padding:0 16px 20px;margin-top:-1px">
+      <div class="bal"><small>${b > 0 ? 'Sizə borcu' : b < 0 ? 'Artıq ödəyib' : 'Hesab bağlıdır'}</small><b class="num">${money(Math.abs(b))}</b></div>
+      ${p.phone ? `<div style="text-align:center;margin-top:4px"><a href="tel:${esc(p.phone)}" style="color:#fff;opacity:.9">📞 ${esc(p.phone)}</a></div>` : ''}
+    </div>
+    <main style="padding-bottom:30px">
+      ${p.gone ? '<p class="note" style="text-align:center;margin-top:0">Bu müştərinin adı Müştərilər siyahısından silinib. Hesabı yalnız baxmaq üçün saxlanılıb.</p>' : '<div class="two"><button class="btn debtb" data-a="newTx" data-v="debt">+ Borc yaz</button><button class="btn payb" data-a="newTx" data-v="pay">✓ Ödəniş aldım</button></div>'}
+      ${b > 0 && !p.gone ? `<div class="two" style="margin-top:10px">
+        <button class="btn ghost" style="margin:0;${p.phone ? '' : 'grid-column:span 2'}" data-a="payAll">✅ Tam ödədi</button>
+        ${p.phone ? `<button class="btn ghost" style="margin:0" data-a="remind">${WA_ICON}WhatsApp-da xatırlat</button>` : ''}</div>` : ''}
+      ${p.phone && !p.gone ? `<div class="two" style="margin-top:10px">
+        <a class="btn ghost" style="margin:0;text-decoration:none;color:inherit" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 Zəng et</a>
+        <a class="btn ghost" style="margin:0;text-decoration:none;color:inherit" href="https://wa.me/${waNum(p.phone)}">${WA_ICON}WhatsApp</a></div>` : ''}
+      <div class="card" style="margin-top:12px">
+        <div class="kv"><span>Ümumi yazılan borc</span><b class="num debt">${money(sumDebt)}</b></div>
+        <div class="kv"><span>Ümumi ödəniş</span><b class="num pay">${money(sumPay)}</b></div>
+        ${sumCost ? `<div class="kv"><span>Xərc</span><b class="num exp">${money(sumCost)}</b></div><div class="kv"><span>Qazanc</span><b class="num">${money(sumDebt - sumCost)}</b></div>` : ''}
+        <div class="kv total"><span>Qalıq</span><span class="num ${b > 0 ? 'debt' : b < 0 ? 'pay' : 'zero'}">${money(b)}</span></div>
+      </div>
+      ${p.note || (p.photos && p.photos.length) ? `<div class="card">
+        ${p.note ? `<div style="white-space:pre-wrap">📝 ${esc(p.note)}</div>` : ''}
+        ${p.photos && p.photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:${p.note ? 10 : 0}px">${p.photos.map((src, i) => `<img src="${src}" data-a="viewPhoto" data-v="${i}" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">`).join('')}</div>` : ''}
+      </div>` : ''}
+      ${p.gone ? '' : `<div class="two">
+        <button class="btn ghost" style="margin:0" data-a="editNote">📝 Qeyd / şəkil</button>
+        <button class="btn ghost" style="margin:0" data-a="shareAccount">📤 Paylaş / çap et</button></div>`}
+      ${tx.length ? personHistory(tx) : '<div class="empty">Hələ əməliyyat yoxdur</div>'}
+    </main></div>`;
+}
+
+// ---------- personal loans (money I lent; kept apart from every other total) ----------
+const loanLeft = l => l.amount - (l.back || 0);
+function loansCard() {
+  const open = db.loans.filter(l => loanLeft(l) > 0);
+  const sum = open.reduce((s, l) => s + loanLeft(l), 0);
+  return miniCard('openLoans', '🤝', 'Mənə borclu olanlar', open.length ? `${open.length} nəfər · ${money(sum)}` : 'Şəxsi borc verdiklərinizi yazın');
+}
+function renderLoans() {
+  const open = db.loans.filter(l => loanLeft(l) > 0).sort((a, b) => a.date.localeCompare(b.date));
+  const done = db.loans.filter(l => loanLeft(l) <= 0).sort((a, b) => b.date.localeCompare(a.date));
+  const row = l => `
+    <button class="row" data-a="editLoan" data-v="${l.id}" data-hold="loan:${l.id}">
+      <div class="avatar" style="background:#FEF3C7;color:#B45309">${esc(initials(l.name))}</div>
+      <div class="grow"><div class="t">${esc(l.name)}</div>
+        <div class="s">${fmtDate(l.date)}${l.note ? ' · ' + esc(l.note) : ''}${l.phone ? ' · ' + esc(l.phone) : ''}${l.back && loanLeft(l) > 0 ? ' · qaytarıb ' + money(l.back) : ''}</div></div>
+      <div class="amt num ${loanLeft(l) > 0 ? 'debt' : 'pay'}">${money(loanLeft(l) > 0 ? loanLeft(l) : l.amount)}<small>${loanLeft(l) > 0 ? 'borcludur' : 'qaytarıb'}</small></div>
+    </button>`;
+  const sum = open.reduce((s, l) => s + loanLeft(l), 0);
+  return `<div class="page">
+    <header><button data-a="closeLoans">←</button><h1>Mənə borclu olanlar</h1></header>
+    <div style="background:var(--brand);color:#fff;padding:0 16px 20px;margin-top:-1px">
+      <div class="bal"><small>Mənə qaytarılmalı</small><b class="num">${money(sum)}</b></div>
+      <div style="text-align:center;opacity:.85;font-size:13px">Bu borclar gəlir və xərc hesablarına qarışmır</div>
+    </div>
+    <main>
+      <button class="btn primary" data-a="newLoan" style="margin-top:0">+ Borc verdim</button>
+      ${open.length ? '<div class="section-title">Borclular (' + open.length + ')</div><div class="list">' + open.map(row).join('') + '</div>' : '<div class="empty">Hələ heç kimə borc yazılmayıb</div>'}
+      ${done.length ? '<div class="section-title">Qaytaranlar (' + done.length + ')</div><div class="list">' + done.map(row).join('') + '</div>' : ''}
+    </main></div>`;
+}
+
+function miniCard(action, icon, title, sub) {
+  return `<button class="card row" data-a="${action}" style="margin:12px 0 0;border-radius:14px">
+      <div style="font-size:26px">${icon}</div>
+      <div class="grow"><div class="t">${title}</div><div class="s">${sub}</div></div>
+      <span style="font-size:22px;color:var(--muted)">›</span></button>`;
+}
+// totals for 1 January – 31 December of a year
+function yearTotals(y) {
+  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0 };
+  for (let m = 1; m <= 12; m++) { const t = totals(y + '-' + pad(m)); for (const k in r) r[k] += t[k]; }
+  return r;
+}
+// income each usta brought in a month: work written minus its spare parts, best first
+function topUstas(month) {
+  const by = {};
+  db.tx.filter(x => (x.type === 'debt' || (x.type === 'adj' && !x.wo)) && monthKey(x.date) === month && x.pid && nameOf(x.pid) !== '(silinib)' && !db.hides.some(hd => hd.pid === x.pid)).forEach(x => {
+    const w = by[x.pid] || (by[x.pid] = { v: 0, n: 0, jobs: new Set() });
+    w.v += x.amount - (x.cost || 0); if (x.type === 'debt') w.jobs.add(x.addTo || x.id); w.n = w.jobs.size;
+  });
+  return Object.entries(by).filter(([, w]) => w.n).sort((a, c) => c[1].v - a[1].v);
+}
+// one customer's work entries (same rule as topUstas)
+const ustaWork = pid => db.tx.filter(x => x.pid === pid && (x.type === 'debt' || (x.type === 'adj' && !x.wo)));
+// usta's name, also for one whose name was deleted after paying everything
+function nameOf(pid) {
+  const p = db.people.find(x => x.id === pid);
+  if (p) return p.name;
+  const t = db.tx.find(x => x.pid === pid && x.pname);
+  if (t) return t.pname;
+  // deleted before names were kept on the entries: the trash still knows it
+  const e = db.trash.find(x => x.kind === 'person' && x.person.id === pid);
+  return e ? e.person.name : '(silinib)';
+}
+// one chosen day of the report: its figures and every job written that day
+function renderDay() {
+  const d = state.day, day = byDay(db.tx.filter(t => t.date === d))[0] || { debt: 0, inc: 0, exp: 0, cost: 0, icost: 0, loss: 0, pay: 0 };
+  const list = db.tx.filter(t => t.date === d && !t.corr && (t.type === 'inc' || t.type === 'loss' || (t.type === 'adj' && !t.wo) || (t.type === 'debt' && t.pid))).sort((a, c) => (c.created || 0) - (a.created || 0));
+  const step = n => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  return `<div class="monthbar"><button class="iconbtn" data-a="dayStep" data-v="${step(-1)}">‹</button><b data-a="pickDate" style="cursor:pointer">${fmtDate(d)}<span> ▾</span></b><button class="iconbtn" data-a="dayStep" data-v="${step(1)}">›</button></div>
+    <button class="btn ghost" data-a="wholeMonth" style="margin:0">← Bütün ay — ${MONTHS[+d.slice(5, 7) - 1]}</button>
+    <div class="card" style="margin-top:12px">
+      <div class="kv"><span>Yazılan iş (borc)</span><b class="num debt">${money(workNet(day))}</b></div>
+      ${incLines(day)}
+      ${day.dayLoss ? `<div class="kv"><span>Ziyan (aydan çıxılır)</span><b class="num debt">−${money(day.dayLoss)}</b></div>` : ''}
+      ${day.cost ? `<div class="kv"><span>Xərc</span><b class="num exp">${money(day.cost)}</b></div>` : ''}
+      <div class="kv total"><span>Xalis gəlir</span><span class="num pay">${money(gross(day))}</span></div>
+    </div>
+    <div class="list">${list.length ? list.map(t => `
+      <button class="row" data-a="editTx" data-v="${t.id}">
+        <div class="avatar" style="${t.type === 'inc' ? 'background:var(--pay-soft);color:var(--pay)' : t.type === 'loss' ? 'background:var(--debt-soft);color:var(--debt)' : ''}">${t.type === 'inc' ? incIcon(t) : t.type === 'loss' ? '📉' : esc(initials(nameOf(t.pid)))}</div>
+        <div class="grow"><div class="t">${t.type === 'debt' || t.type === 'adj' ? esc(nameOf(t.pid)) : esc(t.note || (t.type === 'loss' ? 'Ziyan' : 'Nağd iş'))}</div>
+          <div class="s">${t.type === 'inc' ? incWord(t) : t.type === 'loss' ? 'Ziyan' : t.type === 'adj' ? 'Məbləğ düzəlişi' : esc(t.note || 'Borc')}${t.cost ? ` · <span class="exp">xərc ${money(t.cost)}</span>` : ''} · ${stamp(t).split(', ').pop()}</div></div>
+        <div class="amt num ${t.type === 'debt' || t.type === 'adj' ? 'debt' : t.type === 'loss' ? 'debt' : 'pay'}">${t.type === 'loss' ? '−' + money(t.amount + (t.cost || 0)) : (t.amount - (t.cost || 0) < 0 ? '' : '+') + money(t.amount - (t.cost || 0))}</div>
+      </button>`).join('') : '<div class="empty" style="padding:16px">Bu gün iş yazılmayıb</div>'}</div>`;
+}
+function renderReport() {
+  const [y, m] = state.month.split('-').map(Number);
+  const t = totals(state.month);
+  const pname = nameOf;
+  const days = byDay(db.tx.filter(x => monthKey(x.date) === state.month && x.type !== 'pexp' && x.type !== 'exp' && x.type !== 'pay'));
+
+  if (state.day) return renderDay();
+  return `<div class="monthbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b data-a="pickDate" style="cursor:pointer">${MONTHS[m - 1]} ${y}<span> ▾</span></b><button class="iconbtn" data-a="month" data-v="1">›</button></div>
+    <button class="btn ghost" data-a="shareReport" style="margin:0">📤 Bu ayın hesabatını göndər</button>
+    <button class="btn ghost" data-a="exportExcel">📗 Excel faylı kimi göndər</button>
+    ${(() => {
+      const top = topUstas(state.month);
+      const best = days.length ? days.reduce((a, d) => gross(d) > gross(a) ? d : a, days[0]) : null;
+      const yt = yearTotals(y);
+      return [
+        best ? miniCard('openDays', '🗓️', 'Günlər üzrə', `${days.length} gün · ən yaxşı: ${fmtDate(best.date).replace(/ \d{4}$/, '')} — ${money(gross(best))}`) : '',
+        miniCard('openMonth', '📋', `Ayın hesabı — ${MONTHS[m - 1]}`, `Xalis gəlir: ${money(gross(t))}`),
+        miniCard('openYear', '💰', `İllik gəlir — ${y}`, `1 Yanvar – 31 Dekabr: ${money(gross(yt))}`),
+        top.length ? miniCard('openTop', '🏆', 'Ən çox iş verən müştərilər', `1. ${esc(pname(top[0][0]))} — ${money(top[0][1].v)}`) : '',
+        miniCard('openCharts', '📈', 'Qrafiklər', 'Gün üzrə gəlir · ay üzrə gəlir və xərc'),
+        miniCard('openCompare', '⚖️', 'İki ayı müqayisə et', 'Gəlir, xərc və qalıq yan-yana')
+      ].join('');
+    })()}
+    ${loansCard()}`;
+}
+
+function renderSettings() {
+  const ago = sync.last ? new Date(sync.last) : null;
+  const when = ago ? pad(ago.getHours()) + ':' + pad(ago.getMinutes()) + (ago.toDateString() === new Date().toDateString() ? '' : ', ' + ago.getDate() + ' ' + MONTHS[ago.getMonth()]) : '';
+  let main;
+  if (sync.account) {
+    const line = sync.status === 'syncing' ? '⏳ Yazılır...' : sync.status === 'error' ? '⚠️ ' + esc(sync.msg) : when ? 'Son yazılma: ' + when : '';
+    main = `<div class="card" style="text-align:center">
+      <div style="font-size:40px">✅</div>
+      <b style="font-size:17px">Google hesabına qoşulub</b>
+      <p class="note" style="margin-bottom:0"><b>${esc(sync.account)}</b></p>
+      <p class="note">${line}</p>
+      <button class="btn primary" data-a="syncNow">İndi yenilə</button>
+    </div>`;
+  } else {
+    main = `<div class="card" style="text-align:center">
+      <div style="font-size:40px">☁️</div>
+      <b style="font-size:17px">Google hesabı ilə yedəklə</b>
+      <p class="note">Məlumatlar Google hesabınıza avtomatik yazılır. Yeni telefonda eyni hesabı seçin — hər şey geri gələcək.</p>
+      <button class="btn primary" data-a="syncLink">Google hesabını seç</button>
+    </div>`;
+  }
+  const lockOn = hasNative && Android.lockEnabled && Android.lockEnabled();
+  const pinOn = hasNative && Android.pinSet && Android.pinSet();
+  return main + `
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:28px">${pinOn || lockOn ? '🔒' : '🔓'}</div>
+        <div class="grow"><b>PIN kod</b><div class="note">${pinOn ? 'Qoyulub — ' + Android.pinLength() + ' rəqəm' : 'Tətbiqi başqası aça bilməsin'}</div></div>
+        ${pinOn ? '' : '<button class="mini" data-a="pinNew">Qoy</button>'}
+      </div>
+      ${pinOn ? '<div class="two" style="margin-top:12px"><button class="btn ghost" style="margin:0" data-a="pinChange">Dəyiş</button><button class="btn danger" style="margin:0" data-a="pinRemove">Sil</button></div>' : ''}
+      ${pinOn && Android.bioAvailable() ? `<div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)">
+        <div style="font-size:24px">👆</div><div class="grow"><b>Barmaq izi</b><div class="note">${Android.bioEnabled() ? 'PIN ilə yanaşı barmaq izi ilə də açılır' : 'PIN yazmadan barmaq izi ilə açmaq'}</div></div>
+        <button class="mini" data-a="bioToggle">${Android.bioEnabled() ? 'Söndür' : 'Yandır'}</button></div>` : ''}
+      ${pinOn && Android.lockOnScreenOff ? (() => { const scr = Android.lockOnScreenOff(); return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)"><div style="display:flex;align-items:center;gap:12px"><div style="font-size:24px">⏱</div><div class="grow"><b>Nə vaxt PIN soruşulsun</b></div></div>
+        <div class="seg" style="margin-top:10px"><button class="pay ${scr ? '' : 'on'}" data-a="lockWhen" data-v="">Proqramdan çıxanda</button><button class="pay ${scr ? 'on' : ''}" data-a="lockWhen" data-v="1">Telefon kilidlənəndə</button></div>
+        <div class="note" style="margin-top:6px">${scr ? 'Proqramdan çıxıb qayıdanda PIN soruşulmayacaq. Telefonun ekranı sönəndə proqram da kilidlənəcək.' : 'Proqramdan hər çıxanda PIN soruşulacaq.'}</div></div>`; })() : ''}
+      ${lockOn && !pinOn ? '<p class="note" style="margin-bottom:0">İndi tətbiq telefonun kilidi ilə açılır. <a href="#" data-a="toggleLock">Söndür</a></p>' : ''}
+    </div>
+    <details class="card more">
+      <summary>Əlavə</summary>
+      <button class="btn ghost" data-a="share">Faylı göndər (WhatsApp, Gmail...)</button>
+      <button class="btn ghost" data-a="import">Fayldan bərpa et</button>
+      ${sync.account ? '<button class="btn ghost" data-a="syncUnlink">Google hesabından ayır</button>' : ''}
+    </details>
+    <p class="note" style="text-align:center">${db.people.length} müştəri · ${db.tx.length} əməliyyat · versiya ${APP_VERSION}</p>`;
+}
+
+function txLabel(t) {
+  return t.type === 'debt' ? 'Borc' : t.type === 'pay' ? 'Ödəniş' : t.type === 'exp' ? 'Xərc' : t.type === 'pexp' ? 'Xərcim' : t.type === 'inc' ? (t.other ? 'Digər gəlir' : 'Nağd iş') : t.type === 'loss' ? 'Ziyan' : 'Düzəliş';
+}
+const mineTotal = month => db.tx.reduce((s, t) => s + (t.type === 'pexp' && monthKey(t.date) === month ? t.amount : 0), 0);
+const catSum = (cid, month) => db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.cid === cid && (!month || monthKey(t.date) === month) ? t.amount : 0), 0);
+const CAT_IDEAS = ['Özüm', 'Ev', 'Ərzaq', 'Maşın', 'Kommunal', 'Telefon'];
+
+// Hesabat and Xərclərim each remember their own chosen day
+const dayKey = () => state.tab === 'mine' ? 'mineDay' : 'day';
+function mineBar() {
+  const d = state.mineDay;
+  if (!d) { const [y, m] = state.month.split('-').map(Number); return `<div class="monthbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b data-a="pickDate" style="cursor:pointer">${MONTHS[m - 1]} ${y}<span> ▾</span></b><button class="iconbtn" data-a="month" data-v="1">›</button></div>`; }
+  const step = n => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  return `<div class="monthbar"><button class="iconbtn" data-a="dayStep" data-v="${step(-1)}">‹</button><b data-a="pickDate" style="cursor:pointer">${fmtDate(d)}<span> ▾</span></b><button class="iconbtn" data-a="dayStep" data-v="${step(1)}">›</button></div>
+    <button class="btn ghost" data-a="wholeMonth" style="margin:0 0 12px">← Bütün ay — ${MONTHS[+d.slice(5, 7) - 1]}</button>`;
+}
+function monthBar() {
+  const [y, m] = state.month.split('-').map(Number);
+  return `<div class="monthbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${MONTHS[m - 1]} ${y}</b><button class="iconbtn" data-a="month" data-v="1">›</button></div>`;
+}
+
+// newest entry in a section: "son: 10 ₼ · 22:41" (with the date if it wasn't today)
+function lastSpent(cid) {
+  let last = null;
+  for (const t of db.tx) if (t.type === 'pexp' && t.cid === cid && (!last || (t.created || 0) > (last.created || 0))) last = t;
+  if (!last) return '';
+  const c = new Date(last.created || 0);
+  const when = (last.date === today() ? '' : fmtDate(last.date).replace(/ \d{4}$/, '') + ', ') + pad(c.getHours()) + ':' + pad(c.getMinutes());
+  return `<small>son: ${money(last.amount)} · ${when}</small>`;
+}
+function renderMine() {
+  if (!db.cats.length) return `<div class="empty">Xərclərinizi bölmələrə ayırın.<br>Hazır bölmə seçin və ya aşağıdakı “+ Bölmə” ilə özünüz yaradın.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">${CAT_IDEAS.map(n => `<button class="mini" data-a="quickCat" data-v="${esc(n)}">+ ${esc(n)}</button>`).join('')}</div>`;
+  const day = state.mineDay;
+  const sum = cid => day ? db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.cid === cid && t.date === day ? t.amount : 0), 0) : catSum(cid, state.month);
+  const total = db.cats.reduce((s, c) => s + sum(c.id), 0);
+  const list = db.cats.map(c => ({ c, v: sum(c.id) })).sort((a, b) => (b.c.star ? 1 : 0) - (a.c.star ? 1 : 0) || b.v - a.v || a.c.name.localeCompare(b.c.name, 'az'));
+  return mineBar() + `<div class="list">${list.map(({ c, v }) => `
+      <button class="row" data-a="openCat" data-v="${c.id}" data-hold="cat:${c.id}">
+        <div class="avatar" style="background:var(--exp-soft);color:var(--exp)">${esc(initials(c.name))}</div>
+        <div class="grow"><div class="t">${c.star ? '⭐ ' : ''}${esc(c.name)}</div><div class="s">${total && v ? Math.round(v / total * 100) + (day ? '% o gün' : '% bu ay') : day ? 'O gün xərc yoxdur' : 'Bu ay xərc yoxdur'}</div></div>
+        <div class="amt num ${v ? 'exp' : 'zero'}">${money(v)}${c.star ? lastSpent(c.id) : ''}</div>
+      </button>`).join('')}</div>`;
+}
+
+function renderCat() {
+  const c = db.cats.find(x => x.id === state.cat);
+  if (!c) { state.cat = null; return ''; }
+  const tx = db.tx.filter(t => t.type === 'pexp' && t.cid === c.id && monthKey(t.date) === state.month)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+  return `<div class="page">
+    <header><button data-a="closeCat">←</button><h1>${esc(c.name)}</h1><button data-a="starCat" data-v="${c.id}" title="Ulduz">${c.star ? '⭐' : '☆'}</button><button data-a="editCat" title="Düzəlt">✎</button></header>
+    <div style="background:var(--brand);color:#fff;padding:0 16px 20px;margin-top:-1px">
+      <div class="bal"><small>Bu ay</small><b class="num">${money(catSum(c.id, state.month))}</b></div>
+      <div style="text-align:center;opacity:.85;font-size:13px">Bütün dövr: ${money(catSum(c.id))}</div>
+    </div>
+    <main style="padding-bottom:30px">
+      ${monthBar()}
+      <button class="btn expb" data-a="newPexp" style="margin-top:0">+ Xərc yaz</button>
+      ${tx.length ? byDay(tx).map(d => `
+        <div class="dayhead"><b>${fmtDate(d.date)}</b><span class="num"><span class="exp">${money(d.items.reduce((s, t) => s + t.amount, 0))}</span></span></div>
+        <div class="list">${d.items.map(t => `
+          <button class="row" data-a="editTx" data-v="${t.id}" data-hold="tx:${t.id}">
+            <div class="grow"><div class="t">${esc(t.note || 'Xərc')}</div><div class="s">🕒 ${stamp(t)}</div></div>
+            <div class="amt num exp">−${money(t.amount)}</div>
+            <span class="del" style="display:grid;place-items:center">✎</span>
+          </button>`).join('')}</div>`).join('') : '<div class="empty">Bu ay bu bölmədə xərc yoxdur</div>'}
+    </main></div>`;
+}
+function renderTrash() {
+  const ago = ms => { const d = new Date(ms); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+  const pname = id => { const p = db.people.find(x => x.id === id); return p ? p.name : ''; };
+  const rows = db.trash.map(e => {
+    let icon, title, sub;
+    if (e.kind === 'loan') {
+      icon = `<div class="avatar" style="background:#FEF3C7;color:#B45309">${esc(initials(e.loan.name))}</div>`;
+      title = esc(e.loan.name);
+      sub = `Mənə borclu · ${money(loanLeft(e.loan))}`;
+    } else if (e.kind === 'cat') {
+      icon = `<div class="avatar" style="background:var(--exp-soft);color:var(--exp)">${esc(initials(e.cat.name))}</div>`;
+      title = esc(e.cat.name);
+      sub = `Xərc bölməsi · ${e.tx.length} xərc · ${money(e.tx.reduce((s, t) => s + t.amount, 0))}`;
+    } else if (e.kind === 'wo') {
+      icon = `<div class="avatar" style="background:var(--debt-soft);color:var(--debt)">📉</div>`;
+      title = `${esc(e.name)} · ${money(e.amount)}`;
+      sub = e.keepIncome ? 'Borc silindi · gəlir qalıb' : 'Borc silindi · bu ayın gəlirindən çıxılıb';
+    } else if (e.kind === 'person') {
+      const debt = e.tx.reduce((s, t) => s + (t.type === 'debt' || t.type === 'adj' ? t.amount : t.type === 'pay' ? -t.amount : 0), 0);
+      icon = `<div class="avatar">${esc(initials(e.person.name))}</div>`;
+      title = esc(e.person.name);
+      sub = e.keptTx ? 'Müştəri · hesab bağlı · gəlir hesabda qalıb' : `Müştəri · ${e.tx.length} əməliyyat · borc ${money(debt)}`;
+    } else {
+      const t = e.tx;
+      icon = `<div class="avatar" style="background:var(--bg);color:var(--muted)">₼</div>`;
+      const cn = t.cid && (db.cats.find(c => c.id === t.cid) || {}).name;
+      title = `${txLabel(t)} ${money(t.amount)}${t.pid && pname(t.pid) ? ' · ' + esc(pname(t.pid)) : ''}${cn ? ' · ' + esc(cn) : ''}`;
+      sub = `${fmtDate(t.date)}${t.note ? ' · ' + esc(t.note) : ''}`;
+    }
+    return `<div class="row">${icon}<div class="grow"><div class="t">${title}</div><div class="s">${sub}</div><div class="s">Silinib: ${ago(e.at)}</div></div>
+      <button class="mini" data-a="restore" data-v="${e.id}">Qaytar</button><button class="del" data-a="purge" data-v="${e.id}" title="Həmişəlik sil">✕</button></div>`;
+  }).join('');
+  return `<div class="page">
+    <header><button data-a="closeTrash">←</button><h1>Zibil qutusu</h1></header>
+    <main>
+      <p class="note" style="margin-top:0">Silinənlər burada qalır. “Qaytar” ilə geri gətirə, ✕ ilə həmişəlik silə bilərsiniz.</p>
+      ${db.trash.length ? '<div class="list">' + rows + '</div><button class="btn danger" data-a="emptyTrash">Zibil qutusunu boşalt</button>' : '<div class="empty">Zibil qutusu boşdur</div>'}
+    </main></div>`;
+}
+
+// ---------- PIN lock ----------
+const WA_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" style="vertical-align:-5px;margin-right:6px"><path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/><path fill="#fff" d="M8.6 7.2c.2-.4.5-.4.8-.4h.6c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .6l-.5.7c-.1.2-.2.3 0 .6.5.9 1.3 1.7 2.3 2.2.3.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.3.1.4.2.4.4 0 .5-.2 1.2-.6 1.5-.5.4-1.2.7-2 .6-1.4-.2-3.3-1.1-4.7-2.6S7.9 10 7.8 9c-.1-.8.4-1.5.8-1.8z"/></svg>';
+const FINGER_ICON = '<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 11v3a8 8 0 0 1-1.5 4.7M8.5 20a10 10 0 0 0 1.5-5.5V11a2 2 0 0 1 4 0v1M16 15.5c0 1.6-.2 3-.7 4.4M6.3 17A11 11 0 0 0 7 13v-2a5 5 0 0 1 9-3M17.7 10.6c.2.5.3 1 .3 1.6v1M4.2 14.5A13 13 0 0 0 5 11a7 7 0 0 1 12.6-4.2M3 7.5a9.6 9.6 0 0 1 2-2.6"/></svg>';
+const BACK_ICON = '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="M17 9l-5 5M12 9l5 5"/></svg>';
+function renderPin() {
+  const P = state.pin;
+  const title = { unlock: 'PIN kodu daxil edin', verify: 'Hazırkı PIN kodu daxil edin', set1: 'Yeni PIN kod', set2: 'PIN kodu təkrar yazın' }[P.mode];
+  const dots = Array.from({ length: P.len }, (_, i) => `<i class="${i < P.entered.length ? 'on' : ''}"></i>`).join('');
+  // the fingerprint key sits left of 0 when it can be used, the delete key on the right
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => `<button data-a="pinKey" data-v="${k}">${k}</button>`).join('')
+    + (P.mode === 'unlock' && bioOn() ? `<button class="ic" data-a="bioAsk" title="Barmaq izi">${FINGER_ICON}</button>` : '<span></span>')
+    + `<button data-a="pinKey" data-v="0">0</button><button class="ic" data-a="pinKey" data-v="del" title="Sil">${BACK_ICON}</button>`;
+  return `<div class="pinpage">
+    <img class="logo" src="icon.png" alt="">
+    <h1>Hesabat</h1>
+    <h2>${title}</h2>
+    ${P.mode === 'set1' ? `<div class="seg" style="width:220px;margin:0 auto 6px"><button class="pay ${P.len === 4 ? 'on' : ''}" data-a="pinLen" data-v="4">4 rəqəm</button><button class="pay ${P.len === 6 ? 'on' : ''}" data-a="pinLen" data-v="6">6 rəqəm</button></div>` : ''}
+    <div class="dots ${P.err ? 'shake' : ''}" id="pinDots">${dots}</div>
+    <div class="pinerr" id="pinErr">${esc(P.err || '')}</div>
+    <div class="pad">${keys}</div>
+    ${P.mode === 'unlock' ? '<button class="pinlink" data-a="pinForgot">PIN-i unutdum</button>' : '<button class="pinlink" data-a="pinCancel">Ləğv et</button>'}
+  </div>`;
+}
+function pinDone() {
+  const P = state.pin, code = P.entered;
+  P.entered = ''; P.err = '';
+  if (P.mode === 'unlock' || P.mode === 'verify') {
+    if (!Android.checkPin(code)) { P.err = 'Səhv PIN kod'; return render(); }
+    if (P.mode === 'unlock') { state.pin = null; render(); if (window.onAppResume) window.onAppResume(); return; }
+    if (P.next === 'remove') { Android.clearPin(); state.pin = null; toast('PIN kod silindi'); return render(); }
+    Object.assign(P, { mode: 'set1', len: 4 });
+  } else if (P.mode === 'set1') {
+    Object.assign(P, { mode: 'set2', first: code });
+  } else if (code === P.first) {
+    Android.setPin(code); state.pin = null; toast('PIN kod qoyuldu');
+  } else {
+    Object.assign(P, { mode: 'set1', first: '', err: 'PIN kodlar eyni deyil, yenidən yazın' });
+  }
+  render();
+}
+const bioOn = () => hasNative && Android.bioEnabled && Android.bioEnabled() && Android.bioAvailable();
+window.showPinLock = function (askBio) {
+  if (!(state.pin && state.pin.mode === 'unlock')) {
+    state.sheet = null;
+    state.pin = { mode: 'unlock', len: Android.pinLength(), entered: '', err: '' };
+    render();
+  }
+  if (askBio && bioOn()) Android.bioPrompt();
+};
+window.onBioOk = function () {
+  if (state.pin && state.pin.mode === 'unlock') { state.pin = null; render(); if (window.onAppResume) window.onAppResume(); }
+};
+window.onPinReset = function () {
+  state.pin = null; render();
+  alert('PIN kod silindi. İstəsəniz, Ayarlar bölməsində yenisini qoyun.');
+};
+
+// ---------- job templates: one tap fills amount, spare part and note ----------
+function tplChips() {
+  const chips = db.tpls.slice().sort((a, b) => a.note.localeCompare(b.note, 'az')).map(t =>
+    `<button class="chip" data-a="useTpl" data-v="${t.id}">${esc(t.note)} · ${money(t.amount)}</button>`).join('');
+  return `<div class="tplbox"><div class="note" style="display:flex;justify-content:space-between"><b>⚡ Hazır işlər</b><a href="#" data-a="manageTpl">idarə et</a></div>
+    <div class="chips">${chips || '<span class="note">Hələ yoxdur — aşağıda işi yazıb “☆ Şablon et” basın</span>'}</div></div>`;
+}
+function renderTplManage() {
+  return `<h2>⚡ Hazır işlər</h2>
+    <div class="list">${db.tpls.length ? db.tpls.map(t => `<div class="row"><div class="grow"><div class="t">${esc(t.note)}</div>
+      <div class="s">${money(t.amount)}${t.cost ? ' · xərc ' + money(t.cost) : ''}</div></div>
+      <button class="del" data-a="delTpl" data-v="${t.id}" title="Sil">✕</button></div>`).join('') : '<div class="empty" style="padding:16px">Şablon yoxdur</div>'}</div>
+    <label>Yeni iş</label><input class="field" id="t_note" placeholder="məs. A53 Cpu">
+    <div class="two" style="margin-top:8px"><input class="field num" id="t_amount" inputmode="decimal" placeholder="Qiymət ${cur()}"><input class="field num" id="t_cost" inputmode="decimal" placeholder="Xərc ${cur()}"></div>
+    <button class="btn primary" data-a="addTpl">+ Əlavə et</button>
+    ${db.tpls.length ? '<button class="btn danger" data-a="clearTpl">Hamısını təmizlə</button>' : ''}`;
+}
+
+function renderSheet() {
+  const s = state.sheet;
+  let h = '<div class="shade" data-a="closeShade"><div class="sheet">';
+  if (s.kind === 'remind') {
+    h += `<h2>${WA_ICON}WhatsApp-da xatırlat</h2>
+      <div class="tplbox"><div class="note"><b>💳 Kartlarım</b> — basın, o kartla göndərilsin</div>
+        <div class="chips">${db.cards.length ? db.cards.map(c => `<span class="chip" style="display:inline-flex;gap:10px;align-items:center"><span data-a="useCard" data-v="${c.id}">${esc(c.v)}</span><span data-a="delCard" data-v="${c.id}" style="color:var(--muted)">✕</span></span>`).join('') : '<span class="note">Hələ yoxdur — kartı yazıb “☆ Şablon et” basın</span>'}</div></div>
+      <label>Başqa kart (istəyə bağlı)</label><input class="field num" id="f_card" inputmode="numeric" value="" placeholder="0000 0000 0000 0000">
+      <p class="note" style="margin-top:6px;display:flex;justify-content:space-between;gap:8px"><span>Mesajın sonuna yazılacaq.</span><a href="#" data-a="saveCard" style="color:var(--brand);font-weight:600;white-space:nowrap">☆ Şablon et</a></p>
+      <button class="btn payb" data-a="sendRemind">Göndər</button>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
+  }
+  if (s.kind === 'sameName') {
+    // a new customer with a name that is already in the list: the same person, or someone new?
+    const p = db.people.find(x => x.id === s.same);
+    const b = p ? balanceOf(p.id) : 0, last = p ? lastActivity(p.id) : '';
+    h += `<h2>Eyni adlı müştəri var</h2>
+      <div class="list"><div class="row"><div class="avatar">${esc(initials(p ? p.name : ''))}</div>
+        <div class="grow"><div class="t">${esc(p ? p.name : '')}</div><div class="s">${[p && p.phone ? esc(p.phone) : '', b > 0 ? 'Borcu: ' + money(b) : '', last ? 'Son: ' + fmtDate(last) : ''].filter(Boolean).join(' · ') || 'Əməliyyat yoxdur'}</div></div></div></div>
+      <p class="note" style="text-align:center">Bu həmin müştəridir? Üzərinə yazılsın?</p>
+      <button class="btn primary" data-a="sameYes">✓ Bəli, həmin müştəridir — üzərinə yaz</button>
+      <button class="btn ghost" data-a="sameNo">+ Xeyr, yeni müştəri yarat</button>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Geri</button></div></div>';
+  }
+  if (s.kind === 'pnote') {
+    const p = db.people.find(x => x.id === s.id);
+    h += `<h2>📝 Qeyd və şəkillər</h2><p class="note" style="margin-top:-8px">${esc(p.name)}</p>
+      <label>Qeyd</label><textarea class="field" id="f_pnote" rows="4" placeholder="məs. iPhone 11, ekran dəyişdi, zəmanət 3 ay" style="resize:vertical">${esc(s.note)}</textarea>
+      <label>Şəkillər (${s.photos.length}/${MAX_PHOTOS})</label>
+      ${s.photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${s.photos.map((src, i) => `<div style="position:relative"><img src="${src}" alt="" style="width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block">
+        <button data-a="delPhoto" data-v="${i}" title="Sil" style="position:absolute;top:-6px;right:-6px;width:26px;height:26px;border-radius:50%;background:var(--debt);color:#fff;font-weight:800;line-height:26px">✕</button></div>`).join('')}</div>` : '<p class="note" style="margin:0">Hələ şəkil yoxdur</p>'}
+      ${s.photos.length < MAX_PHOTOS ? '<button class="btn ghost" data-a="addPhoto">📷 Şəkil əlavə et</button>' : ''}
+      <button class="btn primary" data-a="saveNote">Yadda saxla</button>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
+  }
+  if (s.kind === 'photo') {
+    const p = db.people.find(x => x.id === s.id), src = p && p.photos ? p.photos[s.i] : '';
+    h += `<img src="${src}" alt="" style="width:100%;border-radius:12px;display:block">`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'shareAcc') {
+    const p = db.people.find(x => x.id === s.id);
+    h += `<h2>📤 ${esc(p.name)} — hesab</h2><p class="note" style="margin-top:-8px">Bütün borclar, ödənişlər və qalıq</p>
+      <button class="btn ghost" data-a="accText">💬 Mətn kimi göndər (WhatsApp və s.)</button>
+      <button class="btn ghost" data-a="accPrint">🖨 Çap et / PDF kimi saxla</button>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'charts') {
+    const [y, m] = state.month.split('-').map(Number), n = new Date(y, m, 0).getDate();
+    const byD = {};
+    byDay(db.tx.filter(x => monthKey(x.date) === state.month && x.type !== 'pexp' && x.type !== 'exp' && x.type !== 'pay')).forEach(d => { byD[+d.date.slice(8)] = gross(d); });
+    const vals = Array.from({ length: n }, (_, i) => byD[i + 1] || 0);
+    const months = MONTHS.map((_, i) => { const k = y + '-' + pad(i + 1); return { i, inc: gross(totals(k)), exp: mineTotal(k) }; });
+    const dot = c => `<i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};margin-right:4px"></i>`;
+    h += `<h2>📈 Qrafiklər</h2>
+      <div class="card"><b>Gün üzrə gəlir — ${MONTHS[m - 1]} ${y}</b><div class="note" style="margin:2px 0 8px">cəmi ${money(vals.reduce((a, v) => a + v, 0))}</div>
+        ${barChart(vals.map(v => [v]), vals.map((_, i) => [1, 5, 10, 15, 20, 25, n].includes(i + 1) ? String(i + 1) : ''), ['var(--pay)'])}</div>
+      <div class="card"><b>Ay üzrə gəlir və xərc — ${y}</b>
+        <div class="note" style="margin:2px 0 8px;display:flex;gap:14px"><span>${dot('var(--pay)')}Gəlir</span><span>${dot('var(--exp)')}Xərclərim</span></div>
+        ${barChart(months.map(x => [x.inc, x.exp]), months.map(x => monthShort(x.i)), ['var(--pay)', 'var(--exp)'])}</div>
+      <div class="list">${months.filter(x => x.inc || x.exp).map(x => `<div class="row"><div class="grow"><div class="t">${MONTHS[x.i]}</div><div class="s">xərc ${money(x.exp)}</div></div>
+        <div class="amt num ${x.inc < 0 ? 'debt' : 'pay'}">${money(x.inc)}<small>gəlir</small></div></div>`).join('') || '<div class="empty" style="padding:16px">Bu il hələ məlumat yoxdur</div>'}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'compare') {
+    const ms = allMonths(), a = s.a, b = s.b;
+    const lbl = k => MONTHS[+k.slice(5) - 1] + ' ' + k.slice(0, 4);
+    const opt = sel => ms.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${lbl(k)}</option>`).join('');
+    const ta = totals(a), tb = totals(b);
+    // [label, value, bold, a cost (less is better)]
+    const rows = [['Yazılan iş (borc)', r => workNet(r)], ['Nağd işlər', r => cashNet(r)], ['Digər gəlirlər', r => r.oth || 0], ['Ziyan', r => -(r.loss || 0)],
+      ['Xalis gəlir', r => gross(r), 1], ['Xərclərim', (r, k) => mineTotal(k), 0, 1], ['Qalıq', (r, k) => gross(r) - mineTotal(k), 1]];
+    h += `<h2>⚖️ İki ayı müqayisə et</h2>
+      <div class="two"><select class="field" id="cmpA">${opt(a)}</select><select class="field" id="cmpB">${opt(b)}</select></div>
+      <div class="list" style="margin-top:12px">${rows.map(([l, f, bold, cost]) => {
+        const va = f(ta, a), vb = f(tb, b), d = vb - va, good = cost ? d < 0 : d > 0;
+        return `<div class="row"><div class="grow"><div class="t"${bold ? ' style="font-weight:800"' : ''}>${l}</div>
+          <div class="s">${lbl(a)}: <b class="num">${money(va)}</b></div><div class="s">${lbl(b)}: <b class="num">${money(vb)}</b></div></div>
+          <div class="amt num ${!d ? 'zero' : good ? 'pay' : 'debt'}">${d > 0 ? '+' : ''}${money(d)}<small>fərq</small></div></div>`;
+      }).join('')}</div>
+      <p class="note" style="text-align:center">Fərq: ${lbl(b)} − ${lbl(a)}</p>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'tpls') return h + renderTplManage() + '<button class="btn ghost" data-a="backFromTpl">Bağla</button></div></div>';
+  if (s.kind === 'loan') {
+    const l = s.id ? db.loans.find(x => x.id === s.id) : { name: '', amount: 0, back: 0, date: today(), note: '' };
+    h += `<h2>${s.id ? 'Borcu düzəlt' : 'Borc verdim'}</h2>
+      <label>Kimə</label><input class="field" id="f_name" value="${esc(l.name)}" placeholder="məs. Arif">
+      <label>Telefon (istəyə bağlı)</label><div style="display:flex;gap:8px"><input class="field" id="f_phone" type="tel" value="${esc(l.phone || '')}" placeholder="050 000 00 00" style="flex:1;min-width:0">
+        <button class="btn ghost" data-a="pickContact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇 Kontaktdan</button></div>
+      <label>Məbləğ (${cur()})</label><input class="field big num" id="f_amount" inputmode="decimal" placeholder="0" value="${amountInput(l.amount)}">
+      ${s.id ? `<label>Qaytarıb (${cur()})</label><input class="field num" id="f_back" inputmode="decimal" placeholder="0" value="${amountInput(l.back)}">` : ''}
+      <label>Tarix</label><input class="field" id="f_date" type="date" value="${l.date}">
+      <label>Qeyd (istəyə bağlı)</label><input class="field" id="f_note" value="${esc(l.note || '')}" placeholder="məs. maşın təmiri üçün">
+      <button class="btn primary" data-a="saveLoan">Yadda saxla</button>
+      ${s.id && loanLeft(l) > 0 ? '<button class="btn payb" data-a="loanBack">✅ Hamısını qaytardı</button>' : ''}
+      ${s.id ? '<button class="btn danger" data-a="delLoan">Sil</button>' : ''}`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
+  }
+  if (s.kind === 'pickDate') {
+    // choose a month (with its year) or a single day for the report
+    const y = s.year || +state.month.slice(0, 4), cm = state.month;
+    h += `<h2>Tarix seç</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 10px"><button class="iconbtn" data-a="pickYear" data-v="${y - 1}">‹</button><b style="font-size:18px">${y}</b><button class="iconbtn" data-a="pickYear" data-v="${y + 1}">›</button></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${MONTHS.map((n, i) => { const mk = y + '-' + pad(i + 1); return `<button class="btn ${mk === cm && !state[dayKey()] ? 'primary' : 'ghost'}" style="margin:0;padding:10px 4px;font-size:14px" data-a="pickMonth" data-v="${mk}">${n}</button>`; }).join('')}</div>
+      <label style="margin-top:16px">Və ya bir gün</label><input class="field" id="f_day" type="date" value="${state[dayKey()] || today()}">
+      <button class="btn primary" data-a="pickDay">Bu günü göstər</button>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'cur') {
+    h += `<h2>💱 Valyuta</h2><p class="note" style="margin-top:-8px">Bütün məbləğlərin yanında bu işarə görünəcək. Rəqəmlər dəyişmir.</p>
+      <div class="list">${CURRENCIES.map(c => `<button class="row" data-a="setCur" data-v="${c[0]}"><div class="avatar" style="font-size:${c[0].length > 1 ? 12 : 20}px">${c[0]}</div>
+        <div class="grow"><div class="t">${c[1]}</div><div class="s">${c[2]}</div></div>${c[0] === cur() ? '<div class="amt pay">✓</div>' : ''}</button>`).join('')}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'lang') {
+    const lv = db.lang && db.lang.v || 'az';
+    h += `<h2>🌐 Dil</h2>
+      <div class="list">${LANGS.map(l => `<button class="row" data-a="setLang" data-v="${l[0]}"><div class="avatar" style="font-size:22px">${l[2]}</div>
+        <div class="grow"><div class="t">${l[1]}</div></div>${l[0] === lv ? '<div class="amt pay">✓</div>' : ''}</button>`).join('')}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'debtors' || s.kind === 'monthDebtors') {
+    // who owes, longest-owing first; for this month only the debts written this month count
+    const cm = today().slice(0, 7), only = s.kind === 'monthDebtors';
+    const rows = db.people.map(p => {
+      const open = debtState(p.id).debts.filter(d => d.left > 0 && (!only || monthKey(d.t.date) === cm));
+      return { p, owe: open.reduce((x, d) => x + d.left, 0), since: open.length ? open[0].t.date : null };
+    }).filter(r => r.owe > 0).sort((a, b) => a.since.localeCompare(b.since) || b.owe - a.owe);
+    const days = d => Math.floor((new Date(today()) - new Date(d)) / 864e5);
+    const q = (s.q || '').trim(), shown = q ? rows.filter(r => smartMatch(r.p.name, q) || phoneMatch(r.p.phone, q)) : rows;
+    h += `<h2>${only ? `Bu ayın borcu — ${MONTHS[+cm.slice(5) - 1]}` : 'Müştərilərin ümumi borcu'}</h2><p class="note" style="margin-top:-8px">${rows.length} nəfər · cəmi ${money(rows.reduce((x, r) => x + r.owe, 0))}</p>
+      ${rows.length ? `<input class="search" id="dq" placeholder="Axtar..." value="${esc(s.q || '')}" style="margin-bottom:10px">` : ''}
+      <div class="list">${shown.length ? shown.map(r => { const n = days(r.since); return `
+        <button class="row" data-a="open" data-v="${r.p.id}"${only ? '' : ` data-hold="wo:${r.p.id}"`}>
+          <div class="avatar">${esc(initials(r.p.name))}</div>
+          <div class="grow"><div class="t">${esc(r.p.name)}</div><div class="s"><span class="${n > 7 ? 'debt' : ''}" style="font-weight:600">⏱ ${n <= 0 ? 'bu gündən' : n + ' gündür'}</span></div></div>
+          <div class="amt num debt">${money(r.owe)}</div>
+        </button>`; }).join('') : `<div class="empty" style="padding:16px">${rows.length ? 'Tapılmadı' : 'Borclu yoxdur 👍'}</div>`}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'received') {
+    // money that came in this month, day by day: customers' payments and cash jobs
+    const cm = today().slice(0, 7);
+    const list = db.tx.filter(t => monthKey(t.date) === cm && (t.type === 'inc' || (t.type === 'pay' && t.pid))).sort((a, c) => c.date.localeCompare(a.date) || (c.created || 0) - (a.created || 0));
+    const dates = [...new Set(list.map(t => t.date))];
+    h += `<h2><span>💰</span> Bu ay alınan</h2><p class="note" style="margin-top:-8px">${MONTHS[+cm.slice(5) - 1]} ${cm.slice(0, 4)} · cəmi ${money(list.reduce((x, t) => x + t.amount, 0))}</p>
+      ${dates.length ? dates.map(d => { const items = list.filter(t => t.date === d); return `
+        <div class="dayhead"><b>${d === today() ? 'Bu gün' : fmtDate(d)}</b><span class="num"><span class="pay">+${money(items.reduce((x, t) => x + t.amount, 0))}</span></span></div>
+        <div class="list">${items.map(t => `
+        <button class="row" data-a="${t.type === 'inc' ? 'editTx' : 'open'}" data-v="${t.type === 'inc' ? t.id : t.pid}">
+          <div class="avatar" style="${t.type === 'inc' ? 'background:var(--pay-soft);color:var(--pay)' : ''}">${t.type === 'inc' ? incIcon(t) : esc(initials(nameOf(t.pid)))}</div>
+          <div class="grow"><div class="t">${t.type === 'inc' ? esc(t.note || 'Nağd iş') : esc(nameOf(t.pid))}</div>
+            <div class="s">${t.type === 'inc' ? (t.other ? 'digər gəlir' : 'nağd') : t.note ? esc(t.note) : 'Ödəniş'} · ${stamp(t).split(', ').pop()}</div></div>
+          <div class="amt num pay">+${money(t.amount)}</div>
+        </button>`).join('')}</div>`; }).join('') : '<div class="empty" style="padding:16px">Bu ay hələ pul alınmayıb</div>'}`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'today') {
+    // every job of this month, day by day: customers' work, cash jobs and losses, with the day's income
+    const cm = today().slice(0, 7);
+    const list = db.tx.filter(t => monthKey(t.date) === cm && !t.corr && (t.type === 'inc' || t.type === 'loss' || (t.type === 'adj' && !t.wo) || (t.type === 'debt' && t.pid)))
+      .sort((a, c) => c.date.localeCompare(a.date) || (c.created || 0) - (a.created || 0));
+    const dates = [...new Set(list.map(t => t.date))];
+    const row = t => t.type === 'loss' ? `
+        <button class="row" data-a="editTx" data-v="${t.id}">
+          <div class="avatar" style="background:var(--debt-soft);color:var(--debt)">📉</div>
+          <div class="grow"><div class="t">${esc(t.note || 'Ziyan')}</div><div class="s">Ziyan${t.cost ? ` · <span class="exp">xərc ${money(t.cost)}</span>` : ''} · ${stamp(t).split(', ').pop()}</div></div>
+          <div class="amt num debt">−${money(t.amount + (t.cost || 0))}<small>ziyan</small></div>
+        </button>` : `
+        <button class="row" data-a="editTx" data-v="${t.id}">
+          <div class="avatar" style="${t.type === 'inc' ? 'background:var(--pay-soft);color:var(--pay)' : ''}">${t.type === 'inc' ? incIcon(t) : esc(initials(nameOf(t.pid)))}</div>
+          <div class="grow"><div class="t">${t.type === 'inc' ? esc(t.note || 'Nağd iş') : esc(nameOf(t.pid))}</div>
+            <div class="s">${t.type === 'inc' ? incWord(t) : t.type === 'adj' ? 'Məbləğ düzəlişi' : esc(t.note || 'Borc')}${t.cost ? ` · <span class="exp">xərc ${money(t.cost)}</span>` : ''} · ${stamp(t).split(', ').pop()}</div></div>
+          <div class="amt num ${t.type === 'inc' ? 'pay' : 'debt'}">${t.amount - (t.cost || 0) < 0 ? '' : '+'}${money(t.amount - (t.cost || 0))}<small>${t.type === 'inc' ? (t.other ? 'digər gəlir' : 'nağd') : t.type === 'adj' ? 'düzəliş' : 'borc'}</small></div>
+        </button>`;
+    h += `<h2>🗓️ Günlər üzrə</h2><p class="note" style="margin-top:-8px">${MONTHS[+cm.slice(5) - 1]} ${cm.slice(0, 4)} · gəlir ${money(income(totals(cm)))}</p>
+      ${dates.length ? dates.map(d => { const day = byDay(db.tx.filter(t => t.date === d))[0]; return `
+        <div class="dayhead"><b>${d === today() ? 'Bu gün' : fmtDate(d)}</b><span class="num"><span class="pay">${money(day ? income(day) : 0)}</span></span></div>
+        <div class="list">${list.filter(t => t.date === d).map(row).join('')}</div>`; }).join('') : '<div class="empty" style="padding:16px">Bu ay hələ iş yoxdur</div>'}`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'mineDays') {
+    const days = {};
+    db.tx.filter(t => t.type === 'pexp' && monthKey(t.date) === state.month).forEach(t => {
+      const d = days[t.date] || (days[t.date] = {});
+      d[t.cid] = (d[t.cid] || 0) + t.amount;
+    });
+    const cname = id => (db.cats.find(c => c.id === id) || { name: '(silinib)' }).name;
+    const list = Object.keys(days).sort().reverse();
+    h += `<h2>💸 Xərclərim günlər üzrə</h2><p class="note" style="margin-top:-8px">${MONTHS[+state.month.slice(5) - 1]} ${state.month.slice(0, 4)} · cəmi ${money(mineTotal(state.month))}</p>
+      ${list.length ? list.map(date => { const d = days[date], ids = Object.keys(d).sort((a, b) => d[b] - d[a]); return `
+        <div class="dayhead"><b>${date === today() ? 'Bu gün' : fmtDate(date)}</b><span class="num"><span class="exp">${money(ids.reduce((x, id) => x + d[id], 0))}</span></span></div>
+        <div class="list">${ids.map(id => `<div class="row"><div class="grow"><div class="t">${esc(cname(id))}</div></div><div class="amt num exp">${money(d[id])}</div></div>`).join('')}</div>`; }).join('') : '<div class="empty" style="padding:16px">Bu ay xərc yoxdur</div>'}`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'askDel') {
+    // choose what goes, then one button; the chosen line and the button share its colour (green keeps the income)
+    const opt = (o, i) => { const on = s.sel === i, c = o.color; return `<button data-a="askSel" data-v="${i}" style="display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:2px solid ${on ? `var(--${c})` : 'var(--line)'};border-radius:16px;padding:14px;margin-bottom:10px;background:${on ? `var(--${c}-soft)` : 'transparent'};color:var(--text)">
+      <span style="flex:none;width:22px;height:22px;border-radius:50%;border:2px solid ${on ? `var(--${c})` : 'var(--muted)'};display:grid;place-items:center">${on ? `<i style="width:12px;height:12px;border-radius:50%;background:var(--${c})"></i>` : ''}</span>
+      <span style="flex:1"><b style="display:block">${o.label}</b><small class="note" style="margin:0">${o.sub}</small></span><span style="font-size:22px">${o.icon}</span></button>`; };
+    const cur = s.opts[s.sel] || s.opts[0];
+    h += `<div style="text-align:center;margin-bottom:14px"><div style="font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">Silmək</div><h2 style="margin:4px 0 0">${esc(s.name)}</h2>${s.info ? `<div class="note" style="margin:2px 0 0">${s.info}</div>` : ''}</div>
+      ${s.opts.map(opt).join('')}
+      <button class="btn" data-a="askDo" style="background:var(--${cur.color});color:#fff">🗑 Sil</button>
+      <p class="note" style="text-align:center;margin:6px 0 0">♻️ Zibil qutusuna düşür, oradan qaytarmaq olar</p>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
+  }
+  if (s.kind === 'allMonths' || s.kind === 'allLeft') {
+    // the whole period month by month: income, or income − my spending = what was left
+    const left = s.kind === 'allLeft', ms = allMonths();
+    const val = m => left ? gross(totals(m)) - mineTotal(m) : gross(totals(m));
+    h += `<h2>${left ? '💼 Bütün dövrün qalığı' : '💰 Bütün dövrün gəliri'}</h2><p class="note" style="margin-top:-8px">cəmi ${money(ms.reduce((x, m) => x + val(m), 0))}</p>
+      <div class="list">${ms.map(m => { const v = val(m), [y, mm] = m.split('-').map(Number); return `
+        <button class="row" data-a="pickMonth" data-v="${m}"><div class="grow"><div class="t">${MONTHS[mm - 1]} ${y}</div>
+          ${left ? `<div class="s">gəlir ${money(gross(totals(m)))} · xərc ${money(mineTotal(m))}</div>` : ''}</div>
+          <div class="amt num ${v < 0 ? 'debt' : v ? 'pay' : 'zero'}">${money(v)}</div></button>`; }).join('')}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'month') {
+    const [y, m] = state.month.split('-').map(Number), t = totals(state.month), net = gross(t);
+    h += `<h2>📋 Ayın hesabı</h2><p class="note" style="margin-top:-8px">${MONTHS[m - 1]} ${y}</p>
+      <div class="card">
+        <div class="kv"><span>Yazılan iş (borc)</span><b class="num debt">${money(workNet(t))}</b></div>
+        ${incLines(t)}
+        ${t.loss ? `<div class="kv"><span>Ziyan</span><b class="num debt">−${money(t.loss)}</b></div>` : ''}
+        <div class="kv total"><span>Xalis gəlir</span><span class="num pay">${money(net)}</span></div>
+      </div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'year') {
+    const y = +state.month.slice(0, 4), yt = yearTotals(y);
+    h += `<h2>💰 İllik gəlir — ${y}</h2><p class="note" style="margin-top:-8px">1 Yanvar – 31 Dekabr ${y}</p>
+      <div class="card" style="margin-bottom:12px">
+        <div class="kv"><span>Yazılan iş</span><b class="num debt">${money(workNet(yt))}</b></div>
+        ${incLines(yt)}
+        ${yt.loss ? `<div class="kv"><span>Ziyan</span><b class="num debt">−${money(yt.loss)}</b></div>` : ''}
+        <div class="kv total"><span>İllik xalis gəlir</span><span class="num pay">${money(gross(yt))}</span></div>
+      </div>
+      <div class="list">${MONTHS.map((name, i) => { const t = totals(y + '-' + pad(i + 1)); return `
+        <div class="row"><div class="grow"><div class="t">${name}</div></div>
+          <div class="amt num ${gross(t) ? 'pay' : 'zero'}">${money(gross(t))}<small>gəlir</small></div></div>`; }).join('')}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'days') {
+    const days = byDay(db.tx.filter(x => monthKey(x.date) === state.month && x.type !== 'pexp' && x.type !== 'exp' && x.type !== 'pay'));
+    h += `<h2>🗓️ Günlər üzrə</h2><p class="note" style="margin-top:-8px">${MONTHS[+state.month.slice(5) - 1]} ${state.month.slice(0, 4)}</p>
+      <div class="list">${days.map(d => `
+        <div class="row"><div class="grow"><div class="t">${fmtDate(d.date)}</div>
+          <div class="s">${[d.debt ? 'Borc ' + money(workNet(d)) : '', hasCash(d) ? 'Nağd ' + money(cashNet(d)) : '', d.oth ? 'Digər ' + money(d.oth) : '', d.dayLoss ? 'Ziyan −' + money(d.dayLoss) : ''].filter(Boolean).join(' · ')}</div></div>
+          <div class="amt num ${gross(d) ? 'pay' : 'zero'}">${money(gross(d))}<small>günün gəliri</small></div></div>`).join('')}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'ustaYear') {
+    // one customer's whole year, month by month (opened from the top list)
+    const y = state.month.slice(0, 4), work = ustaWork(s.id).filter(t => t.date.startsWith(y));
+    const months = MONTHS.map((n, i) => { const k = y + '-' + pad(i + 1), w = work.filter(t => monthKey(t.date) === k); return { n, k, w: w.length, v: w.reduce((x, t) => x + t.amount - (t.cost || 0), 0), c: new Set(w.filter(t => t.type === 'debt').map(t => t.addTo || t.id)).size }; });
+    const tot = months.reduce((x, m) => x + m.v, 0), jobs = months.reduce((x, m) => x + m.c, 0), max = Math.max(1, ...months.map(m => m.v));
+    const paid = db.tx.filter(t => t.pid === s.id && t.type === 'pay' && t.date.startsWith(y)).reduce((x, t) => x + t.amount, 0);
+    h += `<h2>${esc(nameOf(s.id))}</h2><p class="note" style="margin-top:-8px">${y} — bütün il</p>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">${[['Qazanc', money(tot), 'pay'], ['İş', jobs, ''], ['Borcu', money(Math.max(0, balanceOf(s.id))), 'debt']].map(([l, v, c]) => `<div class="card" style="margin:0;text-align:center;padding:12px 6px"><div class="note" style="margin:0">${l}</div><b class="num ${c}" style="font-size:18px">${v}</b></div>`).join('')}</div>
+      <div class="list">${months.map(m => `<div class="row" ${m.w ? `data-a="ustaMonth" data-v="${m.k}" style="cursor:pointer"` : 'style="opacity:.45"'}><div class="grow"><div class="t">${m.n}</div><div style="height:6px;border-radius:3px;background:var(--brand-soft);margin-top:6px"><div style="height:6px;border-radius:3px;background:var(--brand);width:${Math.round(Math.max(0, m.v) / max * 100)}%"></div></div></div>
+        <div class="amt num ${m.v ? 'pay' : 'zero'}">${money(m.v)}<small>${m.c} iş</small></div></div>`).join('')}</div>
+      <p class="note" style="text-align:center">Bu il ödəyib: ${money(paid)}</p>
+      <button class="btn ghost" style="margin-top:0" data-a="openFromTop" data-v="${s.id}"><span>👤</span> <span>Müştərinin səhifəsini aç</span></button>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Geri</button></div></div>';
+  }
+  if (s.kind === 'ustaMonth') {
+    // one month of that customer: every job and payment
+    const k = s.m, list = db.tx.filter(t => t.pid === s.id && monthKey(t.date) === k && !t.corr && (t.type === 'debt' || t.type === 'pay' || (t.type === 'adj' && !t.wo))).sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+    const work = list.filter(t => t.type !== 'pay'), tot = work.reduce((x, t) => x + t.amount, 0), prof = work.reduce((x, t) => x + t.amount - (t.cost || 0), 0), paid = list.filter(t => t.type === 'pay').reduce((x, t) => x + t.amount, 0);
+    h += `<h2>${MONTHS[+k.slice(5) - 1]} ${k.slice(0, 4)}</h2><p class="note" style="margin-top:-8px">${esc(nameOf(s.id))}</p>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">${[['İşlər', money(tot), ''], ['Qazanc', money(prof), 'pay'], ['Ödəyib', money(paid), 'pay']].map(([l, v, c]) => `<div class="card" style="margin:0;text-align:center;padding:12px 6px"><div class="note" style="margin:0">${l}</div><b class="num ${c}" style="font-size:17px">${v}</b></div>`).join('')}</div>
+      <div class="list">${list.map(t => `<div class="row"><div class="grow"><div class="t">${t.type === 'pay' ? '<span>💵</span> <span>Ödəniş</span>' : t.type === 'adj' ? 'Məbləğ dəyişdi' : esc(t.note || 'İş')}</div><div class="s">${fmtDate(t.date)}${t.cost ? ' · xərc ' + money(t.cost) : ''}</div></div>
+        <div class="amt num ${t.type === 'pay' ? 'pay' : 'debt'}">${t.type === 'pay' ? '−' + money(t.amount) : (t.amount < 0 ? '−' : '+') + money(Math.abs(t.amount))}${t.cost ? `<small>qazanc ${money(t.amount - t.cost)}</small>` : ''}</div></div>`).join('')}</div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Geri</button></div></div>';
+  }
+  if (s.kind === 'top') {
+    const top = topUstas(state.month), max = top.length ? Math.max(1, top[0][1].v) : 1;
+    const nm = nameOf, q = (s.q || '').trim(), shown = top.map((x, i) => [x, i]).filter(([[id]]) => !q || smartMatch(nm(id), q));
+    h += `<h2>🏆 Ən çox iş verən müştərilər</h2><p class="note" style="margin-top:-8px">${MONTHS[+state.month.slice(5) - 1]} ${state.month.slice(0, 4)}</p>
+      ${top.length ? `<input class="search" id="dq" placeholder="Axtar..." value="${esc(s.q || '')}" style="margin-bottom:10px">` : ''}
+      <div class="list">${q && !shown.length ? '<div class="empty" style="padding:16px">Tapılmadı</div>' : ''}${shown.map(([[id, w], i]) => `
+        <div class="row" data-a="ustaYear" data-v="${id}" data-tophold="${id}" style="cursor:pointer">
+          <div class="avatar" style="${i === 0 ? 'background:#FEF3C7;color:#B45309' : ''}">${i + 1}</div>
+          <div class="grow"><div class="t">${esc(nm(id))}</div><div class="s">${w.n} iş</div>
+            <div style="height:6px;border-radius:3px;background:var(--brand-soft);margin-top:6px"><div style="height:6px;border-radius:3px;background:var(--brand);width:${Math.round(w.v / max * 100)}%"></div></div></div>
+          <div class="amt num pay">${money(w.v)}</div>
+        </div>`).join('')}</div>
+      <p class="note" style="text-align:center">Adı hesabatdan silmək üçün üstünə basıb saxlayın</p>
+      ${db.hides.length ? `<p class="note" style="text-align:center">${db.hides.length} ad hesabatdan silinib · <a href="#" data-a="unhideTop" style="color:var(--brand);font-weight:600">hamısını qaytar</a></p>` : ''}`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  }
+  if (s.kind === 'menu') {
+    if (s.target === 'loan') {
+      const l = db.loans.find(x => x.id === s.id);
+      h += `<h2>${esc(l.name)}</h2><p class="note" style="margin-top:-6px">Borcu: ${money(loanLeft(l))}</p>
+        <button class="btn ghost" data-a="menuEdit">✎ Düzəlt</button>
+        <button class="btn danger" data-a="menuDelete">🗑 Sil</button>`;
+    } else if (s.target === 'cat') {
+      const c = db.cats.find(x => x.id === s.id);
+      h += `<h2>${esc(c.name)}</h2><p class="note" style="margin-top:-6px">Bu ay: ${money(catSum(c.id, state.month))} · ${db.tx.filter(t => t.cid === c.id).length} xərc</p>
+        <button class="btn ghost" data-a="starCat" data-v="${c.id}">${c.star ? '☆ Ulduzu götür' : '⭐ Ulduz qoy (yuxarıda görünsün)'}</button>
+        <button class="btn ghost" data-a="menuEdit">✎ Adını dəyiş</button>
+        <button class="btn danger" data-a="menuDelete">🗑 Bölməni xərcləri ilə sil</button>`;
+    } else if (s.target === 'person') {
+      const p = db.people.find(x => x.id === s.id);
+      h += `<h2>${esc(p.name)}</h2><p class="note" style="margin-top:-6px">Borc: ${money(balanceOf(p.id))} · ${db.tx.filter(t => t.pid === p.id).length} əməliyyat</p>
+        <button class="btn ghost" data-a="menuEdit">✎ Düzəlt</button>
+        ${balanceOf(p.id) <= 0 ? '<button class="btn danger" data-a="menuDeleteAll">🗑 Gəliri ilə birlikdə sil</button>' : '<button class="btn danger" data-a="menuDelete">🗑 Bütün məlumatı ilə sil</button>'}`;
+    } else {
+      const t = db.tx.find(x => x.id === s.id);
+      h += `<h2>${txLabel(t)} ${money(t.amount)}</h2><p class="note" style="margin-top:-6px">${fmtDate(t.date)}${t.note ? ' · ' + esc(t.note) : ''}</p>
+        <button class="btn ghost" data-a="menuEdit">✎ Düzəlt</button>
+        ${t.type === 'loss' && t.pid ? '<button class="btn ghost" data-a="lossUnname">🗑 Adı sil (ziyan qalır)</button>' : ''}
+        <button class="btn danger" data-a="menuDelete">🗑 Sil</button>`;
+    }
+    h += '<p class="note" style="text-align:center;margin-bottom:0">Silinən zibil qutusuna düşür, sonra qaytarmaq olar</p>';
+  } else if (s.kind === 'cat') {
+    const c = s.id ? db.cats.find(x => x.id === s.id) : { name: '' };
+    h += `<h2>${s.id ? 'Bölmənin adını dəyiş' : 'Yeni bölmə'}</h2>
+      <label>Bölmənin adı</label><input class="field" id="f_name" value="${esc(c.name)}" placeholder="məs. Özüm, Ev, Maşın" data-autofocus>
+      <button class="btn expb" data-a="saveCat">Yadda saxla</button>
+      ${s.id ? '<button class="btn danger" data-a="delCat">Bölməni sil</button>' : ''}`;
+  } else if (s.kind === 'person') {
+    const p = s.id ? db.people.find(x => x.id === s.id) : { name: '', phone: '' };
+    const mode = s.id ? '' : s.mode || '';
+    // a new customer can also be one who paid on the spot (Nağd) or a job that lost money (Ziyan)
+    const chip = (m, label, col) => `<button class="mini" data-a="personMode" data-v="${m}" style="${mode === m ? `background:${col};color:#fff` : ''}">${label}</button>`;
+    h += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><h2 style="margin:0;flex:1;min-width:120px">${s.id ? 'Müştərini düzəlt' : mode === 'loss' ? 'Ziyan' : mode === 'cash' ? 'Nağd' : mode === 'other' ? 'Digər gəlir' : 'Yeni müştəri'}</h2>
+      ${s.id ? '' : chip('cash', '💵 Nağd', 'var(--pay)') + chip('loss', '📉 Ziyan', 'var(--debt)') + chip('other', '➕ Digər gəlir', 'var(--pay)')}</div>`;
+    // "Digər gəlir": income that is not from a customer, written with its own name; it counts in every income total
+    if (mode === 'other') return h + `
+      <label>Gəlirin adı</label><input class="field" id="f_name" placeholder="məs. Aksesuar satışı" data-autofocus>
+      <label>Məbləğ (${cur()})</label><input class="field big num" id="f_amount" inputmode="decimal" placeholder="0">
+      <label>Tarix</label><input class="field" id="f_date" type="date" value="${today()}">
+      <p class="note" style="margin-top:6px">Ümumi gəlirə əlavə olunur. Müştəri yaradılmır.</p>
+      <button class="btn payb" data-a="savePerson">Yadda saxla</button>
+      <button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>`;
+    h += `
+      <label>Ad</label><input class="field" id="f_name" value="${esc(p.name)}" placeholder="məs. Fərhad" ${s.id ? '' : 'data-autofocus'}>
+      <label>Telefon (istəyə bağlı)</label><div style="display:flex;gap:8px"><input class="field" id="f_phone" type="tel" value="${esc(p.phone || '')}" placeholder="050 000 00 00" style="flex:1;min-width:0">
+        <button class="btn ghost" data-a="pickContact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇 Kontaktdan</button></div>
+      ${s.id ? `<label>Borc məbləği (${cur()})</label><input class="field big num" id="f_amount" inputmode="decimal" value="${amountInput(balanceOf(s.id)) || '0'}">
+        <div class="note" style="margin-top:4px">Dəyişsəniz, fərq tarixçəyə “Məbləğ düzəlişi” kimi yazılacaq. Tək bir əməliyyatı dəyişmək üçün tarixçədə ona toxunun.</div>`
+        : `<label>${mode === 'cash' ? 'Məbləğ' : mode === 'loss' ? 'Ziyan məbləği' : 'Hazırkı borcu'}</label><input class="field" id="f_amount" inputmode="decimal" placeholder="0">
+        <label>Xərc (${cur()})</label><input class="field" id="f_cost" inputmode="decimal" placeholder="0">
+        <label>${mode === 'cash' || mode === 'loss' ? 'Nə iş' : 'Nə üçün borcludur'}</label><input class="field" id="f_note" placeholder="${mode === 'loss' ? 'məs. vazvrat, ekran sındı' : 'məs. iPhone 7 ekran'}">
+        <label>${mode ? 'Tarix' : 'Borcun tarixi'}</label><input class="field" id="f_date" type="date" value="${today()}">
+        ${mode ? '' : '<label>Ödəniş tarixi (istəyə bağlı)</label><input class="field" id="f_due" type="date" value=""><div class="note" style="margin-top:4px">Bu gün gələndə telefon xatırladacaq</div>'}
+        ${mode === 'cash' ? '<p class="note" style="margin-top:6px">Pulu dərhal aldınız — borc qalmayacaq. Ad boş qalsa, iş müştərisiz yazılır.</p>' : mode === 'loss' ? '<p class="note" style="margin-top:6px">Ziyan və xərc gəlirdən çıxılır. Ad boş qala bilər.</p>' : ''}`}
+      <button class="btn ${mode === 'cash' ? 'payb' : mode === 'loss' ? 'debtb' : 'primary'}" data-a="savePerson">Yadda saxla</button>
+      ${s.id ? '<button class="btn danger" data-a="delPerson">Müştərini sil</button>' : ''}`;
+  } else {
+    const t = s.id ? db.tx.find(x => x.id === s.id) : { type: s.type, amount: 0, date: today(), note: '' };
+    const type = s.type || t.type, other = type === 'inc' && !!t.other, cash = !other && (s.cash || t.cash || type === 'inc');
+    const title = type === 'loss' ? '📉 Ziyanı düzəlt' : other ? (s.id ? '➕ Digər gəliri düzəlt' : '➕ Digər gəlir') : cash ? (s.id ? '💵 Nağd işi düzəlt' : '💵 Nağd iş') : type === 'inc' ? (s.id ? 'Gəliri düzəlt' : 'Gəlir əlavə et') : type === 'pexp' ? (s.id ? 'Xərci düzəlt' : 'Xərc yaz') : type === 'adj' ? 'Məbləğ düzəlişi' : type === 'exp' ? (s.id ? 'Xərci düzəlt' : 'Yeni xərc') : s.id ? 'Əməliyyatı düzəlt' : type === 'debt' ? 'Borc yaz' : 'Ödəniş aldım';
+    h += `<h2>${title}</h2>
+      ${s.id && type === 'debt' ? `<div class="seg"><button class="debt ${s.markPaid ? '' : 'on'}" data-a="txPaid" data-v="">Borc</button><button class="pay ${s.markPaid ? 'on' : ''}" data-a="txPaid" data-v="1">Ödənildi</button></div>` : ''}
+      ${!s.id && (type === 'debt' || type === 'pay') ? `<div class="seg"><button class="debt ${type === 'debt' ? 'on' : ''}" data-a="txType" data-v="debt">Borc</button><button class="pay ${type === 'pay' ? 'on' : ''}" data-a="txType" data-v="pay">Ödəniş</button></div>` : ''}
+      ${!s.id && type === 'debt' ? tplChips() : ''}
+      ${s.id && type === 'debt' && s.markPaid ? (() => {
+        // a payment for this debt: the debt keeps its own amount, whatever is left stays owed
+        const left = (debtState(t.pid).debts.find(d => d.t.id === t.id) || { left: 0 }).left;
+        return `<label>Ödənilən məbləğ (${cur()})</label><input class="field big num" id="f_amount" inputmode="decimal" placeholder="0" value="${amountInput(Math.max(0, left))}">
+          <div class="note" style="margin-top:4px">${left > 0 ? `Bu borcdan qalıb: ${money(left)}` : 'Bu borc artıq tam ödənilib'}</div>
+          <label>Tarix</label><input class="field" id="f_date" type="date" value="${today()}">
+          <button class="btn payb" data-a="saveTx">Yadda saxla</button>`;
+      })() + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>' : ''}`;
+    if (s.id && type === 'debt' && s.markPaid) return h;
+    h += `
+      <label>${s.id && type === 'debt' ? 'Borcun məbləği' : 'Məbləğ'} (${cur()})</label><input class="field big num" id="f_amount" inputmode="decimal" placeholder="0" value="${amountInput(t.amount)}" ${s.id ? '' : 'data-autofocus'}>
+      ${type === 'debt' || cash || type === 'loss' ? `<label>Xərc (${cur()}, istəyə bağlı)</label><input class="field num" id="f_cost" inputmode="decimal" placeholder="0" value="${amountInput(t.cost)}">
+        ${type === 'loss' ? '' : `<div class="note" id="f_profit" style="margin-top:4px">${t.cost ? 'Qazanc: ' + money(t.amount - t.cost) : ''}</div>`}` : ''}
+      <label>${other ? 'Gəlirin adı' : cash ? 'Nə iş' : type === 'exp' || type === 'pexp' || type === 'inc' || type === 'loss' ? 'Nə üçün' : type === 'debt' ? 'Nə üçün borcludur' : 'Qeyd (istəyə bağlı)'}</label><input class="field" id="f_note" value="${esc(t.note || '')}" placeholder="${other ? 'məs. Aksesuar satışı' : cash ? 'məs. Google hesabı (Frp), ekran dəyişmə' : type === 'inc' ? 'məs. nağd iş' : type === 'pexp' ? 'məs. nahar, paltar' : type === 'exp' ? 'məs. material, benzin' : 'məs. kafel işi'}">
+      ${type === 'adj' ? '<div class="note" style="margin-top:4px">Müsbət — borc artır, mənfi (−) — borc azalır</div>' : ''}
+      <label>Tarix</label><input class="field" id="f_date" type="date" value="${t.date}">
+      ${type === 'debt' ? `<label>Ödəniş tarixi (istəyə bağlı)</label><input class="field" id="f_due" type="date" value="${t.due || ''}"><div class="note" style="margin-top:4px">Bu gün gələndə telefon xatırladacaq</div>` : ''}
+      ${!s.id && type === 'debt' ? '<button class="btn ghost" data-a="saveAsTpl" style="padding:9px">☆ Bu işi şablon et</button>' : ''}
+      <button class="btn ${type === 'debt' && !s.markPaid ? 'debtb' : type === 'debt' || type === 'pay' || type === 'inc' ? 'payb' : type === 'exp' || type === 'pexp' ? 'expb' : 'primary'}" data-a="saveTx">Yadda saxla</button>
+      ${s.id ? '<button class="btn danger" data-a="delTx">Sil</button>' : ''}`;
+  }
+  return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
+}
+
+// ---------- charts (simple bars; one or two values per group) ----------
+const MONTHS_SHORT = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'İyn', 'İyl', 'Avq', 'Sen', 'Okt', 'Noy', 'Dek'];
+const monthShort = i => lang() === 'az' ? MONTHS_SHORT[i] : monthName(MONTHS[i]).slice(0, 3);
+function barChart(groups, labels, colors) {
+  const W = 320, H = 150, top = 14, bot = 18, ph = H - top - bot;
+  const all = groups.flat(), max = Math.max(0, ...all), min = Math.min(0, ...all), span = (max - min) || 1;
+  const y0 = top + max / span * ph, gw = W / groups.length, k = groups[0].length, bw = Math.max(1.5, gw * 0.8 / k);
+  let out = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible" role="img">`;
+  out += `<line x1="0" x2="${W}" y1="${y0.toFixed(1)}" y2="${y0.toFixed(1)}" style="stroke:var(--line);stroke-width:1"/>`;
+  groups.forEach((g, i) => g.forEach((v, j) => {
+    if (!v) return;
+    const hgt = Math.max(1, Math.abs(v) / span * ph), x = i * gw + gw * 0.1 + j * bw;
+    out += `<rect x="${x.toFixed(1)}" y="${(v > 0 ? y0 - hgt : y0).toFixed(1)}" width="${Math.max(1, bw - 0.6).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" style="fill:${v < 0 && k === 1 ? 'var(--debt)' : colors[j]}"/>`;
+  }));
+  labels.forEach((l, i) => { if (l) out += `<text x="${(i * gw + gw / 2).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="middle" style="fill:var(--muted)">${esc(l)}</text>`; });
+  if (max > 0) out += `<text x="0" y="9" font-size="9" style="fill:var(--muted)">${esc(money(max))}</text>`;
+  return out + '</svg>';
+}
+
+// ---------- a customer's whole account (shared as text or printed) ----------
+function accountRows(p) {
+  const tx = db.tx.filter(t => t.pid === p.id && !t.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
+  const left = {}; debtState(p.id).debts.forEach(d => { left[d.t.id] = d.left; });
+  let sumDebt = 0, sumPay = 0;
+  const rows = [];
+  for (const t of tx) {
+    if (t.type === 'debt') { sumDebt += t.amount; rows.push({ t, kind: 'Borc', amt: t.amount, left: left[t.id] }); }
+    else if (t.type === 'adj' && !t.wo) { sumDebt += t.amount; rows.push({ t, kind: 'Məbləğ düzəlişi', amt: t.amount }); }
+    else if (t.type === 'adj') rows.push({ t, kind: 'Borc silindi', amt: t.amount });
+    else if (t.type === 'pay') { sumPay += t.amount; rows.push({ t, kind: 'Ödəniş', amt: -t.amount }); }
+  }
+  return { rows, sumDebt, sumPay, bal: balanceOf(p.id) };
+}
+const accNote = t => t.note && !['Nağd', 'Tam ödədi', 'Ödəniş', 'Borc silindi'].includes(t.note) ? t.note : '';
+const accState = r => r.kind !== 'Borc' || r.left == null ? '' : r.left <= 0 ? tr('ödənilib')
+  : (r.left < r.amt ? tr('qalıb {sum}', { sum: money(r.left) }) : tr('ödənilməyib')) + (r.t.due ? ' · ' + tr('ödəniş tarixi') + ' ' + tr(fmtDate(r.t.due)) : '');
+function accountText(p) {
+  const a = accountRows(p), L = [p.name];
+  if (p.phone) L.push(tr('Telefon') + ': ' + p.phone);
+  L.push(tr(fmtDate(today())), '');
+  for (const r of a.rows) {
+    const st = accState(r), n = accNote(r.t);
+    L.push('• ' + tr(fmtDate(r.t.date)) + ' · ' + tr(r.kind) + (n ? ' · ' + n : '') + ': ' + (r.amt > 0 ? '+' : '') + money(r.amt) + (st ? ' (' + st + ')' : ''));
+  }
+  L.push('', tr('Ümumi yazılan borc') + ': ' + money(a.sumDebt), tr('Ümumi ödəniş') + ': ' + money(a.sumPay), tr('Qalıq') + ': ' + money(a.bal));
+  return L.join('\n');
+}
+function accountHtml(p) {
+  const a = accountRows(p), T = s => esc(tr(s));
+  const rows = a.rows.map(r => `<tr><td>${esc(tr(fmtDate(r.t.date)))}</td><td>${T(r.kind)}</td><td>${esc(accNote(r.t))}</td><td class="n${r.amt < 0 ? ' g' : ''}">${esc((r.amt > 0 ? '+' : '') + money(r.amt))}</td><td>${esc(accState(r))}</td></tr>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(p.name)}</title><style>
+    body{font-family:sans-serif;color:#111;margin:24px} h1{font-size:22px;margin:0} p{margin:4px 0;color:#555}
+    table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px} th,td{border-bottom:1px solid #ddd;padding:6px 4px;text-align:left;vertical-align:top}
+    th{background:#f2f2f2} .n{text-align:right;white-space:nowrap} .g{color:#15803D} .sum{width:auto;margin-left:auto} .sum td{font-size:14px} .sum tr:last-child td{font-weight:700;border-bottom:0}
+  </style></head><body>
+    <h1>${esc(p.name)}</h1>${p.phone ? `<p>${T('Telefon')}: ${esc(p.phone)}</p>` : ''}<p>${esc(tr(fmtDate(today())))}</p>
+    <table><thead><tr><th>${T('Tarix')}</th><th>${T('Növ')}</th><th>${T('Qeyd')}</th><th class="n">${T('Məbləğ')}</th><th>${T('Vəziyyət')}</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="sum"><tr><td>${T('Ümumi yazılan borc')}</td><td class="n">${esc(money(a.sumDebt))}</td></tr><tr><td>${T('Ümumi ödəniş')}</td><td class="n">${esc(money(a.sumPay))}</td></tr><tr><td>${T('Qalıq')}</td><td class="n">${esc(money(a.bal))}</td></tr></table>
+  </body></html>`;
+}
+
+// ---------- a customer's photos: kept small (longest side 800 px, JPEG) so the data and its Google copy stay light ----------
+const MAX_PHOTOS = 4;
+function shrinkImage(img) {
+  const k = Math.min(1, 800 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.6);
+}
+window.onPhotoPicked = function (src) {
+  const s = state.sheet;
+  if (!s || s.kind !== 'pnote' || !src) return;
+  const el = document.getElementById('f_pnote'); if (el) s.note = el.value;
+  if (s.photos.length < MAX_PHOTOS) s.photos.push(src);
+  render();
+};
+
+// ---------- Excel (.xlsx): a small ZIP of XML files, built here without any library ----------
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(12, 0x21, true);
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(h.buffer), name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(14, 0x21, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), name);
+    off += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((s, x) => s + x.length, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+  const all = parts.concat(central, [new Uint8Array(e.buffer)]), out = new Uint8Array(all.reduce((s, x) => s + x.length, 0));
+  let p = 0; for (const x of all) { out.set(x, p); p += x.length; }
+  return out;
+}
+// sheets: [{ name, cols: [widths], rows: [[cell]] }]; a cell is a string, a number, null or { v, s }
+// styles: 0 plain, 1 bold, 2 money, 3 bold money, 4 header
+function buildXlsx(sheets) {
+  const x = s => esc(String(s)).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+  const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const cell = (c, ref) => {
+    if (c == null || c === '') return '';
+    const o = typeof c === 'object' ? c : { v: c, s: 0 };
+    return typeof o.v === 'number' ? `<c r="${ref}" s="${o.s || 0}"><v>${o.v}</v></c>` : `<c r="${ref}" t="inlineStr" s="${o.s || 0}"><is><t xml:space="preserve">${x(o.v)}</t></is></c>`;
+  };
+  const sheetXml = sh => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS}"><cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>`
+    + sh.rows.map((r, i) => `<row r="${i + 1}">${r.map((c, j) => cell(c, String.fromCharCode(65 + j) + (i + 1))).join('')}</row>`).join('') + '</sheetData></worksheet>';
+  const files = [
+    { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${RNS}/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${NS}" xmlns:r="${RNS}"><sheets>${sheets.map((s, i) => `<sheet name="${x(s.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>` },
+    { name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${RNS}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="${RNS}/styles" Target="styles.xml"/></Relationships>` },
+    { name: 'xl/styles.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${NS}"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE6F4F2"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` }
+  ].concat(sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s) })));
+  return zipStore(files);
+}
+// the month's report as three sheets: summary, days, every entry
+function reportSheets(month) {
+  const t = totals(month), mine = mineTotal(month), m = +month.slice(5);
+  const M = q => ({ v: Math.round(q) / 100, s: 2 }), MB = q => ({ v: Math.round(q) / 100, s: 3 }), B = s => ({ v: tr(s), s: 1 }), H = a => a.map(s => ({ v: tr(s), s: 4 }));
+  const dmy = d => d.split('-').reverse().join('.');
+  const summary = [[{ v: tr('Hesabat') + ' — ' + monthName(MONTHS[m - 1]) + ' ' + month.slice(0, 4), s: 1 }], [],
+    [tr('Yazılan iş (borc)'), M(workNet(t))], [tr('Nağd işlər'), M(cashNet(t))], [tr('Digər gəlirlər'), M(t.oth || 0)], [tr('Ziyan'), M(-(t.loss || 0))],
+    [B('Xalis gəlir'), MB(gross(t))], [tr('Xərclərim'), M(mine)], [B('Qalıq'), MB(gross(t) - mine)], [],
+    [tr('Müştərilərin borcu'), M(monthOwed(month))]];
+  const days = byDay(db.tx.filter(x => monthKey(x.date) === month && x.type !== 'pexp' && x.type !== 'exp' && x.type !== 'pay')).reverse();
+  const dayRows = [H(['Tarix', 'Yazılan iş (borc)', 'Nağd işlər', 'Digər gəlirlər', 'Ziyan', 'Günün gəliri'])]
+    .concat(days.map(d => [dmy(d.date), M(workNet(d)), M(cashNet(d)), M(d.oth || 0), M(-(d.dayLoss || 0)), M(gross(d))]));
+  const cname = id => (db.cats.find(c => c.id === id) || {}).name || '';
+  const txs = db.tx.filter(x => monthKey(x.date) === month && !x.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
+  const txRows = [H(['Tarix', 'Saat', 'Növ', 'Müştəri / ad', 'Qeyd', 'Məbləğ', 'Xərc'])].concat(txs.map(x => {
+    const c = x.created ? new Date(x.created) : null;
+    return [dmy(x.date), c ? pad(c.getHours()) + ':' + pad(c.getMinutes()) : '', tr(txLabel(x)), x.pid ? nameOf(x.pid) : x.type === 'pexp' ? cname(x.cid) : '', x.note || '', M(x.amount), x.cost ? M(x.cost) : null];
+  }));
+  return [{ name: tr('Xülasə'), cols: [34, 16], rows: summary }, { name: tr('Günlər'), cols: [12, 18, 14, 16, 12, 16], rows: dayRows }, { name: tr('Əməliyyatlar'), cols: [12, 8, 14, 24, 32, 14, 12], rows: txRows }];
+}
+function toBase64(b) { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); }
+
+// ---------- actions ----------
+const val = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+const actions = {
+  tab(v) { state.tab = v; window.scrollTo(0, 0); render(); },
+  open(v) { state.fromSheet = state.sheet && !state.person ? { kind: state.sheet.kind, q: state.sheet.q } : null; state.sheet = null; state.person = v; state.fromTop = false; render(); window.scrollTo(0, 0); },
+  // an usta opened from the report's top list goes back to that list
+  back() { const from = state.fromTop, fromSheet = state.fromSheet; state.person = null; state.fromSheet = null; if (from) { state.fromTop = false; state.tab = 'report'; state.sheet = { kind: 'ustaYear', id: from, q: state.fromTopQ }; } else if (fromSheet) state.sheet = fromSheet; render(); },
+  newPerson() { state.sheet = { kind: 'person' }; render(); },
+  askSel(v) { state.sheet.sel = +v; render(); },
+  askDo() { const s = state.sheet, o = s.opts[s.sel] || s.opts[0]; state.sheet = askBack; askBack = null; o.run(); },
+  editPerson() { state.sheet = { kind: 'person', id: state.person }; render(); },
+  personMode(v) {
+    const keep = ['f_name', 'f_phone', 'f_amount', 'f_cost', 'f_note', 'f_date'].map(id => [id, val(id)]);
+    state.sheet.mode = state.sheet.mode === v ? '' : v; render();
+    keep.forEach(([id, v]) => { const el = document.getElementById(id); if (el && v) el.value = v; });
+  },
+  savePerson() {
+    const name = val('f_name').trim(), mode = state.sheet.id ? '' : state.sheet.mode || '';
+    if (mode === 'other') {
+      const a = parseAmount(val('f_amount'));
+      if (!name) return toast('Gəlirin adını yazın');
+      if (!a) return toast('Məbləğ yazın');
+      db.tx.push({ id: uid(), pid: null, type: 'inc', other: true, amount: a, date: val('f_date') || today(), note: name, created: Date.now(), u: Date.now() });
+      save(); state.sheet = null; render(); return toast('Gəlir yazıldı');
+    }
+    // the answer to "Eyni adlı müştəri var" holds only for the name it was given for
+    if (state.sheet.dup !== undefined && norm(state.sheet.dupName) !== norm(name)) delete state.sheet.dup;
+    // a new name that is already in the list: ask first whether it is the same customer
+    if (!state.sheet.id && name && state.sheet.dup === undefined) {
+      const same = db.people.find(x => norm(x.name) === norm(name));
+      if (same) {
+        const vals = {};
+        ['f_name', 'f_phone', 'f_amount', 'f_cost', 'f_note', 'f_date', 'f_due'].forEach(id => { vals[id] = val(id); });
+        state.sheet = { kind: 'sameName', same: same.id, form: state.sheet, vals };
+        return render();
+      }
+    }
+    const dup = state.sheet.dup ? db.people.find(x => x.id === state.sheet.dup) : null;
+    if (mode === 'loss') {
+      const a = parseAmount(val('f_amount')), cost = parseAmount(val('f_cost'));
+      if (!a && !cost) return toast('Məbləğ yazın');
+      let pid = null;
+      if (name) {
+        if (dup) pid = dup.id;
+        else { const p = { id: uid(), name, phone: val('f_phone').trim(), created: Date.now(), u: Date.now() }; db.people.push(p); pid = p.id; }
+      }
+      db.tx.push(Object.assign({ id: uid(), pid, type: 'loss', amount: a, date: val('f_date') || today(), note: val('f_note').trim() || 'Ziyan', created: Date.now(), u: Date.now() }, cost ? { cost } : {}));
+      save(); state.sheet = null; render(); return toast('Ziyan yazıldı');
+    }
+    if (mode === 'cash' && !name) {
+      const a = parseAmount(val('f_amount'));
+      if (!a) return toast('Məbləğ yazın');
+      const cost = parseAmount(val('f_cost'));
+      db.tx.push(Object.assign({ id: uid(), pid: null, type: 'inc', cash: true, amount: a, date: val('f_date') || today(), note: val('f_note').trim() || 'Nağd iş', created: Date.now(), u: Date.now() }, cost ? { cost } : {}));
+      save(); state.sheet = null; render(); return toast('Yadda saxlandı');
+    }
+    if (!name) return toast('Ad yazın');
+    if (!state.sheet.id && !parseAmount(val('f_amount')) && parseAmount(val('f_cost'))) return toast('Məbləğ yazın');
+    const phone = val('f_phone').trim();
+    if (state.sheet.id) {
+      const id = state.sheet.id;
+      const nb = parseSigned(val('f_amount'));
+      if (nb === null) return toast('Məbləği düzgün yazın');
+      Object.assign(db.people.find(p => p.id === id), { name, phone, u: Date.now() });
+      const diff = nb - balanceOf(id);
+      if (diff) db.tx.push({ id: uid(), pid: id, type: 'adj', amount: diff, date: today(), note: '', created: Date.now(), u: Date.now() });
+    }
+    else {
+      // "Bəli, həmin müştəridir": the work goes to that customer, not to a second copy of them
+      const p = dup || { id: uid(), name, phone, created: Date.now(), u: Date.now() };
+      if (!dup) db.people.push(p);
+      else if (phone && !dup.phone) Object.assign(dup, { phone, u: Date.now() });
+      const a = parseAmount(val('f_amount'));
+      const cost = parseAmount(val('f_cost'));
+      const d = Object.assign({ id: uid(), pid: p.id, type: 'debt', amount: a, date: val('f_date') || today(), note: val('f_note').trim() || (mode === 'cash' ? 'Nağd iş' : 'Əvvəlki borc'), created: Date.now(), u: Date.now() }, cost ? { cost } : {});
+      const due = mode ? '' : val('f_due');
+      if (due) d.due = due;
+      if (a) db.tx.push(d);
+      // paid on the spot: the payment is tied to the job, so no debt is left
+      if (a && mode === 'cash') db.tx.push({ id: uid(), pid: p.id, type: 'pay', amount: a, forDebt: d.id, date: d.date, note: 'Nağd', created: Date.now() + 1, u: Date.now() });
+    }
+    save(); state.sheet = null; render();
+  },
+  sameYes() { actions.sameDone(state.sheet.same); },
+  sameNo() { actions.sameDone(null); },
+  // back to the filled-in form; with an answer (id or null) it is saved right away
+  sameDone(dup) {
+    const s = state.sheet;
+    state.sheet = s.form;
+    if (dup !== undefined) Object.assign(state.sheet, { dup, dupName: s.vals.f_name });
+    render();
+    Object.entries(s.vals).forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
+    if (dup !== undefined) actions.savePerson();
+  },
+  delPerson() { trashPerson(state.sheet.id); },
+  // ---- a customer's note and photos ----
+  editNote() {
+    const p = db.people.find(x => x.id === state.person); if (!p) return;
+    state.sheet = { kind: 'pnote', id: p.id, note: p.note || '', photos: (p.photos || []).slice() }; render();
+  },
+  addPhoto() {
+    state.sheet.note = val('f_pnote');
+    if (hasNative && Android.pickPhoto) return Android.pickPhoto();
+    const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+    i.onchange = () => { const f = i.files[0]; if (!f) return; const img = new Image(); img.onload = () => window.onPhotoPicked(shrinkImage(img)); img.src = URL.createObjectURL(f); };
+    i.click();
+  },
+  delPhoto(v) { state.sheet.note = val('f_pnote'); state.sheet.photos.splice(+v, 1); render(); },
+  saveNote() {
+    const p = db.people.find(x => x.id === state.sheet.id); if (!p) return;
+    const note = val('f_pnote').trim();
+    Object.assign(p, { note, photos: state.sheet.photos.slice(), u: Date.now() });
+    if (!note) delete p.note;
+    if (!p.photos.length) delete p.photos;
+    save(); state.sheet = null; render(); toast('Yadda saxlandı');
+  },
+  viewPhoto(v) { state.sheet = { kind: 'photo', id: state.person, i: +v }; render(); },
+  // ---- a customer's whole account: as text or printed ----
+  shareAccount() { state.sheet = { kind: 'shareAcc', id: state.person }; render(); },
+  accText() {
+    const p = db.people.find(x => x.id === state.sheet.id); if (!p) return;
+    const text = accountText(p);
+    if (hasNative && Android.shareText) Android.shareText(text);
+    else if (navigator.share) navigator.share({ text });
+    else alert(text);
+  },
+  accPrint() {
+    const p = db.people.find(x => x.id === state.sheet.id); if (!p) return;
+    const html = accountHtml(p), title = 'Hesabat — ' + p.name;
+    if (hasNative && Android.printHtml) return Android.printHtml(html, title);
+    const w = window.open('', '_blank'); if (!w) return;
+    w.document.write(html); w.document.close(); w.focus(); w.print();
+  },
+  // ---- report: charts, two months side by side, Excel ----
+  openCharts() { state.sheet = { kind: 'charts' }; render(); },
+  openCompare() {
+    const ms = allMonths(), b = ms.includes(state.month) ? state.month : ms[0], i = ms.indexOf(b);
+    state.sheet = { kind: 'compare', a: ms[i + 1] || b, b }; render();
+  },
+  exportExcel() {
+    const name = 'Hesabat-' + state.month + '.xlsx';
+    const bytes = buildXlsx(reportSheets(state.month));
+    if (hasNative && Android.shareBase64) return Android.shareBase64(toBase64(bytes), name, XLSX_MIME);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes], { type: XLSX_MIME }));
+    a.download = name; a.click();
+  },
+  pinNew() { if (!hasNative) return toast('Yalnız telefonda işləyir'); state.pin = { mode: 'set1', len: 4, entered: '', err: '' }; render(); },
+  pinChange() { state.pin = { mode: 'verify', next: 'change', len: Android.pinLength(), entered: '', err: '' }; render(); },
+  pinRemove() { state.pin = { mode: 'verify', next: 'remove', len: Android.pinLength(), entered: '', err: '' }; render(); },
+  bioAsk() { Android.bioPrompt(); },
+  lockWhen(v) { Android.setLockOnScreenOff(!!v); render(); },
+  bioToggle() { Android.setBio(!Android.bioEnabled()); toast(Android.bioEnabled() ? 'Barmaq izi yandı' : 'Barmaq izi söndü'); render(); },
+  pinCancel() { state.pin = null; render(); },
+  pinLen(v) { Object.assign(state.pin, { len: +v, entered: '', err: '' }); render(); },
+  pinKey(v) {
+    const P = state.pin;
+    if (v === 'del') P.entered = P.entered.slice(0, -1);
+    else if (P.entered.length < P.len) P.entered += v;
+    P.err = '';
+    // only the dots change, so quick taps are never lost while the page is redrawn
+    const dots = document.getElementById('pinDots');
+    if (!dots) return render();
+    dots.classList.remove('shake');
+    [...dots.children].forEach((d, i) => d.classList.toggle('on', i < P.entered.length));
+    document.getElementById('pinErr').textContent = '';
+    if (P.entered.length === P.len) requestAnimationFrame(() => setTimeout(pinDone, 0));
+  },
+  pinForgot() {
+    if (!confirm('PIN kodu sıfırlamaq üçün telefonunuzun öz kilidi (barmaq izi və ya telefon PIN-i) soruşulacaq. Davam edək?')) return;
+    if (!Android.resetPinWithPhone()) alert('Telefonunuzda ekran kilidi qurulmayıb, ona görə PIN-i bu yolla sıfırlamaq olmur.');
+  },
+  openLoans() { state.loans = true; render(); window.scrollTo(0, 0); },
+  closeLoans() { state.loans = false; render(); },
+  newLoan() { state.sheet = { kind: 'loan' }; render(); },
+  editLoan(v) { state.sheet = { kind: 'loan', id: v }; render(); },
+  saveLoan() {
+    const name = val('f_name').trim(), amount = parseAmount(val('f_amount'));
+    if (!name) return toast('Adı yazın');
+    if (!amount) return toast('Məbləğ yazın');
+    const f = { name, phone: val('f_phone').trim(), amount, date: val('f_date') || today(), note: val('f_note').trim(), u: Date.now() };
+    if (state.sheet.id) Object.assign(db.loans.find(x => x.id === state.sheet.id), f, { back: Math.min(parseAmount(val('f_back')), amount) });
+    else db.loans.push(Object.assign({ id: uid(), back: 0, created: Date.now() }, f));
+    save(); state.sheet = null; render();
+  },
+  loanBack() {
+    const l = db.loans.find(x => x.id === state.sheet.id);
+    Object.assign(l, { back: l.amount, u: Date.now() });
+    save(); state.sheet = null; render(); toast(tr('{name} borcu qaytardı', { name: l.name }));
+  },
+  delLoan() { trashLoan(state.sheet.id); },
+  useCard(v) { const c = db.cards.find(x => x.id === v); if (c) { document.getElementById('f_card').value = c.v; actions.sendRemind(); } },
+  delCard(v) { db.cards = db.cards.filter(c => c.id !== v); db.removed[v] = Date.now(); save(); keepCard(); },
+  saveCard(v, e) {
+    if (e) e.preventDefault();
+    const card = document.getElementById('f_card').value.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1 ');
+    if (!card) return toast('Kart nömrəsini yazın');
+    if (db.cards.some(c => c.v === card)) return toast('Bu kart artıq var');
+    db.cards.push({ id: uid(), v: card, u: Date.now() }); save(); keepCard(); toast('Şablon əlavə olundu');
+  },
+  remind() { state.sheet = { kind: 'remind' }; render(); },
+  sendRemind() {
+    const digits = document.getElementById('f_card').value.replace(/\D/g, '');
+    const card = digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+    if (card !== (db.card ? db.card.v : '')) { db.card = { v: card, u: Date.now() }; save(); }
+    const p = db.people.find(x => x.id === state.person);
+    state.sheet = null; render();
+    location.href = waLink(p, balanceOf(p.id), card);
+  },
+  togglePaid() { toggleFold('showPaid'); },
+  // tapping the income at the top hides it (for when someone looks over your shoulder); remembered
+  toggleHideInc() { state.hideInc = !state.hideInc; try { localStorage.setItem('hideInc', state.hideInc ? '1' : ''); } catch (e) {} render(); },
+  toggleToday() { toggleFold('showToday'); },
+  openCur() { state.sheet = { kind: 'cur' }; render(); },
+  setCur(v) { db.cur = { v, u: Date.now() }; save(); state.sheet = null; render(); toast(tr('Valyuta: {v}', { v })); },
+  openLang() { state.sheet = { kind: 'lang' }; render(); },
+  setLang(v) {
+    const l = LANGS.find(x => x[0] === v);
+    db.lang = { v, u: Date.now() }; db.cur = { v: l[3], u: Date.now() }; save(); state.sheet = null; render();
+  },
+  openDebtors() { state.sheet = { kind: 'debtors' }; render(); },
+  openMonthDebtors() { state.sheet = { kind: 'monthDebtors' }; render(); },
+  openReceived() { state.sheet = { kind: 'received' }; render(); },
+  openToday() { state.sheet = { kind: 'today' }; render(); },
+  openMineDays() { state.sheet = { kind: 'mineDays' }; render(); },
+  openAllMonths() { state.sheet = { kind: 'allMonths' }; render(); },
+  openAllLeft() { state.sheet = { kind: 'allLeft' }; render(); },
+  openMonth() { state.sheet = { kind: 'month' }; render(); },
+  openYear() { state.sheet = { kind: 'year' }; render(); },
+  openDays() { state.sheet = { kind: 'days' }; render(); },
+  openTop() { state.sheet = { kind: 'top' }; render(); },
+  ustaYear(v) { state.sheet = { kind: 'ustaYear', id: v, q: state.sheet && state.sheet.q }; render(); },
+  ustaMonth(v) { state.sheet = { kind: 'ustaMonth', id: state.sheet.id, m: v, q: state.sheet.q }; render(); },
+  openFromTop(v) { state.fromTopQ = state.sheet && state.sheet.q; state.sheet = null; state.person = v; state.fromTop = v; render(); window.scrollTo(0, 0); },
+  hideTop(v) {
+    if (!confirm(tr('{name} hesabatdan silinsin? Gəlir və hesablar dəyişməyəcək.', { name: nameOf(v) }))) return;
+    db.hides.push({ id: 'hide-' + v, pid: v, u: Date.now() }); save(); render(); toast('Hesabatdan silindi');
+  },
+  unhideTop() { db.hides.forEach(hd => { db.removed[hd.id] = Date.now(); }); db.hides = []; save(); render(); },
+  toggleTheme() {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('theme', theme); } catch (e) {}
+    applyTheme(); render();
+  },
+  useTpl(v) {
+    const t = db.tpls.find(x => x.id === v);
+    document.getElementById('f_amount').value = amountInput(t.amount);
+    const c = document.getElementById('f_cost'); if (c) c.value = amountInput(t.cost);
+    document.getElementById('f_note').value = t.note;
+    const pr = document.getElementById('f_profit'); if (pr) pr.textContent = t.cost ? 'Qazanc: ' + money(t.amount - t.cost) : '';
+  },
+  saveAsTpl() {
+    const note = val('f_note').trim(), amount = parseAmount(val('f_amount'));
+    if (!note || !amount) return toast('Əvvəlcə məbləği və “Nə üçün” xanasını yazın');
+    const cost = parseAmount(val('f_cost'));
+    const old = db.tpls.find(t => t.note.toLowerCase() === note.toLowerCase());
+    if (old) Object.assign(old, { amount, cost, u: Date.now() });
+    else db.tpls.push({ id: uid(), note, amount, cost, u: Date.now() });
+    saveLocal(); scheduleSync(); toast(tr('“{note}” şablon kimi saxlandı', { note }));
+    const keep = { a: val('f_amount'), c: val('f_cost'), d: val('f_date'), n: val('f_note') };
+    render();
+    document.getElementById('f_amount').value = keep.a; document.getElementById('f_cost').value = keep.c; document.getElementById('f_date').value = keep.d; document.getElementById('f_note').value = keep.n;
+  },
+  manageTpl() { state.tplReturn = state.sheet; state.sheet = { kind: 'tpls' }; render(); },
+  backFromTpl() { state.sheet = state.tplReturn || null; state.tplReturn = null; render(); },
+  addTpl() {
+    const note = document.getElementById('t_note').value.trim(), amount = parseAmount(document.getElementById('t_amount').value);
+    if (!note || !amount) return toast('İşin adını və qiymətini yazın');
+    db.tpls.push({ id: uid(), note, amount, cost: parseAmount(document.getElementById('t_cost').value), u: Date.now() });
+    save(); render();
+  },
+  clearTpl() {
+    if (!confirm('Bütün hazır işlər silinsin? Yazdığınız borclar silinməyəcək.')) return;
+    db.tpls.forEach(t => { db.removed[t.id] = Date.now(); });
+    db.tpls = []; save(); render();
+  },
+  delTpl(v) {
+    if (!confirm('Bu şablon silinsin?')) return;
+    db.tpls = db.tpls.filter(t => t.id !== v); db.removed[v] = Date.now();
+    save(); render();
+  },
+  payAll() {
+    const b = balanceOf(state.person);
+    if (b <= 0 || !confirm(money(b) + ' tam ödənildi kimi yazılsın?')) return;
+    db.tx.push({ id: uid(), pid: state.person, type: 'pay', amount: b, date: today(), note: 'Tam ödədi', created: Date.now(), u: Date.now() });
+    save(); render(); toast('Hesab bağlandı');
+  },
+  shareReport() {
+    const [y, m] = state.month.split('-').map(Number);
+    const t = totals(state.month);
+    const lines = [
+      `📊 Hesabat — ${MONTHS[m - 1]} ${y}`, '',
+      `Yazılan iş: ${money(workNet(t))}`,
+      hasCash(t) ? `Nağd işlər: ${money(cashNet(t))}` : null,
+      t.oth ? `Digər gəlirlər: ${money(t.oth)}` : null,
+      t.loss ? `Ziyan: −${money(t.loss)}` : null,
+      `Xalis gəlir: ${money(gross(t))}`,
+      '',
+      `Müştərilərin ümumi borcu: ${money(outstanding())}`
+    ].filter(l => l !== null);
+    const text = lines.map(l => tr(l)).join('\n');
+    if (hasNative && Android.shareText) Android.shareText(text);
+    else if (navigator.share) navigator.share({ text });
+    else alert(text);
+  },
+  toggleLock() {
+    if (!hasNative) return toast('Yalnız telefonda işləyir');
+    if (!Android.lockAvailable()) return alert('Telefonunuzda ekran kilidi (PIN, barmaq izi və s.) qurulmayıb. Əvvəlcə telefonun Parametrlərində ekran kilidi qurun.');
+    Android.setLock(!Android.lockEnabled());
+    toast(Android.lockEnabled() ? 'Kilid yandı: tətbiq açılanda telefonun kilidi soruşulacaq' : 'Kilid söndürüldü');
+    render();
+  },
+  newTx(v) { state.sheet = { kind: 'tx', type: v }; render(); },
+  editTx(v) {
+    const t = db.tx.find(x => x.id === v);
+    state.sheet = { kind: 'tx', id: v, type: t.type, markPaid: false };
+    render();
+  },
+  // the two tabs hold different things (debt amount / payment amount), so each starts from its own values
+  txPaid(v) { state.sheet.markPaid = !!v; render(); },
+  txType(v) {
+    const keep = { a: val('f_amount'), d: val('f_date'), n: val('f_note'), c: val('f_cost'), u: val('f_due') };
+    state.sheet.type = v; render();
+    document.getElementById('f_amount').value = keep.a; document.getElementById('f_date').value = keep.d; document.getElementById('f_note').value = keep.n;
+    const c = document.getElementById('f_cost'); if (c) c.value = keep.c;
+    const u = document.getElementById('f_due'); if (u) u.value = keep.u;
+  },
+  saveTx() {
+    const amount = state.sheet.type === 'adj' ? parseSigned(val('f_amount')) : parseAmount(val('f_amount'));
+    const date = val('f_date') || today();
+    const note = val('f_note').trim();
+    const s = state.sheet;
+    if (s.id && s.markPaid) {
+      // a payment for an existing debt; the debt itself is not touched
+      const d = db.tx.find(x => x.id === s.id);
+      if (!amount) return toast('Məbləğ yazın');
+      db.tx.push({ id: uid(), pid: d.pid, type: 'pay', amount, forDebt: d.id, date, note: d.note ? 'Ödəniş: ' + d.note : 'Ödəniş', created: Date.now(), u: Date.now() });
+      save(); state.sheet = null; render();
+      return toast('Ödəniş yazıldı');
+    }
+    const cash = s.cash || s.type === 'inc';
+    const editing = s.id && db.tx.find(x => x.id === s.id);
+    if (editing && editing.other && !note) return toast('Gəlirin adını yazın');
+    const cost = s.type === 'debt' || cash || s.type === 'loss' ? parseAmount(val('f_cost')) : 0;
+    // an "extra parts" line added to an older job may have no amount of its own
+    const partsOnly = s.id && cost && ((db.tx.find(x => x.id === s.id) || {}).addTo || s.type === 'loss');
+    if (!amount && !partsOnly) return toast('Məbləğ yazın');
+    const old = s.id && db.tx.find(x => x.id === s.id);
+    // more work added later to an older job: the extra is written on today, tied to that job,
+    // so it counts as today's income while the job keeps its own day
+    // the same goes for more spare parts bought for it today
+    const oldCost = old ? old.cost || 0 : 0;
+    const cashPay = old && old.type === 'debt' && db.tx.find(x => x.type === 'pay' && x.forDebt === old.id && x.note === 'Nağd');
+    if (old && !cashPay && old.type === 'debt' && s.type === 'debt' && old.date < today() && date === old.date && !s.markPaid
+      && amount >= old.amount && cost >= oldCost && (amount > old.amount || cost > oldCost)) {
+      const add = amount - old.amount, addCost = cost - oldCost;
+      Object.assign(old, { note, u: Date.now() });
+      const kid = { id: uid(), pid: old.pid, type: 'debt', amount: add, date: today(), note: note || old.note, addTo: old.addTo || old.id, created: Date.now(), u: Date.now() };
+      if (addCost) kid.cost = addCost;
+      db.tx.push(kid);
+      save(); state.sheet = null; render();
+      return toast(add ? tr('Əlavə {sum} bu günə yazıldı', { sum: money(add) }) : tr('Əlavə xərc {sum} bu günə yazıldı', { sum: money(addCost) }));
+    }
+    if (s.id) {
+      const was = { type: old.type, amount: old.amount, cost: old.cost || 0, date: old.date };
+      const t = Object.assign(old, { type: s.type, amount, date, note, u: Date.now() });
+      if (cost) t.cost = cost; else delete t.cost;
+      const due = t.type === 'debt' ? val('f_due') : '';
+      if (due) t.due = due; else delete t.due;
+      if (cashPay && t.type === 'debt') Object.assign(cashPay, { amount, date, u: Date.now() });
+      const dA = was.amount - amount, dC = was.cost - cost;
+      if (was.type === 'debt' && t.type === 'debt' && t.pid && date === was.date && monthKey(date) !== today().slice(0, 7) && (dA || dC)) {
+        const now = Date.now(), back = { id: uid(), pid: null, type: 'debt', corr: true, amount: dA, date, note: 'Düzəldilmiş borc', created: now, u: now };
+        if (dC) back.cost = dC;
+        db.tx.push(back, { id: uid(), pid: null, type: 'debt', corr: true, amount: -(dA - dC), date: today(), note: 'Düzəldilmiş borc', created: now, u: now });
+      }
+    } else {
+      const t = { id: uid(), pid: s.type === 'exp' || s.type === 'pexp' || s.type === 'inc' ? null : state.person, type: s.type, amount, date, note, created: Date.now(), u: Date.now() };
+      if (s.type === 'pexp') t.cid = state.cat;
+      if (cash) t.cash = true;
+      if (cost) t.cost = cost;
+      if (s.type === 'debt' && val('f_due')) t.due = val('f_due');
+      db.tx.push(t);
+    }
+    // show the month the entry landed in, otherwise it seems to vanish
+    if (s.type === 'pexp' || s.type === 'exp' || (s.type === 'inc' && !cash)) state.month = monthKey(date);
+    save(); state.sheet = null; render();
+    toast('Yadda saxlandı');
+  },
+  delTx() { trashTx(state.sheet.id); },
+  menuEdit() {
+    const s = state.sheet;
+    if (s.target === 'person') state.sheet = { kind: 'person', id: s.id };
+    else if (s.target === 'cat') state.sheet = { kind: 'cat', id: s.id };
+    else if (s.target === 'loan') state.sheet = { kind: 'loan', id: s.id };
+    else state.sheet = { kind: 'tx', id: s.id, type: db.tx.find(x => x.id === s.id).type };
+    render();
+  },
+  // a loss loses its customer's name but keeps counting against income;
+  // a customer who was there only for losses leaves the list (to the trash)
+  lossUnname() {
+    const t = db.tx.find(x => x.id === state.sheet.id); if (!t) return;
+    const pid = t.pid; Object.assign(t, { pid: null, u: Date.now() }); delete t.pname;
+    state.sheet = null;
+    if (!db.tx.some(x => x.pid === pid) && db.people.some(p => p.id === pid)) return trashPerson(pid);
+    save(); render(); toast('Ad silindi, ziyan qalır');
+  },
+  // long press on a customer who owes nothing: remove them with all their work, so their income goes too
+  menuDeleteAll() { trashPerson(state.sheet.id, true); },
+  menuDelete() { trashByHold(state.sheet.target + ':' + state.sheet.id); },
+  newCat() { state.sheet = { kind: 'cat' }; render(); },
+  editCat() { state.sheet = { kind: 'cat', id: state.cat }; render(); },
+  quickCat(v) { db.cats.push({ id: uid(), name: v, created: Date.now(), u: Date.now() }); save(); render(); },
+  saveCat() {
+    const name = val('f_name').trim();
+    if (!name) return toast('Bölmənin adını yazın');
+    if (state.sheet.id) Object.assign(db.cats.find(c => c.id === state.sheet.id), { name, u: Date.now() });
+    else db.cats.push({ id: uid(), name, created: Date.now(), u: Date.now() });
+    save(); state.sheet = null; render();
+  },
+  delCat() { trashCat(state.sheet.id); },
+  // one starred section: shown in the top box and first in the list
+  starCat(v) {
+    const c = db.cats.find(x => x.id === v), on = !c.star;
+    db.cats.forEach(x => { if (x.star) { x.star = false; x.u = Date.now(); } });
+    if (on) Object.assign(c, { star: true, u: Date.now() });
+    save(); state.sheet = null; render();
+    toast(on ? tr('⭐ {name} yuxarıda görünəcək', { name: c.name }) : 'Ulduz götürüldü');
+  },
+  openCat(v) { state.cat = v; render(); window.scrollTo(0, 0); },
+  closeCat() { state.cat = null; render(); },
+  newPexp() { state.sheet = { kind: 'tx', type: 'pexp' }; render(); },
+  openTrash() { state.trash = true; render(); window.scrollTo(0, 0); },
+  closeTrash() { state.trash = false; render(); },
+  restore(v) {
+    const e = db.trash.find(x => x.id === v);
+    if (!e) return;
+    const back = [e];
+    if (e.kind === 'tx' && e.tx.pid && !db.people.some(p => p.id === e.tx.pid)) {
+      const owner = db.trash.find(x => x.kind === 'person' && x.person.id === e.tx.pid);
+      if (!owner) return toast('Bu əməliyyatın müştərisi həmişəlik silinib');
+      back.push(owner);
+    }
+    if (e.kind === 'tx' && e.tx.cid && !db.cats.some(c => c.id === e.tx.cid)) {
+      const owner = db.trash.find(x => x.kind === 'cat' && x.cat.id === e.tx.cid);
+      if (!owner) return toast('Bu xərcin bölməsi həmişəlik silinib');
+      back.push(owner);
+    }
+    const t = Date.now() + 1;
+    for (const b of back) {
+      db.removed[b.id] = Date.now();
+      if (b.kind === 'person') { db.people.push(Object.assign(b.person, { u: t })); b.tx.forEach(x => db.tx.push(Object.assign(x, { u: t }))); }
+      else if (b.kind === 'loan') db.loans.push(Object.assign(b.loan, { u: t }));
+      else if (b.kind === 'wo') { db.removed[b.txId] = Date.now(); db.tx = db.tx.filter(x => x.id !== b.txId); }
+      else if (b.kind === 'cat') { db.cats.push(Object.assign(b.cat, { u: t })); b.tx.forEach(x => db.tx.push(Object.assign(x, { u: t }))); }
+      else {
+        db.tx.push(Object.assign(b.tx, { u: t })); (b.with || []).forEach(x => db.tx.push(Object.assign(x, { u: t })));
+      }
+      (b.corr || []).forEach(cid => { db.removed[cid] = Date.now(); }); db.tx = db.tx.filter(x => !(b.corr || []).includes(x.id));
+    }
+    db.trash = db.trash.filter(x => !back.includes(x));
+    save(); render();
+    toast(back.length > 1 ? 'Aid olduğu yerlə birlikdə qaytarıldı' : 'Qaytarıldı');
+  },
+  purge(v) {
+    if (!confirm('Həmişəlik silinsin? Bunu geri qaytarmaq olmayacaq.')) return;
+    db.trash = db.trash.filter(x => x.id !== v);
+    db.removed[v] = Date.now();
+    save(); render();
+  },
+  emptyTrash() {
+    if (!confirm('Zibil qutusundakı hər şey həmişəlik silinsin?')) return;
+    db.trash.forEach(x => { db.removed[x.id] = Date.now(); });
+    db.trash = [];
+    save(); render();
+  },
+  syncLink() { if (hasNative && Android.syncLink) Android.syncLink(); else toast('Yalnız telefonda işləyir'); },
+  syncUnlink() {
+    if (!confirm('Sinxron dayandırılsın? Telefondakı və Google hesabındakı məlumatlar qalacaq.')) return;
+    Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; render();
+  },
+  syncNow() { runSync(); },
+  pickContact() {
+    if (hasNative) Android.pickContact(); else toast('Yalnız telefonda işləyir');
+  },
+  closeSheet() { const k = state.sheet && state.sheet.kind; if (k === 'sameName') return actions.sameDone(undefined); state.sheet = k === 'askDel' ? askBack : k === 'ustaMonth' ? { kind: 'ustaYear', id: state.sheet.id, q: state.sheet.q } : k === 'ustaYear' ? { kind: 'top', q: state.sheet.q } : null; askBack = null; render(); },
+  closeShade(v, e) { if (e.target.classList.contains('shade')) actions.closeSheet(); },
+  pickDate() { state.sheet = { kind: 'pickDate' }; render(); },
+  pickYear(v) { state.sheet.year = +v; render(); },
+  pickMonth(v) { state.month = v; state[dayKey()] = null; state.sheet = null; render(); },
+  pickDay() { const d = val('f_day'); if (!d) return; state[dayKey()] = d; state.month = d.slice(0, 7); state.sheet = null; render(); },
+  dayStep(v) { state[dayKey()] = v; state.month = v.slice(0, 7); render(); },
+  wholeMonth() { state[dayKey()] = null; render(); },
+  month(v) {
+    const [y, m] = state.month.split('-').map(Number);
+    const d = new Date(y, m - 1 + Number(v), 1);
+    state.month = d.getFullYear() + '-' + pad(d.getMonth() + 1); render();
+  },
+  share() {
+    const name = 'Hesabat-' + today() + '.json';
+    if (hasNative) Android.shareFile(JSON.stringify(db, null, 1), name);
+    else download(name);
+    render();
+  },
+  import() {
+    if (hasNative) return Android.importFile();
+    const i = document.createElement('input'); i.type = 'file';
+    i.onchange = () => i.files[0].text().then(window.onImported); i.click();
+  }
+};
+// An usta who has paid everything goes away by name only: their work and payments stay in the
+// income totals. An usta who still owes is removed with all their entries.
+function trashPerson(id, withIncome) {
+  const p = db.people.find(x => x.id === id);
+  const now = Date.now();
+  const keep = !withIncome && balanceOf(id) <= 0;
+  const corr = keep ? [] : corrFor(db.tx.filter(t => t.pid === id));
+  db.trash.unshift({ id: uid(), kind: 'person', person: p, tx: keep ? [] : db.tx.filter(t => t.pid === id), keptTx: keep, corr, at: now, u: now });
+  db.removed[id] = now;
+  db.people = db.people.filter(x => x.id !== id);
+  // the name stays on the kept entries, so reports can still show who the work was for
+  if (keep) db.tx.forEach(t => { if (t.pid === id) { t.pname = p.name; t.u = now; } });
+  if (!keep) {
+    db.tx.forEach(t => { if (t.pid === id) db.removed[t.id] = now; });
+    db.tx = db.tx.filter(t => t.pid !== id);
+  }
+  save(); state.sheet = null; if (state.person === id) state.person = null; render();
+  toast(tr('{name} zibil qutusuna atıldı', { name: p.name }));
+}
+// "Müştərilərin ümumi borcu": swiping a customer away clears what they still owe; it comes off this month's income
+// (and so the whole period's), never off an old month or a single day
+function writeOff(pid, keepIncome) {
+  const p = db.people.find(x => x.id === pid), left = balanceOf(pid);
+  if (!p || left <= 0) return render();
+  const now = Date.now(), t = { id: uid(), pid, type: 'adj', wo: true, amount: -left, date: today(), note: 'Borc silindi', created: now, u: now };
+  if (keepIncome) t.woKeep = true;
+  db.tx.push(t);
+  db.trash.unshift({ id: uid(), kind: 'wo', txId: t.id, name: p.name, amount: left, keepIncome: !!keepIncome, at: now, u: now });
+  save(); render(); toast('Borc silindi');
+}
+function trashLoan(id) {
+  const l = db.loans.find(x => x.id === id);
+  db.trash.unshift({ id: uid(), kind: 'loan', loan: l, at: Date.now(), u: Date.now() });
+  db.removed[id] = Date.now();
+  db.loans = db.loans.filter(x => x.id !== id);
+  save(); state.sheet = null; render();
+  toast(tr('{name} zibil qutusuna atıldı', { name: l.name }));
+}
+function trashCat(id) {
+  const c = db.cats.find(x => x.id === id);
+  const now = Date.now();
+  db.trash.unshift({ id: uid(), kind: 'cat', cat: c, tx: db.tx.filter(t => t.cid === id), at: now, u: now });
+  db.removed[id] = now;
+  db.tx.forEach(t => { if (t.cid === id) db.removed[t.id] = now; });
+  db.cats = db.cats.filter(x => x.id !== id);
+  db.tx = db.tx.filter(t => t.cid !== id);
+  save(); state.sheet = null; if (state.cat === id) state.cat = null; render();
+  toast(tr('{name} zibil qutusuna atıldı', { name: c.name }));
+}
+// Debts from earlier months that are being deleted: two hidden entries each (pid null, corr), one gives
+// the old month its work back, one takes it from today, so only this month's income goes down.
+function corrFor(list) {
+  const cm = today().slice(0, 7), now = Date.now(), out = [];
+  for (const t of list) {
+    if (t.type !== 'debt' || !t.pid || t.corr || monthKey(t.date) === cm) continue;
+    const back = { id: uid(), pid: null, type: 'debt', corr: true, amount: t.amount, date: t.date, note: 'Silinmiş borc', created: now, u: now };
+    if (t.cost) back.cost = t.cost;
+    out.push(back, { id: uid(), pid: null, type: 'debt', corr: true, amount: -(t.amount - (t.cost || 0)), date: today(), note: 'Silinmiş borc', created: now, u: now });
+  }
+  db.tx.push(...out);
+  return out.map(x => x.id);
+}
+// a deleted debt takes the payment made with "Ödənildi" for it along, so no stray payment is left behind
+function trashTx(id) {
+  const t = db.tx.find(x => x.id === id);
+  // the job's extra lines (also extra added onto an extra) and the payments tied to any of them
+  const fam = new Set([id]);
+  if (t.type === 'debt') for (let grew = true; grew;) { grew = false; for (const x of db.tx) if (x.addTo && fam.has(x.addTo) && !fam.has(x.id)) { fam.add(x.id); grew = true; } }
+  const linked = t.type === 'debt' ? db.tx.filter(x => x.id !== id && (fam.has(x.id) || (x.forDebt && fam.has(x.forDebt)))) : [];
+  // a debt from an earlier month comes off this month's income; that month's own figures stay as they were.
+  // Two hidden entries (pid null, corr) do it: one gives the old month its work back, one takes it from today.
+  const corr = corrFor([t].concat(linked));
+  db.trash.unshift({ id: uid(), kind: 'tx', tx: t, with: linked, corr, at: Date.now(), u: Date.now() });
+  db.removed[id] = Date.now();
+  linked.forEach(x => { db.removed[x.id] = Date.now(); });
+  db.tx = db.tx.filter(x => x.id !== id && !linked.includes(x));
+  save(); state.sheet = null; render();
+  toast('Zibil qutusuna atıldı');
+}
+function download(name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 1)], { type: 'application/json' }));
+  a.download = name; a.click();
+}
+window.onContactPicked = function (name, phone) {
+  const n = document.getElementById('f_name'), ph = document.getElementById('f_phone');
+  if (!ph) return;
+  ph.value = phone.trim();
+  if (n && name.trim()) { n.value = name.trim(); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+};
+window.onImported = function (text) {
+  let d;
+  try { d = JSON.parse(text); } catch (e) { return alert('Fayl düzgün deyil'); }
+  if (!d || !Array.isArray(d.people) || !Array.isArray(d.tx)) return alert('Bu fayl Hesabat faylı deyil');
+  if (!confirm(`Faylda ${d.people.length} müştəri və ${d.tx.length} əməliyyat var. Hazırkı məlumatlar əvəz olunsun?`)) return;
+  const before = db;
+  db = Object.assign({ version: 1 }, d);
+  if (!Array.isArray(db.trash)) db.trash = [];
+  if (!Array.isArray(db.cats)) db.cats = [];
+  if (!Array.isArray(db.loans)) db.loans = [];
+  if (!Array.isArray(db.tpls)) db.tpls = [];
+  if (!Array.isArray(db.cards)) db.cards = [];
+  if (!Array.isArray(db.hides)) db.hides = [];
+  if (!db.removed || typeof db.removed !== 'object') db.removed = {};
+  // the imported data must win the next sync: its records count as just changed, and what is
+  // on the phone but not in the file counts as just deleted (otherwise Drive would bring it back)
+  const now = Date.now(), keep = new Set();
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash']) db[key].forEach(r => { r.u = now; keep.add(r.id); delete db.removed[r.id]; });
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash']) (before[key] || []).forEach(r => { if (!keep.has(r.id)) db.removed[r.id] = now; });
+  save(); state.person = null; state.tab = 'people'; render();
+  toast('Bərpa olundu');
+};
+
+// long press -> action menu, swipe left -> trash
+let holdTimer = null, held = false, holdX = 0, holdY = 0;
+let swipeEl = null, swipeDx = 0, swipeMode = null, swipeBg = null;
+function openHoldMenu(el) {
+  const [target, id] = el.dataset.hold.split(':');
+  held = true;
+  if (hasNative && Android.haptic) Android.haptic();
+  state.sheet = { kind: 'menu', target, id };
+  render();
+}
+// a swipe asks first, in the app's own window: what exactly should go
+function askDelete(hold, fromToday) {
+  const [target, id] = hold.split(':');
+  const keep = { color: 'pay' }, drop = { color: 'debt' };
+  let name = '', info = '', opts = [];
+  if (fromToday) {
+    // "Bu gün yazılanlar": take the row off today's list (a debt stays with the debtors), or delete today's work with its income
+    const p = target === 'person' && db.people.find(x => x.id === id), t = target === 'tx' && db.tx.find(x => x.id === id);
+    if (!p && !t) return render();
+    const work = p ? db.tx.filter(x => x.pid === id && x.type === 'debt' && x.date === today()) : [t];
+    const sum = work.reduce((x, w) => x + (w.type === 'loss' ? 0 : w.amount - (w.cost || 0)), 0);
+    name = p ? p.name : (t.note || tr(txLabel(t))); info = p ? tr('Bu gün: +{sum}', { sum: money(sum) }) : money(t.amount);
+    opts = [Object.assign({ icon: '👤', label: tr(p ? 'Müştərini sil' : 'Sil'), sub: p && balanceOf(id) > 0 ? tr('Bu günün siyahısından çıxır, borclularda qalır, gəlir dəyişmir') : tr('Bu günün siyahısından çıxır, gəlir dəyişmir'), run: () => hideToday(hold) }, keep),
+      Object.assign({ icon: '📉', label: tr('Gəliri sil'), sub: t && t.type === 'loss' ? tr('Ziyan silinir') : tr('Bu günkü işi silinir, {sum} gəlirdən çıxılır', { sum: money(sum) }), run: () => { work.forEach(w => { if (db.tx.some(x => x.id === w.id)) trashTx(w.id); }); } }, drop)];
+    askBack = null; state.sheet = { kind: 'askDel', name, info, opts, sel: 0 }; return render();
+  }
+  if (target === 'wo' || target === 'person') {
+    const p = db.people.find(x => x.id === id); if (!p) return render();
+    const b = balanceOf(id), since = debtSince(id), days = since ? Math.floor((new Date(today()) - new Date(since)) / 864e5) : 0;
+    name = p.name;
+    if (b > 0) {
+      info = tr('Borcu: {sum}', { sum: money(b) }) + (since ? ' · ' + (days <= 0 ? tr('bu gündən') : tr('{0} gündür', { 0: days })) : '');
+      opts = [Object.assign({ icon: '🧾', label: tr('Borcu sil, gəlir qalsın'), sub: tr('Borc 0 olur, gəlir dəyişmir'), run: () => writeOff(id, true) }, keep),
+        Object.assign({ icon: '📉', label: tr('Borcu sil, gəlirdən çıxılsın'), sub: tr('Borc 0 olur, {sum} bu ayın gəlirindən çıxılır', { sum: money(b) }), run: () => writeOff(id, false) }, drop)];
+    } else {
+      info = tr('Borcu yoxdur');
+      opts = [Object.assign({ icon: '👤', label: tr('Yalnız adı sil'), sub: tr('Siyahıdan çıxır, gəlir qalır'), run: () => trashPerson(id) }, keep),
+        Object.assign({ icon: '📉', label: tr('Gəliri ilə birlikdə sil'), sub: tr('İşləri silinir, gəliri də çıxılır'), run: () => trashPerson(id, true) }, drop)];
+    }
+  } else if (target === 'tx') {
+    const t = db.tx.find(x => x.id === id); if (!t) return render();
+    name = tr(txLabel(t)) + ' ' + money(t.amount); info = fmtDate(t.date) + (t.note ? ' · ' + t.note : '');
+    opts = [Object.assign({ icon: '🗑', label: tr('Sil'), sub: t.type === 'pay' ? tr('Ödəniş silinir, borc qayıdır') : t.type === 'pexp' ? tr('Xərc silinir') : tr('Silinir, gəlirdən çıxılır'), run: () => trashTx(id) }, drop)];
+  } else if (target === 'cat') {
+    const c = db.cats.find(x => x.id === id); if (!c) return render();
+    name = c.name; opts = [Object.assign({ icon: '🗑', label: tr('Bölməni xərcləri ilə sil'), sub: tr('{0} xərc', { 0: db.tx.filter(t => t.cid === id).length }), run: () => trashCat(id) }, drop)];
+  } else if (target === 'loan') {
+    const l = db.loans.find(x => x.id === id); if (!l) return render();
+    name = l.name; info = money(loanLeft(l)); opts = [Object.assign({ icon: '🗑', label: tr('Sil'), sub: tr('Borc verdiyiniz silinir'), run: () => trashLoan(id) }, drop)];
+  }
+  askBack = state.sheet && state.sheet.kind !== 'askDel' ? state.sheet : null;
+  state.sheet = { kind: 'askDel', name, info, opts, sel: 0 }; render();
+}
+let askBack = null;
+function trashByHold(hold) {
+  const [target, id] = hold.split(':');
+  ({ person: trashPerson, cat: trashCat, tx: trashTx, loan: trashLoan, wo: writeOff })[target](id);
+}
+app.addEventListener('touchstart', e => {
+  const th = e.target.closest('[data-tophold]');
+  held = false;
+  if (th) {
+    holdX = e.touches[0].clientX; holdY = e.touches[0].clientY; swipeEl = null;
+    holdTimer = setTimeout(() => { held = true; if (hasNative && Android.haptic) Android.haptic(); actions.hideTop(th.dataset.tophold); }, 550);
+    return;
+  }
+  const el = e.target.closest('[data-hold]');
+  const wo = el && el.dataset.hold.startsWith('wo:');
+  if (!el || (state.sheet && !wo)) return;
+  holdX = e.touches[0].clientX; holdY = e.touches[0].clientY;
+  swipeEl = el; swipeDx = 0; swipeMode = null;
+  if (!wo && !el.closest('[data-today]')) holdTimer = setTimeout(() => { swipeEl = null; openHoldMenu(el); }, 550);
+}, { passive: true });
+app.addEventListener('touchmove', e => {
+  const dx = e.touches[0].clientX - holdX, dy = e.touches[0].clientY - holdY;
+  if (holdTimer && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) { clearTimeout(holdTimer); holdTimer = null; }
+  if (!swipeEl) return;
+  if (!swipeMode && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) swipeMode = Math.abs(dx) > Math.abs(dy) && dx < 0 ? 'x' : 'y';
+  if (swipeMode !== 'x') return;
+  swipeDx = Math.min(0, dx);
+  if (!swipeBg) {
+    swipeBg = document.createElement('div');
+    swipeBg.className = 'swipe-bg';
+    swipeBg.innerHTML = TRASH_ICON + '<span>Sil</span>';
+    swipeEl.parentNode.insertBefore(swipeBg, swipeEl);
+    swipeBg.style.top = swipeEl.offsetTop + 'px';
+    swipeBg.style.height = swipeEl.offsetHeight + 'px';
+  }
+  const far = -swipeDx > swipeEl.offsetWidth * 0.35;
+  swipeBg.classList.toggle('far', far);
+  swipeEl.style.transition = 'none';
+  swipeEl.style.transform = `translateX(${swipeDx}px)`;
+}, { passive: true });
+function endSwipe() {
+  const el = swipeEl, bg = swipeBg;
+  swipeEl = null; swipeBg = null;
+  if (!el || swipeMode !== 'x') return false;
+  held = true; // swallow the click that follows
+  setTimeout(() => { held = false; }, 400);
+  el.style.transition = 'transform .2s ease';
+  if (-swipeDx > el.offsetWidth * 0.35) {
+    el.style.transform = 'translateX(-110%)';
+    setTimeout(() => askDelete(el.dataset.hold, !!el.closest('[data-today]')), 200);
+  } else {
+    el.style.transform = '';
+    setTimeout(() => bg && bg.remove(), 200);
+  }
+  return true;
+}
+const endHold = e => {
+  clearTimeout(holdTimer); holdTimer = null;
+  endSwipe();
+  if (held && e.cancelable) e.preventDefault();
+};
+app.addEventListener('touchend', endHold);
+app.addEventListener('touchcancel', endHold);
+app.addEventListener('contextmenu', e => {
+  const el = e.target.closest('[data-hold]'), th = e.target.closest('[data-tophold]');
+  e.preventDefault();
+  if (th && !held) { clearTimeout(holdTimer); held = true; actions.hideTop(th.dataset.tophold); return; }
+  if (el && !held && !state.sheet && !el.closest('[data-today]')) { clearTimeout(holdTimer); openHoldMenu(el); held = false; }
+});
+
+app.addEventListener('click', e => {
+  if (held) { held = false; e.preventDefault(); return; }
+  const el = e.target.closest('[data-a]');
+  if (!el) return;
+  const fn = actions[el.dataset.a];
+  if (fn) fn(el.dataset.v, e);
+});
+app.addEventListener('input', e => {
+  if ((e.target.id === 'f_amount' || e.target.id === 'f_cost') && document.getElementById('f_profit')) {
+    const a = parseAmount(val('f_amount')), c = parseAmount(val('f_cost'));
+    document.getElementById('f_profit').textContent = c ? 'Qazanc: ' + money(a - c) : '';
+  }
+  if (e.target.id === 'dq' && state.sheet) {
+    state.sheet.q = e.target.value;
+    const pos = e.target.selectionStart;
+    render();
+    const q = document.getElementById('dq'); if (q) { q.focus(); q.setSelectionRange(pos, pos); }
+  }
+  if (e.target.id === 'q') {
+    state.q = e.target.value;
+    const pos = e.target.selectionStart;
+    render();
+    const q = document.getElementById('q'); q.focus(); q.setSelectionRange(pos, pos);
+  }
+});
+// the two months chosen in "İki ayı müqayisə et"
+function cmpPick(e) {
+  if ((e.target.id !== 'cmpA' && e.target.id !== 'cmpB') || !state.sheet || state.sheet.kind !== 'compare') return;
+  const k = e.target.id === 'cmpA' ? 'a' : 'b';
+  if (state.sheet[k] !== e.target.value) { state.sheet[k] = e.target.value; render(); }
+}
+app.addEventListener('input', cmpPick);
+app.addEventListener('change', cmpPick);
+app.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && state.sheet) {
+    const btn = app.querySelector('[data-a="saveTx"],[data-a="savePerson"]');
+    if (btn) { e.preventDefault(); btn.click(); }
+  }
+});
+
+load();
+if (hasNative && Android.syncLinked) sync.account = Android.syncLinked();
+if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
+  state.pin = { mode: 'unlock', len: Android.pinLength(), entered: '', err: '' };
+  if (bioOn()) setTimeout(() => Android.bioPrompt(), 300);
+}
+render();
+updateShortcuts();
+if (hasNative && Android.takeLaunchTarget) window.onLaunchTarget(Android.takeLaunchTarget());
+runSync();
+</script>
+</body>
+</html>
