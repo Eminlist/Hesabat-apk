@@ -42,7 +42,8 @@ jobs:
           zipalign -c -p 4 Hesabat.apk
           apksigner verify --print-certs Hesabat.apk
           V=$(grep -o 'versionName="[^"]*"' AndroidManifest.xml | cut -d'"' -f2)
-          mv Hesabat.apk "Hesabat-$V.apk"
+          # "3.1.3 Rev. 00" -> Hesabat-3.1.3-Rev00.apk
+          mv Hesabat.apk "Hesabat-$(echo "$V" | sed 's/ Rev\. */-Rev/; s/ /-/g').apk"
 
       - name: APK-nı yüklə
         uses: actions/upload-artifact@v4

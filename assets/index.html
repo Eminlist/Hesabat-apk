@@ -50,6 +50,19 @@
   .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
   .section-title { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin: 18px 4px 8px; font-weight: 600; }
 
+  .fabp { position: fixed; right: 18px; bottom: 80px; width: 60px; height: 60px; border-radius: 50%; z-index: 5; color: #fff;
+    background: linear-gradient(145deg, #14B8A6, var(--brand) 55%, var(--brand-2)); display: grid; place-items: center;
+    box-shadow: 0 8px 20px rgba(15,118,110,.38), 0 2px 5px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.25); transition: transform .12s ease; }
+  .fabp:active { transform: scale(.92); }
+  .fabp svg { width: 30px; height: 30px; }
+  .addlist { display: grid; gap: 10px; }
+  .addopt { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+  .addopt:active { background: var(--brand-soft); }
+  .addopt .addic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; flex: none; }
+  .addopt .addic svg { width: 24px; height: 24px; }
+  .addopt b { display: block; font-size: 16px; }
+  .addopt small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .addopt .chev { color: var(--muted); font-size: 22px; line-height: 1; }
   .fab { position: fixed; right: 16px; bottom: 76px; background: var(--brand); color: #fff; border-radius: 22px; padding: 9px 16px; font-size: 14px; font-weight: 650; box-shadow: 0 4px 12px rgba(15,118,110,.3); z-index: 5; }
   nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; background: var(--card); border-top: 1px solid var(--line); }
   nav button { flex: 1; padding: 10px 0 12px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
@@ -171,7 +184,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '17.7';
+const APP_VERSION = '3.1.3 Rev. 00';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], removed: {} };
 
 function load() {
@@ -506,6 +519,13 @@ window.onBack = function () {
 };
 
 const TRASH_ICON = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>';
+const ADD_ICONS = {
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  person: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
+  cash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/></svg>',
+  other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+  loss: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17l-8.5-8.5-5 5L2 7"/><path d="M16 17h6v-6"/></svg>'
+};
 const ICONS = {
   people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   report: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>',
@@ -539,7 +559,7 @@ function drawPage() {
   else {
     h = renderHeader();
     h += '<main>' + (state.tab === 'people' ? renderPeople() : state.tab === 'report' ? renderReport() : state.tab === 'mine' ? renderMine() : renderSettings()) + '</main>';
-    if (state.tab === 'people') h += '<button class="fab" data-a="newPerson">+ Müştəri əlavə et</button>';
+    if (state.tab === 'people') h += `<button class="fabp" data-a="newPerson" title="Əlavə et" aria-label="Əlavə et">${ADD_ICONS.plus}</button>`;
     if (state.tab === 'mine') h += '<button class="fab" data-a="newCat">+ Bölmə</button>';
     h += '<nav>' + [['people', 'Müştərilər'], ['mine', 'Xərclərim'], ['report', 'Hesabat'], ['settings', 'Ayarlar']].map(([k, l]) =>
       `<button class="${state.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${ICONS[k]}${l}</button>`).join('') + '</nav>';
@@ -553,14 +573,50 @@ function drawPage() {
   const wasPage = lastView && !lastView.startsWith('tab:');
   app.dataset.anim = view === lastView ? '' : !view.startsWith('tab:') ? 'page' : wasPage ? 'back' : 'tab';
   app.dataset.sheetAnim = sheetKey && sheetKey !== lastSheet ? '1' : '';
+  const same = view === lastView && sheetKey === lastSheet && app.firstChild;
   lastView = view; lastSheet = sheetKey;
-  app.innerHTML = h;
-  translatePage(app);
+  if (same) {
+    // same screen: patch it in place, so the field being typed in stays the very same element —
+    // Android then keeps the keyboard open and the word being typed intact
+    const fresh = document.createElement('div');
+    fresh.innerHTML = h;
+    translatePage(fresh);
+    morphChildren(app, fresh);
+  } else {
+    app.innerHTML = h;
+    translatePage(app);
+  }
   if (keepScroll != null) window.scrollTo(0, keepScroll);
   const auto = app.querySelector('[data-autofocus]');
   if (auto) setTimeout(() => { if (document.activeElement === document.body) auto.focus(); }, 60);
 }
 
+// ---------- in-place redraw ----------
+function morphChildren(from, to) {
+  const a = [...from.childNodes], b = [...to.childNodes];
+  for (let i = 0; i < b.length; i++) { if (i < a.length) morphNode(a[i], b[i]); else from.appendChild(b[i]); }
+  for (let i = b.length; i < a.length; i++) a[i].remove();
+}
+function morphNode(from, to) {
+  if (from.nodeType !== to.nodeType || from.nodeName !== to.nodeName) { from.replaceWith(to); return; }
+  if (from.nodeType !== 1) { if (from.nodeValue !== to.nodeValue) from.nodeValue = to.nodeValue; return; }
+  const tag = from.nodeName, focused = from === document.activeElement;
+  // what the user typed or ticked stays; only a value the app itself changed is taken over
+  const oldVal = from.getAttribute('value'), oldChecked = from.hasAttribute('checked');
+  for (const at of [...from.attributes]) if (!to.hasAttribute(at.name)) from.removeAttribute(at.name);
+  for (const at of [...to.attributes]) if (from.getAttribute(at.name) !== at.value) from.setAttribute(at.name, at.value);
+  if (tag === 'INPUT') {
+    if (oldVal !== to.getAttribute('value') && !focused) from.value = to.value;
+    if (oldChecked !== to.hasAttribute('checked')) from.checked = to.checked;
+    return;
+  }
+  if (tag === 'TEXTAREA') {
+    if (from.defaultValue !== to.defaultValue) { const v = from.value; from.defaultValue = to.defaultValue; if (focused) from.value = v; else from.value = to.defaultValue; }
+    return;
+  }
+  morphChildren(from, to);
+  if (tag === 'SELECT' && !focused && from.value !== to.value) from.value = to.value;
+}
 // redraw without losing what is typed in an open form (used when synced data arrives)
 function renderKeep() {
   const vals = [...app.querySelectorAll('input[id],textarea[id]')].map(e => [e.id, e.value]), focus = document.activeElement && document.activeElement.id;
@@ -678,7 +734,7 @@ function smartMatch(name, query) {
   return parts.every(p => words.some(w => w.startsWith(p)));
 }
 function renderPeople() {
-  if (!db.people.length) return '<div class="empty">Hələ müştəri yoxdur.<br>Aşağıdakı “+ Müştəri əlavə et” düyməsini basın.</div>';
+  if (!db.people.length) return '<div class="empty">Hələ müştəri yoxdur.<br>Aşağıdakı + düyməsini basın.</div>';
   const q = norm(state.q);
   const list = db.people.map(p => ({ p, b: balanceOf(p.id), d: lastActivity(p.id) }))
     .filter(x => !q || smartMatch(x.p.name, state.q) || phoneMatch(x.p.phone, state.q))
@@ -1241,6 +1297,16 @@ function renderSheet() {
       <button class="btn payb" data-a="sendRemind">Göndər</button>`;
     return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
   }
+  if (s.kind === 'add') {
+    const opt = (m, icon, bg, col, t, d) => `<button class="addopt" data-a="newPersonMode" data-v="${m}"><span class="addic" style="background:${bg};color:${col}">${icon}</span><span class="grow"><b>${t}</b><small>${d}</small></span><span class="chev">›</span></button>`;
+    h += `<h2>Nə əlavə edirsiniz?</h2><div class="addlist">
+      ${opt('', ADD_ICONS.person, 'var(--brand-soft)', 'var(--brand)', 'Yeni müştəri', 'Borc yazmaq üçün müştəri')}
+      ${opt('cash', ADD_ICONS.cash, 'var(--pay-soft)', 'var(--pay)', 'Nağd', 'Pulu dərhal alınan iş')}
+      ${opt('other', ADD_ICONS.other, 'var(--pay-soft)', 'var(--pay)', 'Digər gəlir', 'Müştərisiz gəlir, adı ilə')}
+      ${opt('loss', ADD_ICONS.loss, 'var(--debt-soft)', 'var(--debt)', 'Ziyan', 'Zərər və itkilər')}
+    </div>`;
+    return h + '<button class="btn ghost" data-a="closeSheet">Ləğv et</button></div></div>';
+  }
   if (s.kind === 'sameName') {
     // a new customer with a name that is already in the list: the same person, or someone new?
     const p = db.people.find(x => x.id === s.same);
@@ -1557,9 +1623,7 @@ function renderSheet() {
     const p = s.id ? db.people.find(x => x.id === s.id) : { name: '', phone: '' };
     const mode = s.id ? '' : s.mode || '';
     // a new customer can also be one who paid on the spot (Nağd) or a job that lost money (Ziyan)
-    const chip = (m, label, col) => `<button class="mini" data-a="personMode" data-v="${m}" style="${mode === m ? `background:${col};color:#fff` : ''}">${label}</button>`;
-    h += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><h2 style="margin:0;flex:1;min-width:120px">${s.id ? 'Müştərini düzəlt' : mode === 'loss' ? 'Ziyan' : mode === 'cash' ? 'Nağd' : mode === 'other' ? 'Digər gəlir' : 'Yeni müştəri'}</h2>
-      ${s.id ? '' : chip('cash', '💵 Nağd', 'var(--pay)') + chip('loss', '📉 Ziyan', 'var(--debt)') + chip('other', '➕ Digər gəlir', 'var(--pay)')}</div>`;
+    h += `<h2>${s.id ? 'Müştərini düzəlt' : mode === 'loss' ? 'Ziyan' : mode === 'cash' ? 'Nağd' : mode === 'other' ? 'Digər gəlir' : 'Yeni müştəri'}</h2>`;
     // "Digər gəlir": income that is not from a customer, written with its own name; it counts in every income total
     if (mode === 'other') return h + `
       <label>Gəlirin adı</label><input class="field" id="f_name" placeholder="məs. Aksesuar satışı" data-autofocus>
@@ -1766,15 +1830,12 @@ const actions = {
   open(v) { state.fromSheet = state.sheet && !state.person ? { kind: state.sheet.kind, q: state.sheet.q } : null; state.sheet = null; state.person = v; state.fromTop = false; render(); window.scrollTo(0, 0); },
   // an usta opened from the report's top list goes back to that list
   back() { const from = state.fromTop, fromSheet = state.fromSheet; state.person = null; state.fromSheet = null; if (from) { state.fromTop = false; state.tab = 'report'; state.sheet = { kind: 'ustaYear', id: from, q: state.fromTopQ }; } else if (fromSheet) state.sheet = fromSheet; render(); },
-  newPerson() { state.sheet = { kind: 'person' }; render(); },
+  // the + button: first a choice of what is being added, then its form
+  newPerson() { state.sheet = { kind: 'add' }; render(); },
+  newPersonMode(v) { state.sheet = { kind: 'person', mode: v || '' }; render(); },
   askSel(v) { state.sheet.sel = +v; render(); },
   askDo() { const s = state.sheet, o = s.opts[s.sel] || s.opts[0]; state.sheet = askBack; askBack = null; o.run(); },
   editPerson() { state.sheet = { kind: 'person', id: state.person }; render(); },
-  personMode(v) {
-    const keep = ['f_name', 'f_phone', 'f_amount', 'f_cost', 'f_note', 'f_date'].map(id => [id, val(id)]);
-    state.sheet.mode = state.sheet.mode === v ? '' : v; render();
-    keep.forEach(([id, v]) => { const el = document.getElementById(id); if (el && v) el.value = v; });
-  },
   savePerson() {
     const name = val('f_name').trim(), mode = state.sheet.id ? '' : state.sheet.mode || '';
     if (mode === 'other') {
@@ -2521,13 +2582,13 @@ app.addEventListener('input', e => {
     state.sheet.q = e.target.value;
     const pos = e.target.selectionStart;
     render();
-    const q = document.getElementById('dq'); if (q) { q.focus(); q.setSelectionRange(pos, pos); }
+    const q = document.getElementById('dq'); if (q && q !== document.activeElement) { q.focus(); q.setSelectionRange(pos, pos); }
   }
   if (e.target.id === 'q') {
     state.q = e.target.value;
     const pos = e.target.selectionStart;
     render();
-    const q = document.getElementById('q'); q.focus(); q.setSelectionRange(pos, pos);
+    const q = document.getElementById('q'); if (q && q !== document.activeElement) { q.focus(); q.setSelectionRange(pos, pos); }
   }
 });
 // the two months chosen in "İki ayı müqayisə et"
