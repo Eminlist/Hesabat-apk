@@ -184,8 +184,8 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 01';
-let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], removed: {} };
+const APP_VERSION = '3.1.3 Rev. 02';
+let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], removed: {} };
 
 function load() {
   let raw = '';
@@ -199,6 +199,7 @@ function load() {
   if (!Array.isArray(db.tpls)) db.tpls = [];
   if (!Array.isArray(db.cards)) db.cards = [];
   if (!Array.isArray(db.hides)) db.hides = [];
+  if (!Array.isArray(db.orders)) db.orders = [];
   if (!db.removed || typeof db.removed !== 'object') db.removed = {};
 }
 function save() {
@@ -222,7 +223,10 @@ function updateShortcuts() {
   // the home-screen widget: today's income (it shows the "zero" text once the day is over)
   if (Android.setWidget) Android.setWidget(today(), tr('Bu günkü gəlir'), money(income(d)), money(0));
   // debts with a payment day still open: the phone reminds on that day (and every day after, until paid)
-  if (Android.setDueList) Android.setDueList(JSON.stringify({ title: tr('Ödəniş günü çatıb'), more: tr('{0} müştərinin ödəniş günü çatıb'), items: dueItems() }));
+  if (Android.setDueList) {
+    const od = orderDue(), items = dueItems().concat(od);
+    Android.setDueList(JSON.stringify(od.length ? { title: tr('Hesabat: xatırlatma'), more: tr('{0} xatırlatma'), items } : { title: tr('Ödəniş günü çatıb'), more: tr('{0} müştərinin ödəniş günü çatıb'), items }));
+  }
 }
 function dueItems() {
   const out = [];
@@ -251,7 +255,7 @@ function mergeDb(a, b) {
   const removed = Object.assign({}, a.removed);
   for (const [id, t] of Object.entries(b.removed || {})) if (!(removed[id] >= t)) removed[id] = t;
   const out = Object.assign({}, a, { removed });
-  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash']) {
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders']) {
     const m = new Map();
     for (const r of (a[key] || []).concat(b[key] || [])) {
       const cur = m.get(r.id);
@@ -744,7 +748,7 @@ function renderPeople() {
   if (!db.people.length) return '<div class="empty">Hələ müştəri yoxdur.<br>Aşağıdakı + düyməsini basın.</div>';
   const q = norm(state.q);
   const list = db.people.map(p => ({ p, b: balanceOf(p.id), d: lastActivity(p.id) }))
-    .filter(x => !q || smartMatch(x.p.name, state.q) || phoneMatch(x.p.phone, state.q))
+    .filter(x => !q || smartMatch(x.p.name, state.q) || phoneMatch(x.p.phone, state.q) || orderMatch(x.p.id, state.q))
     .sort((a, b) => recentKey(b.p).localeCompare(recentKey(a.p)) || a.p.name.localeCompare(b.p.name, 'az'));
   let h = `<input class="search" id="q" placeholder="Axtar..." value="${esc(state.q)}">`;
   if (!list.length) return h + '<div class="empty">Tapılmadı</div>';
@@ -839,7 +843,8 @@ function waLink(p, b, card) {
   // only what is still unpaid; a part-paid debt shows what is left of it
   const debts = debtState(p.id).debts.filter(d => d.left > 0 && d.t.type === 'debt').sort((a, c) => c.t.date.localeCompare(a.t.date))
     .map(({ t, left }) => `• ${tr(fmtDate(t.date))}${t.note ? ' — ' + t.note : ''}: ${money(left)}${left < t.amount ? ' ' + tr('({sum}-dan qalıb)', { sum: money(t.amount) }) : ''}`).join('\n');
-  const text = tr('Salam!') + '\n' + tr('Sizin {sum} borcunuz qalıb.', { sum: money(b) }) + '\n' + debts
+  const ords = debtOrders(p.id);
+  const text = tr('Salam!') + '\n' + tr('Sizin {sum} borcunuz qalıb.', { sum: money(b) }) + '\n' + debts + (ords.length ? '\n' + tr('Sifariş') + ': ' + ords.join(', ') : '')
     + (card ? '\n\n' + tr('Kart nömrəsi:\n{card}', { card: card.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1\u00a0') }) + '\n' : '') + '\n' + tr('Təşəkkürlər.');
   return 'https://wa.me/' + num + '?text=' + encodeURIComponent(text);
 }
@@ -922,6 +927,7 @@ function renderPerson() {
     <div style="background:var(--brand);color:#fff;padding:0 16px 20px;margin-top:-1px">
       <div class="bal"><small>${b > 0 ? 'Sizə borcu' : b < 0 ? 'Artıq ödəyib' : 'Hesab bağlıdır'}</small><b class="num">${money(Math.abs(b))}</b></div>
       ${p.phone ? `<div style="text-align:center;margin-top:4px"><a href="tel:${esc(p.phone)}" style="color:#fff;opacity:.9">📞 ${esc(p.phone)}</a></div>` : ''}
+      ${habitLine(p)}
     </div>
     <main style="padding-bottom:30px">
       ${p.gone ? '<p class="note" style="text-align:center;margin-top:0">Bu müştərinin adı Müştərilər siyahısından silinib. Hesabı yalnız baxmaq üçün saxlanılıb.</p>' : '<div class="two"><button class="btn debtb" data-a="newTx" data-v="debt">+ Borc yaz</button><button class="btn payb" data-a="newTx" data-v="pay">✓ Ödəniş aldım</button></div>'}
@@ -944,8 +950,185 @@ function renderPerson() {
       ${p.gone ? '' : `<div class="two">
         <button class="btn ghost" style="margin:0" data-a="editNote">📝 Qeyd / şəkil</button>
         <button class="btn ghost" style="margin:0" data-a="shareAccount">📤 Paylaş / çap et</button></div>`}
+      ${b > 0 && !p.gone && hasNative && Android.sharePdf ? '<button class="btn ghost" data-a="receipt">🧾 Borc qəbzi (PDF)</button>' : ''}
+      ${ordersBlock(p)}
       ${tx.length ? personHistory(tx) : '<div class="empty">Hələ əməliyyat yoxdur</div>'}
     </main></div>`;
+}
+
+// ---------- repair orders (sifarişlər): device, IMEI, status, warranty ----------
+const OST = [['qebul', 'Qəbul edildi', '#64748B'], ['temir', 'Təmirdə', '#D97706'], ['hazir', 'Hazırdır', '#0284C7'], ['verildi', 'Təhvil verildi', '#16A34A']];
+const OITEMS = ['Qab', 'Şarj', 'SIM', 'Yaddaş kartı'];
+const ostOf = k => OST.find(x => x[0] === k) || OST[0];
+const ordNo = o => '№' + String(o.no).padStart(4, '0');
+function addDays(d, n) { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); }
+const warrantyEnd = o => o.status === 'verildi' && o.wdays > 0 && o.doneAt ? addDays(o.doneAt, o.wdays) : null;
+const ordersOf = pid => db.orders.filter(o => o.pid === pid).sort((a, b) => b.no - a.no);
+const imeiDigits = s => String(s || '').replace(/\D/g, '');
+// search: "12", "№12", "#12" finds order 12; 5+ digits also find an IMEI
+function orderMatch(pid, q) {
+  const s = String(q || '').trim().replace(/^[№#]\s*/, '');
+  if (!/^\d+$/.test(s)) return false;
+  return db.orders.some(o => o.pid === pid && (o.no === +s || (s.length >= 5 && imeiDigits(o.imei).includes(s))));
+}
+function orderRow(o) {
+  const st = ostOf(o.status), we = warrantyEnd(o);
+  const wtxt = we ? (we >= today() ? ' · 🛡 ' + fmtDate(we) + '-dək' : ' · 🛡 bitib') : '';
+  return `<button class="row" data-a="openOrder" data-v="${o.id}"><div class="grow"><div class="t">${ordNo(o)} · ${esc(o.model || 'Cihaz')}</div>
+    <div class="s">${fmtDate(o.date)}${o.issue ? ' — ' + esc(o.issue) : ''}${wtxt}</div></div>
+    <span class="badge" style="background:${st[2]}1F;color:${st[2]};white-space:nowrap">${st[1]}</span></button>`;
+}
+function ordersBlock(p) {
+  const list = ordersOf(p.id);
+  if (p.gone && !list.length) return '';
+  let h = `<div class="section-title">📱 Cihazlar və sifarişlər (${list.length})</div>`;
+  if (!p.gone) h += '<button class="btn ghost" data-a="newOrder" style="margin:0 0 10px">+ Cihaz qəbul et (yeni sifariş)</button>';
+  return h + (list.length ? '<div class="list">' + list.map(orderRow).join('') + '</div>' : '');
+}
+// orders of the period a customer still owes for (put into reminders and receipts)
+function debtOrders(pid) {
+  const since = debtSince(pid);
+  return since ? ordersOf(pid).filter(o => o.date >= since).reverse().map(ordNo) : [];
+}
+// how this customer pays: days from a debt to the payment that closed it
+function payHabit(pid) {
+  const tx = txOf(pid).slice().sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+  const open = [], days = [];
+  for (const t of tx) {
+    if (t.type === 'debt') open.push({ d: t.date, left: t.amount });
+    else if (t.type === 'pay') {
+      let amt = t.amount;
+      while (amt > 0 && open.length) {
+        const x = open[0], use = Math.min(x.left, amt);
+        x.left -= use; amt -= use;
+        if (x.left <= 0) { days.push(Math.max(0, Math.round((new Date(t.date) - new Date(x.d)) / 864e5))); open.shift(); }
+      }
+    }
+  }
+  const since = debtSince(pid);
+  const openDays = since ? Math.max(0, Math.floor((new Date(today()) - new Date(since)) / 864e5)) : 0;
+  if (!days.length && !since) return null;
+  const avg = days.length ? days.reduce((s, x) => s + x, 0) / days.length : openDays;
+  const label = avg <= 7 && openDays <= 14 ? '✅ Vaxtında ödəyir' : avg <= 30 && openDays <= 45 ? '🟡 Bəzən gecikdirir' : '🔴 Gecikdirir';
+  return { label, avg: Math.round(avg), n: days.length, openDays, since };
+}
+function habitLine(p) {
+  const h = payHabit(p.id);
+  if (!h) return '';
+  const parts = [`<b>${h.label}</b>`];
+  if (h.n) parts.push(tr('orta {0} günə ödəyir', { 0: h.avg }));
+  if (h.since) parts.push(`⏱ ${h.openDays ? tr('borc {0} gündür ödənmir', { 0: h.openDays }) : tr('borc bu gün yazılıb')}`);
+  return `<div style="text-align:center;margin-top:8px;font-size:13px;opacity:.95">${parts.join(' · ')}</div>`;
+}
+function renderOrderSheet(s) {
+  const o = s.id ? db.orders.find(x => x.id === s.id) : null;
+  const v = o || { model: '', imei: '', issue: '', date: today(), dpin: '', wdays: 0 };
+  const items = s.items;
+  let h = `<h2>${o ? ordNo(o) + ' · ' + esc(o.model || 'Cihaz') : 'Cihaz qəbulu'}</h2>`;
+  if (o) {
+    h += '<label>Status</label><div class="chips" style="margin-top:4px">' + OST.map(([k, l, c]) =>
+      `<button class="chip" data-a="orderStatus" data-v="${k}" style="${o.status === k ? `background:${c};color:#fff;border-color:${c}` : ''}">${l}</button>`).join('') + '</div>';
+    if (o.status !== 'verildi') h += `<label style="display:flex;gap:10px;align-items:center;margin-top:12px;font-weight:600"><input type="checkbox" id="f_checked" style="width:22px;height:22px"> Hər şey yoxlanıldı (təhvil üçün)</label>`;
+    if (o.status === 'hazir') h += `<button class="btn payb" data-a="orderMsg" data-v="${o.id}">${WA_ICON}«Hazırdır» mesajı göndər</button>`;
+    const we = warrantyEnd(o);
+    if (we) h += `<p class="note" style="margin-top:10px">🛡 Zəmanət: ${o.wdays} gün — ${fmtDate(we)}-dək${we < today() ? ' (bitib)' : ''}</p>`;
+  }
+  h += `<label>Cihaz modeli</label><input class="field" id="f_model" value="${esc(v.model)}" placeholder="məs. Samsung A52">
+    <div class="chips" id="modelSug"></div>
+    <label>IMEI</label><div style="display:flex;gap:8px"><input class="field num" id="f_imei" inputmode="numeric" value="${esc(v.imei)}" placeholder="15 rəqəm" style="flex:1;min-width:0">
+      <button class="btn ghost" data-a="scanImei" style="width:auto;margin:0;padding:0 16px" title="Kamera ilə oxu">📷</button></div>
+    <div id="imeiHist">${imeiHistHtml(document.getElementById('f_imei') ? val('f_imei') : v.imei, o && o.id)}</div>
+    <label>Nasazlıq</label><input class="field" id="f_issue" value="${esc(v.issue)}" placeholder="məs. ekran sınıb">
+    <label>Qəbul tarixi</label><input class="field" id="f_date" type="date" value="${esc(v.date)}">
+    <label>Cihazın şifrəsi / kilid naxışı</label><div style="display:flex;gap:8px"><input class="field" id="f_dpin" value="${esc(v.dpin || '')}" placeholder="istəyə bağlı" style="flex:1;min-width:0;${s.showPin ? '' : '-webkit-text-security:disc'}">
+      <button class="btn ghost" data-a="toggleDpin" style="width:auto;margin:0;padding:0 16px">${s.showPin ? '🙈' : '👁'}</button></div>
+    <label>Cihazla qəbul olunanlar</label><div class="chips">${OITEMS.map(x => `<button class="chip" data-a="ordItem" data-v="${x}" style="${items.includes(x) ? 'background:var(--brand);color:#fff;border-color:var(--brand)' : ''}">${items.includes(x) ? '✓ ' : ''}${x}</button>`).join('')}</div>
+    <label>Zəmanət (gün)</label><input class="field num" id="f_wdays" inputmode="numeric" value="${v.wdays || ''}" placeholder="0">
+    <button class="btn payb" data-a="saveOrder">Yadda saxla</button>`;
+  if (o && o.log && o.log.length) h += '<div class="section-title">Tarixçə</div><div class="list">' + o.log.map(x => `<div class="row"><div class="grow"><div class="t">${ostOf(x.s)[1]}</div></div><span class="s" style="color:var(--muted)">${fmtDate(x.d)}</span></div>`).join('') + '</div>';
+  if (o) h += '<button class="btn ghost" data-a="delOrder" style="color:var(--debt)">Sifarişi sil</button>';
+  return h;
+}
+function imeiHistHtml(imei, exceptId) {
+  const d = imeiDigits(imei);
+  if (d.length < 8) return '';
+  const prev = db.orders.filter(o => o.id !== exceptId && imeiDigits(o.imei) === d).sort((a, b) => b.date.localeCompare(a.date));
+  if (!prev.length) return '';
+  return '<div class="tplbox" style="margin-top:8px"><b>⚠ Bu IMEI əvvəl gəlib:</b>' + prev.map(o =>
+    `<div class="note">${ordNo(o)} · ${fmtDate(o.date)} · ${esc(nameOf(o.pid))}${o.issue ? ' — ' + esc(o.issue) : ''}</div>`).join('') + '</div>';
+}
+// models typed before, most used first (suggestions under the model field)
+function modelSugHtml(q) {
+  const n = norm(q);
+  if (!n) return '';
+  const cnt = new Map();
+  for (const o of db.orders) if (o.model) cnt.set(o.model, (cnt.get(o.model) || 0) + 1);
+  return [...cnt.entries()].filter(([m]) => norm(m).includes(n) && norm(m) !== n).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([m]) => `<button class="chip" data-a="pickModel" data-v="${esc(m)}">${esc(m)}</button>`).join('');
+}
+function orderDue() {
+  const out = [];
+  for (const o of db.orders) {
+    const name = nameOf(o.pid);
+    if (o.status === 'hazir' && o.readyAt) out.push({ d: addDays(o.readyAt, 3), line: `${ordNo(o)} ${name} — ${o.model || ''}: ${tr('hazırdır, götürülməyib')}` });
+    const we = warrantyEnd(o);
+    if (we) out.push({ d: we, u: we, line: `${ordNo(o)} ${name} — ${o.model || ''}: ${tr('zəmanət bu gün bitir')}` });
+  }
+  return out;
+}
+// ---- IMEI / barcode scanner (camera inside the page) ----
+let scan = null;
+async function openScanner() {
+  if (!('BarcodeDetector' in window)) return alert('Bu telefonda kamera ilə oxuma dəstəklənmir. IMEI-ni əl ilə yazın.');
+  let det;
+  try { det = new BarcodeDetector(); } catch (e) { return alert('Bu telefonda kamera ilə oxuma dəstəklənmir. IMEI-ni əl ilə yazın.'); }
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;inset:0;background:#000;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center';
+  box.innerHTML = '<video playsinline muted style="width:100%;max-height:70vh;object-fit:cover"></video><div style="color:#fff;margin:14px;text-align:center">' + tr('Barkodu kameraya tutun') + '</div><button class="btn ghost" style="width:auto;padding:12px 28px">' + tr('Bağla') + '</button>';
+  document.body.appendChild(box);
+  const video = box.querySelector('video');
+  scan = { box, stream: null, timer: 0 };
+  box.querySelector('button').onclick = closeScanner;
+  try {
+    scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (e) { closeScanner(); return alert('Kameraya icazə verilmədi'); }
+  if (!scan) return;
+  video.srcObject = scan.stream; await video.play().catch(() => {});
+  const tick = async () => {
+    if (!scan) return;
+    try {
+      const codes = await det.detect(video);
+      const vals = codes.map(c => imeiDigits(c.rawValue)).filter(x => x.length >= 8);
+      const best = vals.find(x => x.length === 15) || vals[0];
+      if (best) {
+        closeScanner();
+        const f = document.getElementById('f_imei');
+        if (f) { f.value = best; f.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (hasNative && Android.haptic) Android.haptic();
+        return;
+      }
+    } catch (e) {}
+    scan.timer = setTimeout(tick, 250);
+  };
+  tick();
+}
+function closeScanner() {
+  if (!scan) return;
+  clearTimeout(scan.timer);
+  if (scan.stream) scan.stream.getTracks().forEach(t => t.stop());
+  scan.box.remove(); scan = null;
+}
+// ---- debt receipt as a PDF ----
+function receiptPdf(p) {
+  const b = balanceOf(p.id);
+  const rows = debtState(p.id).debts.filter(d => d.left > 0).sort((a, c) => a.t.date.localeCompare(c.t.date))
+    .map(({ t, left }) => [tr(fmtDate(t.date)) + (t.note ? ' — ' + t.note : ''), money(left)]);
+  rows.push([tr('Cəmi borc'), money(b), true]);
+  const ords = debtOrders(p.id);
+  Android.sharePdf(JSON.stringify({
+    file: 'Borc-qebzi.pdf', title: tr('Borc qəbzi'), sub: p.name + ' · ' + tr(fmtDate(today())), rows,
+    foot: (ords.length ? tr('Sifariş') + ': ' + ords.join(', ') + ' · ' : '') + 'Hesabat'
+  }));
 }
 
 // ---------- personal loans (money I lent; kept apart from every other total) ----------
@@ -1295,6 +1478,7 @@ function renderTplManage() {
 function renderSheet() {
   const s = state.sheet;
   let h = '<div class="shade" data-a="closeShade"><div class="sheet">';
+  if (s.kind === 'order') return h + renderOrderSheet(s) + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
   if (s.kind === 'remind') {
     h += `<h2>${WA_ICON}WhatsApp-da xatırlat</h2>
       <div class="tplbox"><div class="note"><b>💳 Kartlarım</b> — basın, o kartla göndərilsin</div>
@@ -2028,6 +2212,50 @@ const actions = {
     db.cards.push({ id: uid(), v: card, u: Date.now() }); save(); keepCard(); toast('Şablon əlavə olundu');
   },
   remind() { state.sheet = { kind: 'remind' }; render(); },
+  receipt() { const p = db.people.find(x => x.id === state.person); if (p) receiptPdf(p); },
+  newOrder() { state.sheet = { kind: 'order', pid: state.person, items: [] }; render(); },
+  openOrder(id) { const o = db.orders.find(x => x.id === id); if (o) { state.sheet = { kind: 'order', id, pid: o.pid, items: (o.items || []).slice() }; render(); } },
+  ordItem(v) { const a = state.sheet.items, i = a.indexOf(v); if (i < 0) a.push(v); else a.splice(i, 1); render(); },
+  toggleDpin() { state.sheet.showPin = !state.sheet.showPin; render(); },
+  pickModel(v) { const f = document.getElementById('f_model'); if (f) f.value = v; const g = document.getElementById('modelSug'); if (g) g.innerHTML = ''; },
+  scanImei() { openScanner(); },
+  saveOrder() {
+    const s = state.sheet, model = val('f_model').trim(), imei = imeiDigits(val('f_imei')), issue = val('f_issue').trim();
+    if (!model && !imei && !issue) return toast('Model, IMEI və ya nasazlıq yazın');
+    const f = { model, imei, issue, date: val('f_date') || today(), dpin: val('f_dpin'), items: s.items.slice(), wdays: Math.max(0, parseInt(val('f_wdays'), 10) || 0), u: Date.now() };
+    let o = s.id && db.orders.find(x => x.id === s.id);
+    if (o) Object.assign(o, f);
+    else {
+      o = Object.assign({ id: uid(), pid: s.pid, no: db.orders.reduce((m, x) => Math.max(m, x.no || 0), 0) + 1, status: 'qebul', log: [{ s: 'qebul', d: f.date }], created: Date.now() }, f);
+      db.orders.push(o);
+    }
+    save(); state.sheet = null; render(); toast(tr('{0} yadda saxlandı', { 0: ordNo(o) }));
+  },
+  orderStatus(k) {
+    const o = db.orders.find(x => x.id === state.sheet.id);
+    if (!o || o.status === k) return;
+    if (k === 'verildi') {
+      const c = document.getElementById('f_checked');
+      if (!c || !c.checked) return toast('Əvvəl «Hər şey yoxlanıldı» işarələyin');
+      o.doneAt = today();
+    }
+    if (k === 'hazir') o.readyAt = today();
+    o.status = k; o.log = (o.log || []).concat({ s: k, d: today() }); o.u = Date.now();
+    save(); render(); toast(ostOf(k)[1]);
+  },
+  orderMsg(id) {
+    const o = db.orders.find(x => x.id === id), p = o && db.people.find(x => x.id === o.pid);
+    if (!o) return;
+    const text = tr('Salam!') + '\n' + tr('{no} nömrəli sifarişiniz ({model}) hazırdır.', { no: ordNo(o), model: o.model || tr('cihaz') }) + '\n' + tr('Gəlib götürə bilərsiniz.') + '\n' + tr('Təşəkkürlər.');
+    if (p && p.phone) location.href = 'https://wa.me/' + waNum(p.phone) + '?text=' + encodeURIComponent(text);
+    else if (hasNative && Android.shareText) Android.shareText(text);
+  },
+  delOrder() {
+    const o = db.orders.find(x => x.id === state.sheet.id);
+    if (!o || !confirm(tr('{0} silinsin?', { 0: ordNo(o) }))) return;
+    db.orders = db.orders.filter(x => x !== o); db.removed[o.id] = Date.now();
+    save(); state.sheet = null; render();
+  },
   sendRemind() {
     const digits = document.getElementById('f_card').value.replace(/\D/g, '');
     const card = digits.replace(/(\d{4})(?=\d)/g, '$1 ');
@@ -2440,12 +2668,13 @@ window.onImported = function (text) {
   if (!Array.isArray(db.tpls)) db.tpls = [];
   if (!Array.isArray(db.cards)) db.cards = [];
   if (!Array.isArray(db.hides)) db.hides = [];
+  if (!Array.isArray(db.orders)) db.orders = [];
   if (!db.removed || typeof db.removed !== 'object') db.removed = {};
   // the imported data must win the next sync: its records count as just changed, and what is
   // on the phone but not in the file counts as just deleted (otherwise Drive would bring it back)
   const now = Date.now(), keep = new Set();
-  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash']) db[key].forEach(r => { r.u = now; keep.add(r.id); delete db.removed[r.id]; });
-  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash']) (before[key] || []).forEach(r => { if (!keep.has(r.id)) db.removed[r.id] = now; });
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders']) db[key].forEach(r => { r.u = now; keep.add(r.id); delete db.removed[r.id]; });
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders']) (before[key] || []).forEach(r => { if (!keep.has(r.id)) db.removed[r.id] = now; });
   save(); state.person = null; state.tab = 'people'; render();
   toast('Bərpa olundu');
 };
@@ -2602,6 +2831,8 @@ app.addEventListener('input', e => {
     const a = parseAmount(val('f_amount')), c = parseAmount(val('f_cost'));
     document.getElementById('f_profit').textContent = c ? 'Qazanc: ' + money(a - c) : '';
   }
+  if (e.target.id === 'f_imei' && state.sheet && state.sheet.kind === 'order') { const b = document.getElementById('imeiHist'); if (b) b.innerHTML = imeiHistHtml(e.target.value, state.sheet.id); }
+  if (e.target.id === 'f_model' && state.sheet && state.sheet.kind === 'order') { const g = document.getElementById('modelSug'); if (g) g.innerHTML = modelSugHtml(e.target.value); }
   if (e.target.id === 'dq' && state.sheet) {
     state.sheet.q = e.target.value;
     const pos = e.target.selectionStart;

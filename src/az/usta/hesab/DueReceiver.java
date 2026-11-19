@@ -73,7 +73,9 @@ public class DueReceiver extends BroadcastReceiver {
             List<String> lines = new ArrayList<>();
             for (int k = 0; k < items.length(); k++) {
                 JSONObject it = items.getJSONObject(k);
-                if (it.optString("d", "9999").compareTo(today) <= 0) lines.add(it.optString("line"));
+                // "u": last day to remind (e.g. a warranty that ends that day)
+                String until = it.optString("u", "");
+                if (it.optString("d", "9999").compareTo(today) <= 0 && (until.isEmpty() || today.compareTo(until) <= 0)) lines.add(it.optString("line"));
             }
             if (lines.isEmpty()) return;
             if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) return;

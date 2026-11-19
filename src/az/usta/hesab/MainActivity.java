@@ -42,6 +42,9 @@ public class MainActivity extends Activity {
     private static final int REQ_RESET_PIN = 6;
     private static final int REQ_PHOTO = 7;
     private static final int REQ_NOTIF = 8;
+    private static final int REQ_CAMERA = 9;
+    /** The page asked for the camera (IMEI scan) before Android's permission was given. */
+    private android.webkit.PermissionRequest camAsk;
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private WebView web;
@@ -121,6 +124,22 @@ public class MainActivity extends Activity {
         });
         // the page's own alert/confirm boxes, without the "file://" title the WebView puts on them
         web.setWebChromeClient(new WebChromeClient() {
+            // the IMEI scanner uses the camera inside the page
+            @Override
+            public void onPermissionRequest(final android.webkit.PermissionRequest r) {
+                boolean video = false;
+                for (String res : r.getResources()) if (android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res)) video = true;
+                if (!video) { r.deny(); return; }
+                final String[] want = {android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE};
+                if (Build.VERSION.SDK_INT < 23 || checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    r.grant(want);
+                } else {
+                    camAsk = r;
+                    internalNav = true; // the permission dialog must not lock the app
+                    requestPermissions(new String[]{android.Manifest.permission.CAMERA}, REQ_CAMERA);
+                }
+            }
+
             @Override
             public boolean onJsAlert(WebView view, String url, String message, final android.webkit.JsResult result) {
                 new android.app.AlertDialog.Builder(MainActivity.this)
@@ -211,6 +230,16 @@ public class MainActivity extends Activity {
             return;
         }
         js("window.onAppResume && window.onAppResume()");
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(code, perms, res);
+        if (code != REQ_CAMERA || camAsk == null) return;
+        if (res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            camAsk.grant(new String[]{android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+        else camAsk.deny();
+        camAsk = null;
     }
 
     @Override
@@ -893,6 +922,68 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void toast(String msg) {
             MainActivity.this.toast(msg);
+        }
+
+        /** A receipt as a real PDF file, shared with WhatsApp etc. json: {file, title, sub, rows:[[l,r,bold]], foot} */
+        @JavascriptInterface
+        public void sharePdf(String json) {
+            try {
+                JSONObject o = new JSONObject(json);
+                org.json.JSONArray rows = o.optJSONArray("rows");
+                int n = rows == null ? 0 : rows.length();
+                int W = 420, H = Math.max(360, 190 + n * 26 + 60);
+                android.graphics.pdf.PdfDocument doc = new android.graphics.pdf.PdfDocument();
+                android.graphics.pdf.PdfDocument.Page page = doc.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(W, H, 1).create());
+                android.graphics.Canvas c = page.getCanvas();
+                android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                p.setColor(Color.parseColor("#0F766E"));
+                c.drawRect(0, 0, W, 70, p);
+                p.setColor(Color.WHITE);
+                p.setTextSize(20);
+                p.setFakeBoldText(true);
+                c.drawText(o.optString("title"), 24, 34, p);
+                p.setFakeBoldText(false);
+                p.setTextSize(12);
+                c.drawText(o.optString("sub"), 24, 56, p);
+                float y = 104;
+                for (int i = 0; i < n; i++) {
+                    org.json.JSONArray r = rows.getJSONArray(i);
+                    boolean bold = r.optBoolean(2, false);
+                    p.setColor(Color.parseColor(bold ? "#111827" : "#374151"));
+                    p.setFakeBoldText(bold);
+                    p.setTextSize(bold ? 15 : 13);
+                    if (bold) {
+                        p.setStrokeWidth(1);
+                        c.drawLine(24, y - 18, W - 24, y - 18, p);
+                    }
+                    p.setTextAlign(android.graphics.Paint.Align.LEFT);
+                    c.drawText(r.optString(0), 24, y, p);
+                    p.setTextAlign(android.graphics.Paint.Align.RIGHT);
+                    c.drawText(r.optString(1), W - 24, y, p);
+                    y += 26;
+                }
+                p.setTextAlign(android.graphics.Paint.Align.LEFT);
+                p.setFakeBoldText(false);
+                p.setTextSize(11);
+                p.setColor(Color.parseColor("#6B7280"));
+                c.drawText(o.optString("foot"), 24, y + 24, p);
+                doc.finishPage(page);
+                File dir = new File(getCacheDir(), "share");
+                dir.mkdirs();
+                String name = new File(o.optString("file", "qebz.pdf")).getName();
+                FileOutputStream out = new FileOutputStream(new File(dir, name));
+                doc.writeTo(out);
+                out.close();
+                doc.close();
+                Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
+                Intent i = new Intent(Intent.ACTION_SEND);
+                i.setType("application/pdf");
+                i.putExtra(Intent.EXTRA_STREAM, uri);
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(i, "Qəbzi göndər"));
+            } catch (Exception e) {
+                MainActivity.this.toast("PDF yaradılmadı");
+            }
         }
     }
 }
