@@ -184,7 +184,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 00';
+const APP_VERSION = '3.1.3 Rev. 01';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], removed: {} };
 
 function load() {
@@ -551,7 +551,7 @@ function txOf(pid) {
 function render() { memo = new Map(); try { drawPage(); } finally { memo = null; } }
 function drawPage() {
   let h = '';
-  if (state.pin) { app.innerHTML = renderPin(); translatePage(app); return; }
+  if (state.pin) { app.innerHTML = renderPin(); translatePage(app); noAutofill(app); return; }
   if (state.trash) h = renderTrash();
   else if (state.person) h = renderPerson();
   else if (state.cat) h = renderCat();
@@ -581,14 +581,21 @@ function drawPage() {
     const fresh = document.createElement('div');
     fresh.innerHTML = h;
     translatePage(fresh);
+    noAutofill(fresh);
     morphChildren(app, fresh);
   } else {
     app.innerHTML = h;
     translatePage(app);
+    noAutofill(app);
   }
   if (keepScroll != null) window.scrollTo(0, keepScroll);
   const auto = app.querySelector('[data-autofocus]');
   if (auto) setTimeout(() => { if (document.activeElement === document.body) auto.focus(); }, 60);
+}
+
+// no field of the app is for the phone's autofill (name, phone, card...): it closed the keyboard on the first tap
+function noAutofill(root) {
+  for (const f of root.querySelectorAll('input,textarea')) if (f.getAttribute('autocomplete') !== 'off') f.setAttribute('autocomplete', 'off');
 }
 
 // ---------- in-place redraw ----------
@@ -2566,6 +2573,23 @@ app.addEventListener('contextmenu', e => {
   if (el && !held && !state.sheet && !el.closest('[data-today]')) { clearTimeout(holdTimer); openHoldMenu(el); held = false; }
 });
 
+// safety net: if a field loses its focus right after it was tapped (nothing else was tapped),
+// it gets the focus back once, so the keyboard stays and the field needn't be tapped twice
+let tapField = null, tapAt = 0;
+app.addEventListener('touchstart', e => {
+  const f = e.target.closest('input,textarea');
+  tapField = f && !['date', 'checkbox', 'radio'].includes(f.type) ? f : null;
+  tapAt = Date.now();
+}, { passive: true, capture: true });
+app.addEventListener('focusout', e => {
+  const f = e.target;
+  if (f !== tapField || e.relatedTarget || Date.now() - tapAt > 1500) return;
+  tapField = null;
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (f.isConnected && a !== f && (!a || a === document.body)) f.focus();
+  }, 0);
+});
 app.addEventListener('click', e => {
   if (held) { held = false; e.preventDefault(); return; }
   const el = e.target.closest('[data-a]');

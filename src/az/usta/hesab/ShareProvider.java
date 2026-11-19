@@ -49,6 +49,7 @@ public class ShareProvider extends ContentProvider {
         String name = String.valueOf(uri.getLastPathSegment()).toLowerCase(java.util.Locale.US);
         if (name.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
         if (name.endsWith(".json")) return "application/json";
+        if (name.endsWith(".apk")) return "application/vnd.android.package-archive";
         return "application/octet-stream";
     }
 

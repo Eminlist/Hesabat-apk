@@ -54,6 +54,7 @@ public class MainActivity extends Activity {
     private boolean unlocking;
     /** Set while a screen we opened ourselves (picker, share...) is on top, so returning doesn't lock. */
     private boolean internalNav;
+    private Updater updater;
     /** When we went behind a screen we opened ourselves; coming back much later counts as leaving the app. */
     private long navStoppedAt;
     /** Page calls made before index.html finished loading wait here (e.g. a picker result after the app was restarted). */
@@ -91,6 +92,14 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setAllowFileAccess(true);
         s.setTextZoom(100);
+        // Android's autofill (Google/Samsung) grabbed every name/phone/card field on its first tap:
+        // the keyboard opened and closed at once and the field had to be tapped again. The app's
+        // own forms need no autofill, so the WebView is taken out of it completely.
+        s.setSaveFormData(false);
+        if (Build.VERSION.SDK_INT >= 26) {
+            web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+            w.getDecorView().setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        }
         web.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -163,6 +172,8 @@ public class MainActivity extends Activity {
         web.loadUrl("file:///android_asset/index.html");
         setContentView(web);
         registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        // a newer version on GitHub is fetched quietly and offered with «Quraşdır»
+        updater = new Updater(this);
     }
 
     @Override
@@ -186,6 +197,7 @@ public class MainActivity extends Activity {
         super.onResume();
         // back on top: a share sheet or picker we opened is gone (some never stop us, so onRestart doesn't run)
         internalNav = false;
+        if (updater != null) { updater.resume(); updater.check(); }
         // a locked app shows no data in the recent-apps screen (screenshots still work)
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!(pinSet() || lockOn()));
         if (locked && pinSet()) {

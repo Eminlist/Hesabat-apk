@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -55,3 +58,19 @@ jobs:
         with:
           name: Hesabat-apk
           path: Hesabat-*.apk
+
+      # proqram açılanda buradan yeni versiyanı yoxlayır (tag: r<versionCode>)
+      - name: Release (avtoyeniləmə üçün)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          C=$(grep -o 'versionCode="[0-9]*"' AndroidManifest.xml | grep -o '[0-9]*')
+          V=$(grep -o 'versionName="[^"]*"' AndroidManifest.xml | cut -d'"' -f2)
+          A=$(ls Hesabat-*.apk)
+          git log -1 --format=%B > notes.txt
+          if gh release view "r$C" >/dev/null 2>&1; then
+            gh release upload "r$C" "$A" --clobber
+          else
+            gh release create "r$C" "$A" --title "Hesabat $V" --notes-file notes.txt --latest
+          fi
