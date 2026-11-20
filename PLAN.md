@@ -100,3 +100,22 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 - **Emin Hesabat** = «Hesabat» (az.usta.hesab) — kod `emin/` qovluğunda (3.1.3 Rev. 07); APK: Hesabat-*.apk
 - Hər birinin öz release-i var; proqram yalnız öz APK-sı olan release-i götürür, o birinin yeniləməsini almır
 - Yeni versiya: yalnız dəyişən proqramın versionCode-u artırılır (hər iki proqram üçün nömrələr təkrarlanmır)
+
+## Emin Hesabat — 3.1.3 Rev. 08 (versionCode 179)
+- [x] Əsas ekran: yuxarıda böyük kart — bu gün (günün qalığı, gəliri, xərci); aşağıda — bu ay (gəlir, xərc, qalıq)
+- [x] Borc verdiyim və borc aldığım pul gündəlik/aylıq gəlir-xərcə, PDF və Excel hesabata qarışmır
+- [x] Nisyə (borc) gəlir deyil; ödəniləndə ödənildiyi günün gəliri
+- [x] Yeni müştəri: ad və ya telefon yazanda olan müştərilər seçim üçün çıxır («Belə müştəri var»), seçiləndə üzərinə yazılır
+- [x] Müştərini başqa müştəri ilə birləşdirmək
+- [x] Sifariş təhvili: Borc / Ödədi / Təmir olunmadı / Zəmanətlə (pulsuz); qiymət, hissə xərci, hissə kimdən alınıb (kontaktdan)
+- [x] Sifariş qəbzi: PDF və WhatsApp; zəmanət avtomatik 30 gün; avans qiymətdən çıxılır
+- [x] Hər əməliyyatda saat (keçmiş saata da yazmaq olur); borclar ayrı-ayrı tarix və saatla, cəmi ilə
+- [x] Borc verdiyim pulun qaytarılması — hər dəfə ayrıca məbləğ, tarix və saatla
+- [x] Xatırlatma ödəniş günündən 3 gün qabaq, hər gün, telefonun mesaj (SMS) səsi ilə — müştəri borcu, verdiyim və aldığım borc
+- [x] Ödəniş üsulu: Nağd, Kart
+- [x] Gecikən borc rəngi: 7 gündən sarı, 30 gündən qırmızı
+- [x] Gecikən borclulara ardıcıl WhatsApp xatırlatması
+- [x] Hesabat: Silinən borclar (zərər), Pulsuz qaytarılan / zəmanətlə
+- [x] Zibil qutusu 30 gün saxlayır
+- [x] Ayarlar → Gizlilik: Ekran şəklinə qadağa; Silkələyəndə rəqəmləri gizlət
+- [x] Ayarlar → Aylıq hesabat Gmail-ə (Excel / PDF): ayın 1-də bildiriş, Gmail hazır açılır

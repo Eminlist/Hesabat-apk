@@ -29,7 +29,7 @@ import java.util.Locale;
 public class DueReceiver extends BroadcastReceiver {
 
     static final String ACTION = "az.usta.hesab.DUE";
-    private static final String CHANNEL = "due";
+    private static final String CHANNEL = "due_sms";
 
     @Override
     public void onReceive(Context c, Intent i) {
@@ -86,10 +86,17 @@ public class DueReceiver extends BroadcastReceiver {
             String text = lines.size() == 1 ? lines.get(0) : o.optString("more", "{0}").replace("{0}", String.valueOf(lines.size()));
             Notification.Builder b;
             if (Build.VERSION.SDK_INT >= 26) {
-                nm.createNotificationChannel(new NotificationChannel(CHANNEL, title, NotificationManager.IMPORTANCE_DEFAULT));
+                // the phone's own message (SMS) sound, so a debt reminder is heard like a new message
+                NotificationChannel ch = new NotificationChannel(CHANNEL, "Borc xatırlatmaları", NotificationManager.IMPORTANCE_HIGH);
+                ch.setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION),
+                        new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                ch.enableVibration(true);
+                nm.createNotificationChannel(ch);
                 b = new Notification.Builder(c, CHANNEL);
             } else {
                 b = new Notification.Builder(c);
+                b.setDefaults(Notification.DEFAULT_ALL).setPriority(Notification.PRIORITY_HIGH);
             }
             Notification.InboxStyle box = new Notification.InboxStyle();
             for (String l : lines) box.addLine(l);

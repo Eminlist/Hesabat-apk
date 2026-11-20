@@ -64,6 +64,55 @@ public class MainActivity extends Activity {
     /** Page calls made before index.html finished loading wait here (e.g. a picker result after the app was restarted). */
     private boolean pageReady;
     private final java.util.ArrayList<String> pendingJs = new java.util.ArrayList<>();
+    /** Shaking the phone hides every amount (Ayarlar → Silkələyəndə gizlət). */
+    private android.hardware.SensorManager sensors;
+    private long lastShake;
+    private final android.hardware.SensorEventListener shakeListener = new android.hardware.SensorEventListener() {
+        @Override
+        public void onSensorChanged(android.hardware.SensorEvent e) {
+            float x = e.values[0], y = e.values[1], z = e.values[2];
+            double g = Math.sqrt(x * x + y * y + z * z) / android.hardware.SensorManager.GRAVITY_EARTH;
+            long now = System.currentTimeMillis();
+            if (g > 2.6 && now - lastShake > 1500) {
+                lastShake = now;
+                js("window.onShake && window.onShake()");
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(android.hardware.Sensor s, int a) {
+        }
+    };
+
+    private void mailFile(String name, String mime, String to, String subject) {
+        Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType(mime);
+        i.putExtra(Intent.EXTRA_STREAM, uri);
+        if (to != null && !to.isEmpty()) i.putExtra(Intent.EXTRA_EMAIL, new String[]{to});
+        i.putExtra(Intent.EXTRA_SUBJECT, subject);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Intent gm = new Intent(i).setPackage("com.google.android.gm");
+        internalNav = true;
+        try {
+            startActivity(gm);
+        } catch (Exception e) {
+            startActivity(Intent.createChooser(i, "Hesabatı göndər"));
+        }
+    }
+
+    private void applySecure() {
+        if (appPrefs().getBoolean("secure", false)) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+    }
+
+    private void shakeOnOff(boolean on) {
+        if (sensors == null) sensors = (android.hardware.SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensors == null) return;
+        sensors.unregisterListener(shakeListener);
+        android.hardware.Sensor acc = sensors.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+        if (on && acc != null) sensors.registerListener(shakeListener, acc, android.hardware.SensorManager.SENSOR_DELAY_UI);
+    }
     /** The fingerprint dialog is on screen / was already offered since the app was last left. */
     private boolean bioShowing, bioAsked;
     /** Locks the app whenever the phone's screen goes off. */
@@ -234,12 +283,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        shakeOnOff(false);
         js("window.onAppPause && window.onAppPause()");
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        applySecure();
+        shakeOnOff(appPrefs().getBoolean("shake", false));
         // back on top: a share sheet or picker we opened is gone (some never stop us, so onRestart doesn't run)
         internalNav = false;
         if (updater != null) { updater.resume(); updater.check(); }
@@ -986,6 +1038,55 @@ public class MainActivity extends Activity {
 
         /** A receipt as a real PDF file, shared with WhatsApp etc. json: {file, title, sub, rows:[[l,r,bold]], foot} */
         @JavascriptInterface
+        public void setSecure(final boolean on) {
+            appPrefs().edit().putBoolean("secure", on).apply();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    applySecure();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean secureOn() {
+            return appPrefs().getBoolean("secure", false);
+        }
+
+        @JavascriptInterface
+        public void setShake(final boolean on) {
+            appPrefs().edit().putBoolean("shake", on).apply();
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    shakeOnOff(on);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean shakeOn() {
+            return appPrefs().getBoolean("shake", false);
+        }
+
+        /** A file sent by e-mail: Gmail opens with the address, subject and the file already in it. */
+        @JavascriptInterface
+        public void mailBase64(String b64, String name, String mime, String to, String subject) {
+            try {
+                File dir = new File(getCacheDir(), "share");
+                dir.mkdirs();
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) f.delete();
+                FileOutputStream out = new FileOutputStream(new File(dir, name));
+                out.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT));
+                out.close();
+                mailFile(name, mime, to, subject);
+            } catch (Exception e) {
+                pageToast("Xəta: " + e.getMessage());
+            }
+        }
+
+        @JavascriptInterface
         public void sharePdf(String json) {
             try {
                 JSONObject o = new JSONObject(json);
@@ -1035,6 +1136,10 @@ public class MainActivity extends Activity {
                 doc.writeTo(out);
                 out.close();
                 doc.close();
+                if (o.optBoolean("mail", false)) {
+                    mailFile(name, "application/pdf", o.optString("to", ""), o.optString("subject", name));
+                    return;
+                }
                 Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
                 Intent i = new Intent(Intent.ACTION_SEND);
                 i.setType("application/pdf");

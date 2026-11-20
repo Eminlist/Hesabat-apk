@@ -305,7 +305,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 07';
+const APP_VERSION = '3.1.3 Rev. 08';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], subs: [], removed: {} };
 
 function load() {
@@ -356,7 +356,7 @@ function updateShortcuts() {
 }
 function dueItems() {
   const out = [];
-  for (const p of db.people) for (const d of debtState(p.id).debts) if (d.left > 0 && d.t.due) out.push({ d: d.t.due, line: p.name + ' — ' + money(d.left) });
+  for (const p of db.people) for (const d of debtState(p.id).debts) if (d.left > 0 && d.t.due) out.push({ d: addDays(d.t.due, -3), line: p.name + ' — ' + money(d.left) + ' · ' + tr('ödəniş günü') + ' ' + tr(fmtDate(d.t.due)) });
   return out.sort((a, b) => a.d.localeCompare(b.d));
 }
 window.onLaunchTarget = function (target) {
@@ -552,6 +552,7 @@ function parseAmount(s) {
 }
 // "21 Oktyabr 2026, 14:35" – the day it's booked on, plus the hour it was typed in
 function stamp(t) {
+  if (t.time) return fmtDate(t.date) + ', ' + t.time;
   const c = t.created ? new Date(t.created) : null;
   return fmtDate(t.date) + (c ? ', ' + pad(c.getHours()) + ':' + pad(c.getMinutes()) : '');
 }
@@ -604,7 +605,8 @@ function byDay(list) {
 // Spare parts, business costs and losses come off on the day they were spent.
 // money I lent goes out of my pocket that day; money given back comes in on the day it came.
 // Money I borrowed comes into my pocket that day (+); what I pay back goes out on the day paid (−).
-const debtFlow = r => (r.lback || 0) - (r.lend || 0) + (r.brw || 0) - (r.brep || 0);
+// Rev. 08: money I lent or borrowed never mixes into the income/expense reports — it lives only in its own sections
+const debtFlow = r => 0;
 const income = r => (r.pay || 0) + (r.inc || 0) - r.exp + debtFlow(r);
 // money received for debt work, less the spare parts bought for debt work in the same period
 const workNet = r => (r.pay || 0) - ((r.cost || 0) - (r.icost || 0));
@@ -866,14 +868,15 @@ const heroMoney = (v, sign) => state.hideInc ? '• • • •' : v < 0 ? `<spa
 function renderHeader() {
   const cm = today().slice(0, 7);
   if (state.tab === 'home') {
-    const M = flow(db.tx.filter(t => monthKey(t.date) === cm), t => monthKey(t.date) === cm);
+    // Rev. 08: the big card is TODAY; the month is in the card below it
+    const td = today(), M = flow(db.tx.filter(t => t.date === td), t => t.date === td);
     return topbar() + `<header>
-      <div class="hrow"><span class="hchip">${IC.cal.replace('<svg', '<svg width="15" height="15"')} ${MONTHS[+cm.slice(5) - 1]} ${cm.slice(0, 4)}</span><button class="heye" data-a="toggleHideInc" title="Gizlət" aria-label="Gizlət">${state.hideInc ? IC.eyeOff : IC.eye}</button></div>
-      <div class="hbal"><small>Bu ayın qalığı</small><b class="num${M.net < 0 && !state.hideInc ? ' neg-hero' : ''}">${heroMoney(M.net)}</b></div>
+      <div class="hrow"><span class="hchip">${IC.cal.replace('<svg', '<svg width="15" height="15"')} Bu gün · ${fmtDate(td)}</span><button class="heye" data-a="toggleHideInc" title="Gizlət" aria-label="Gizlət">${state.hideInc ? IC.eyeOff : IC.eye}</button></div>
+      <div class="hbal"><small>Günün qalığı</small><b class="num${M.net < 0 && !state.hideInc ? ' neg-hero' : ''}">${heroMoney(M.net)}</b></div>
       <div class="hsplit">
-        <button class="hio" data-a="openReceived"><i>${IC.down}</i><span style="min-width:0"><small>Gəlir</small><b class="num">${heroMoney(M.got, '+')}</b></span></button>
+        <button class="hio" data-a="openToday"><i>${IC.down}</i><span style="min-width:0"><small>Günün gəliri</small><b class="num">${heroMoney(M.got, '+')}</b></span></button>
         <div class="sep"></div>
-        <button class="hio" data-a="homeMonth"><i>${IC.up}</i><span style="min-width:0"><small>Xərc</small><b class="num">${state.hideInc ? '• • • •' : (M.spent ? '−' : '') + money(M.spent)}</b></span></button>
+        <button class="hio" data-a="openToday"><i>${IC.up}</i><span style="min-width:0"><small>Günün xərci</small><b class="num">${state.hideInc ? '• • • •' : (M.spent ? '−' : '') + money(M.spent)}</b></span></button>
       </div></header>`;
   }
   const d = byDay(db.tx.filter(t => t.date === today()))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
@@ -939,7 +942,8 @@ function debtAge(pid) {
   if (!d) return '';
   const n = Math.floor((new Date(today()) - new Date(d)) / 864e5);
   const txt = n <= 0 ? 'bu gündən' : n + ' gündür';
-  return `<span class="${n > 7 ? 'debt' : ''}" style="font-weight:600">⏱ ${txt}</span>`;
+  if (n >= 30) return `<span class="neg">⏱ ${txt}</span>`;
+  return `<span style="font-weight:700;${n >= 7 ? 'color:#D97706' : ''}">⏱ ${txt}</span>`;
 }
 function todayHidden() {
   try { const o = JSON.parse(localStorage.getItem('todayHidden') || '{}'); return new Set(o.date === today() ? o.ids : []); } catch (e) { return new Set(); }
@@ -1238,7 +1242,7 @@ function habitLine(p) {
 }
 function renderOrderSheet(s) {
   const o = s.id ? db.orders.find(x => x.id === s.id) : null;
-  const v = o || { model: '', imei: '', issue: '', date: today(), dpin: '', wdays: 0 };
+  const v = o || { model: '', imei: '', issue: '', date: today(), dpin: '', wdays: 30 };
   const items = s.items;
   let h = `<h2>${o ? ordNo(o) + ' · ' + esc(o.model || 'Cihaz') : 'Cihaz qəbulu'}</h2>`;
   if (o) {
@@ -1401,8 +1405,8 @@ app.addEventListener('input', e => { if (isCalcField(e.target)) updCalc(e.target
 
 // ---------- payment method and part supplier on the entry forms ----------
 // only two ways: cash or transfer (an old "kart" entry counts as a transfer)
-const METHODS = [['nagd', 'Nağd'], ['kocurme', 'Köçürmə']];
-const methodName = k => (METHODS.find(x => x[0] === k) || METHODS[0])[1];
+const METHODS = [['nagd', 'Nağd'], ['kart', 'Kart']];
+const methodName = k => k && k !== 'nagd' ? 'Kart' : 'Nağd'; // old «Köçürmə» entries count as Kart
 const chipOn = 'background:var(--btn);color:var(--btn-ink);border-color:transparent';
 function sheetExtras(s, h) {
   let x = s.kind === 'tx' && s.quick ? qcatBlock(s) : '';
@@ -1606,7 +1610,7 @@ function flow(list, mineFilter) {
     if (t.cost) r.exp += t.cost;
   }
   const mine = db.tx.reduce((x, t) => x + (t.type === 'pexp' && mineFilter(t) ? t.amount : 0), 0);
-  const got = r.pay + r.inc + r.lback + r.brw, spent = r.exp + mine + r.lend + r.brep;
+  const got = r.pay + r.inc, spent = r.exp + mine;
   return { got, spent, parts: r.exp, mine, lend: r.lend, lback: r.lback, brw: r.brw, brep: r.brep, net: got - spent };
 }
 // one line of "Son əməliyyatlar": what it was, when, and the money in (+) or out (−)
@@ -1630,8 +1634,9 @@ function recentRow(t) {
     <div class="amt num ${col}">${sign}${money(Math.abs(amt))}${t.type === 'debt' ? '<small>borc</small>' : ''}</div></button>`;
 }
 function renderHome() {
-  const td = today();
-  const D = flow(db.tx.filter(t => t.date === td), t => t.date === td);
+  const td = today(), cm = td.slice(0, 7);
+  const D = flow(db.tx.filter(t => monthKey(t.date) === cm), t => monthKey(t.date) === cm);
+  const hid = v => state.hideInc ? '• • • •' : v;
   const od = overdueAll(), odSum = od.reduce((x, o) => x + o.sum, 0);
   const open = db.orders.filter(o => o.status !== 'verildi'), ready = open.filter(o => o.status === 'hazir').length;
   const lent = db.loans.filter(l => loanLeft(l) > 0), lentSum = lent.reduce((s, l) => s + loanLeft(l), 0);
@@ -1642,11 +1647,11 @@ function renderHome() {
     .sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 6);
   return allBanners() + `
   <div class="hm-card">
-    <div class="hm-title"><span>Bu gün — ${fmtDate(td)}</span><span class="hm-link" data-a="openToday">Ətraflı ›</span></div>
+    <div class="hm-title"><span>Bu ay — ${MONTHS[+cm.slice(5) - 1]} ${cm.slice(0, 4)}</span><span class="hm-link" data-a="homeMonth">Ətraflı ›</span></div>
     <div class="hm-3">
-      <div><small>Gəlir</small><b class="num pay">+${money(D.got)}</b></div>
-      <div><small>Xərc</small><b class="num exp">${D.spent ? '−' : ''}${money(D.spent)}</b></div>
-      <div><small>Qalıq</small>${net(D.net)}</div>
+      <div><small>Gəlir</small><b class="num pay">${hid('+' + money(D.got))}</b></div>
+      <div><small>Xərc</small><b class="num exp">${hid((D.spent ? '−' : '') + money(D.spent))}</b></div>
+      <div><small>Qalıq</small>${state.hideInc ? '<b class="num">• • • •</b>' : net(D.net)}</div>
     </div>
   </div>
   <div class="hm-2">
@@ -1700,7 +1705,7 @@ function syncLoanTx() {
   if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
 }
 function loanDue() {
-  return db.loans.filter(l => l.due && loanLeft(l) > 0).map(l => ({ d: l.due, line: `${l.name} — ${money(loanLeft(l))}: ${tr('borcu qaytarma günü')}` }));
+  return db.loans.filter(l => l.due && loanLeft(l) > 0).map(l => ({ d: addDays(l.due, -3), line: `${l.name} — ${money(loanLeft(l))}: ${tr('borcu qaytarma günü')} ${tr(fmtDate(l.due))}` }));
 }
 const loansLate = () => db.loans.filter(l => l.due && loanLeft(l) > 0 && l.due < today());
 
@@ -1719,9 +1724,9 @@ function extraSheet(s) {
     return '<h2>📱 Açıq sifarişlər</h2>' + (open.length ? '<div class="list">' + open.map(o => orderRow(o).replace('<div class="t">', `<div class="t">${esc(nameOf(o.pid))} · `)).join('') + '</div>' : '<div class="empty">Açıq sifariş yoxdur</div>');
   }
   if (k === 'methods') {
-    const m = s.m || state.month || today().slice(0, 7), sum = { nagd: 0, kocurme: 0 };
-    for (const t of db.tx) if ((t.type === 'pay' || t.type === 'inc') && monthKey(t.date) === m) sum[(t.method || 'nagd') === 'nagd' ? 'nagd' : 'kocurme'] += t.amount;
-    const all = sum.nagd + sum.kocurme;
+    const m = s.m || state.month || today().slice(0, 7), sum = { nagd: 0, kart: 0 };
+    for (const t of db.tx) if ((t.type === 'pay' || t.type === 'inc') && monthKey(t.date) === m) sum[(t.method || 'nagd') === 'nagd' ? 'nagd' : 'kart'] += t.amount;
+    const all = sum.nagd + sum.kart;
     return `<h2>💳 Ödəniş üsulları — ${MONTHS[+m.slice(5) - 1]}</h2><div class="card">${METHODS.map(([k2, l]) => `<div class="kv"><span>${l}${all ? ' · ' + Math.round(sum[k2] / all * 100) + '%' : ''}</span><b class="num">${money(sum[k2])}</b></div>`).join('')}<div class="kv total"><span>Cəmi alınan</span><b class="num">${money(all)}</b></div></div>`;
   }
   if (k === 'parts') {
@@ -1824,7 +1829,7 @@ function renderLoans() {
     <header><button data-a="closeLoans" aria-label="Geri">${IC.back}</button><h1>Mənə borclu olanlar</h1></header>
     <div class="hero">
       <div class="bal"><small>Mənə qaytarılmalı</small><b class="num">${money(sum)}</b></div>
-      <div style="position:relative;text-align:center;opacity:.85;font-size:13px">Verdiyim borc (−) xərc, qaytarılan pul (+) gəlir kimi hesablanır</div>
+      <div style="position:relative;text-align:center;opacity:.85;font-size:13px">Gündəlik və aylıq gəlir-xərcə qarışmır</div>
     </div>
     <main>
       <button class="btn primary" data-a="newLoan" style="margin-top:0">+ Borc verdim</button>
@@ -2312,7 +2317,7 @@ function renderSheetBase() {
     const opt = sel => ms.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${lbl(k)}</option>`).join('');
     const ta = totals(a), tb = totals(b);
     // [label, value, bold, a cost (less is better)]
-    const rows = [['Borcdan alınan', r => workNet(r)], ['Nağd işlər', r => cashNet(r)], ['Digər gəlirlər', r => r.oth || 0], ['Ziyan', r => -(r.loss || 0)], ['Borclar (verdim / aldım)', r => debtFlow(r)],
+    const rows = [['Borcdan alınan', r => workNet(r)], ['Nağd işlər', r => cashNet(r)], ['Digər gəlirlər', r => r.oth || 0], ['Ziyan', r => -(r.loss || 0)],
       ['Xalis gəlir', r => gross(r), 1], ['Xərclərim', (r, k) => mineTotal(k), 0, 1], ['Qalıq', (r, k) => gross(r) - mineTotal(k), 1]];
     h += `<h2>⚖️ İki ayı müqayisə et</h2>
       <div class="two"><select class="field" id="cmpA">${opt(a)}</select><select class="field" id="cmpB">${opt(b)}</select></div>
@@ -2388,7 +2393,7 @@ function renderSheetBase() {
   if (s.kind === 'received') {
     // money that came in this month, day by day: customers' payments and cash jobs
     const cm = today().slice(0, 7);
-    const list = db.tx.filter(t => monthKey(t.date) === cm && (t.type === 'inc' || t.type === 'lback' || t.type === 'brw' || (t.type === 'pay' && t.pid))).sort((a, c) => c.date.localeCompare(a.date) || (c.created || 0) - (a.created || 0));
+    const list = db.tx.filter(t => monthKey(t.date) === cm && (t.type === 'inc' || (t.type === 'pay' && t.pid))).sort((a, c) => c.date.localeCompare(a.date) || (c.created || 0) - (a.created || 0));
     const dates = [...new Set(list.map(t => t.date))];
     h += `<h2><span>💰</span> Bu ay alınan</h2><p class="note" style="margin-top:-8px">${MONTHS[+cm.slice(5) - 1]} ${cm.slice(0, 4)} · cəmi ${money(list.reduce((x, t) => x + t.amount, 0))}</p>
       ${dates.length ? dates.map(d => { const items = list.filter(t => t.date === d); return `
@@ -2769,7 +2774,6 @@ function reportSheets(month) {
   const dmy = d => d.split('-').reverse().join('.');
   const summary = [[{ v: tr('Hesabat') + ' — ' + monthName(MONTHS[m - 1]) + ' ' + month.slice(0, 4), s: 1 }], [],
     [tr('Borcdan alınan'), M(workNet(t))], [tr('Nağd işlər'), M(cashNet(t))], [tr('Digər gəlirlər'), M(t.oth || 0)], [tr('Ziyan'), M(-(t.loss || 0))],
-    [tr('Borc verdim'), M(-(t.lend || 0))], [tr('Verdiyim borcdan qaytarılan'), M(t.lback || 0)], [tr('Borc aldım'), M(t.brw || 0)], [tr('Borcumu qaytardım'), M(-(t.brep || 0))],
     [B('Xalis gəlir'), MB(gross(t))], [tr('Xərclərim'), M(mine)], [B('Qalıq'), MB(gross(t) - mine)], [],
     [tr('Müştərilərin borcu'), M(monthOwed(month))]];
   const days = byDay(db.tx.filter(x => monthKey(x.date) === month && x.type !== 'pexp' && x.type !== 'exp' && x.type !== 'pay')).reverse();
@@ -2779,7 +2783,7 @@ function reportSheets(month) {
   const txs = db.tx.filter(x => monthKey(x.date) === month && !x.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
   const txRows = [H(['Tarix', 'Saat', 'Növ', 'Müştəri / ad', 'Qeyd', 'Məbləğ', 'Xərc'])].concat(txs.map(x => {
     const c = x.created ? new Date(x.created) : null;
-    return [dmy(x.date), c ? pad(c.getHours()) + ':' + pad(c.getMinutes()) : '', tr(txLabel(x)), x.pid ? nameOf(x.pid) : x.type === 'pexp' ? cname(x.cid) : '', x.note || '', M(x.amount), x.cost ? M(x.cost) : null];
+    return [dmy(x.date), x.time || (c ? pad(c.getHours()) + ':' + pad(c.getMinutes()) : ''), tr(txLabel(x)), x.pid ? nameOf(x.pid) : x.type === 'pexp' ? cname(x.cid) : '', x.note || '', M(x.amount), x.cost ? M(x.cost) : null];
   }));
   return [{ name: tr('Xülasə'), cols: [34, 16], rows: summary }, { name: tr('Günlər'), cols: [12, 18, 14, 16, 12, 16], rows: dayRows }, { name: tr('Əməliyyatlar'), cols: [12, 8, 14, 24, 32, 14, 12], rows: txRows }];
 }
@@ -3967,26 +3971,26 @@ function monthMoney(month) {
     if (t.type === 'pexp') r.mine += t.amount;
     if (t.cost) r.parts += t.cost;
   }
-  r.got = r.pay + r.cash + r.oth + r.lback + r.brw;
-  r.spent = r.parts + r.loss + r.exp + r.lend + r.brep + r.mine;
+  r.got = r.pay + r.cash + r.oth;
+  r.spent = r.parts + r.loss + r.exp + r.mine;
   r.net = r.got - r.spent;
   return r;
 }
-function monthPdf(month) {
+function monthPdf(month, mail) {
   const r = monthMoney(month), m = +month.slice(5), rows = [];
   const add = (l, v, sign) => { if (v) rows.push([tr(l), (sign || '') + money(v)]); };
   rows.push([tr('GƏLİR'), '', true]);
-  add('Borcdan alınan', r.pay); add('Nağd işlər', r.cash); add('Digər gəlirlər', r.oth); add('Verdiyim borcdan qaytarılan', r.lback); add('Borc aldım', r.brw);
+  add('Borcdan alınan', r.pay); add('Nağd işlər', r.cash); add('Digər gəlirlər', r.oth);
   rows.push([tr('Cəmi gəlir'), '+' + money(r.got), true]);
   rows.push([tr('XƏRC'), '', true]);
-  add('Hissə xərci', r.parts, '−'); add('Ziyan', r.loss, '−'); add('İş xərci', r.exp, '−'); add('Borc verdim', r.lend, '−'); add('Borcumu qaytardım', r.brep, '−');
+  add('Hissə xərci', r.parts, '−'); add('Ziyan', r.loss, '−'); add('İş xərci', r.exp, '−');
   for (const c of db.cats) { const v = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.cid === c.id && monthKey(t.date) === month ? t.amount : 0), 0); if (v) rows.push([tr('Xərclərim') + ': ' + c.name, '−' + money(v)]); }
   rows.push([tr('Cəmi xərc'), (r.spent ? '−' : '') + money(r.spent), true]);
   rows.push([tr('Qalıq'), money(r.net), true]);
   rows.push([tr('Müştərilərin borcu (gəlir deyil)'), money(monthOwed(month))]);
   const od = overdueAll(); if (od.length) rows.push([tr('Gecikən borc'), money(od.reduce((s, x) => s + x.sum, 0))]);
   const title = tr('Aylıq hesabat'), sub = monthName(MONTHS[m - 1]) + ' ' + month.slice(0, 4);
-  if (hasNative && Android.sharePdf) return Android.sharePdf(JSON.stringify({ file: 'Hesabat-' + month + '.pdf', title, sub, rows, foot: 'Hesabat · ' + tr(fmtDate(today())), share: tr('Hesabatı göndər') }));
+  if (hasNative && Android.sharePdf) return Android.sharePdf(JSON.stringify(Object.assign({ file: 'Hesabat-' + month + '.pdf', title, sub, rows, foot: 'Hesabat · ' + tr(fmtDate(today())), share: tr('Hesabatı göndər') }, mail || {})));
   alert(title + ' — ' + sub + '\n\n' + rows.map(x => x[0] + (x[1] ? ': ' + x[1] : '')).join('\n'));
 }
 
@@ -4008,7 +4012,7 @@ function syncBorrowTx() {
 }
 const borrowsLate = () => db.borrow.filter(l => l.due && borrowCalc(l).left > 0 && l.due < today());
 function borrowDue() {
-  return db.borrow.filter(l => l.due && borrowCalc(l).left > 0).map(l => ({ d: addDays(l.due, -1), line: `${l.name} — ${money(borrowCalc(l).left)}: ${tr('borcu qaytarma günü')} ${tr(fmtDate(l.due))}` }));
+  return db.borrow.filter(l => l.due && borrowCalc(l).left > 0).map(l => ({ d: addDays(l.due, -3), line: `${l.name} — ${money(borrowCalc(l).left)}: ${tr('borcu qaytarma günü')} ${tr(fmtDate(l.due))}` }));
 }
 function renderBorrows() {
   const all = db.borrow.map(l => ({ l, c: borrowCalc(l) }));
@@ -4252,6 +4256,422 @@ app.addEventListener('input', e => {
   const box = document.getElementById('qcats');
   if (box) { box.innerHTML = qcatChips(s); translatePage(box); const lb = box.previousElementSibling; if (lb && lb.tagName === 'LABEL') { lb.innerHTML = tr('Bölmə') + ' ' + (g ? `<span class="badge ok">${tr('avtomatik')}</span>` : ''); } }
 });
+
+// ======================= 3.1.3 Rev. 08 (Emin Hesabat) =======================
+const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const hmOf = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+
+// ---- the time of an entry (written now or later for an earlier hour), and the part seller from the contacts ----
+{
+  const se = sheetExtras;
+  sheetExtras = function (s, h) {
+    let x = se(s, h);
+    x = x.replace(/<input class="field" id="f_sup"([^>]*)>/, '<div style="display:flex;gap:8px"><input class="field" id="f_sup" style="flex:1;min-width:0"$1><button class="btn ghost" data-a="pickSup" data-v="f_sup" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇 Kontaktdan</button></div>');
+    if (h.includes('id="f_date"')) {
+      const t = s.id && s.kind === 'tx' && db.tx.find(y => y.id === s.id);
+      const v = t ? t.time || (t.created ? hmOf(t.created) : nowHM()) : nowHM();
+      x += `<label>Saat</label><input class="field" id="f_time" type="time" value="${v}">`;
+    }
+    return x;
+  };
+}
+for (const k of ['saveTx', 'savePerson']) {
+  const orig = actions[k];
+  actions[k] = function (...a) {
+    const tm = document.getElementById('f_time') ? val('f_time') : '', editId = state.sheet && state.sheet.id, before = new Set(db.tx.map(t => t.id));
+    const r = orig.apply(this, a);
+    if (/^\d\d:\d\d$/.test(tm)) {
+      let ch = false;
+      for (const t of db.tx) if ((!before.has(t.id) || (t.id === editId && state.sheet === null)) && t.time !== tm) { t.time = tm; t.u = Date.now(); ch = true; }
+      if (ch) { save(); render(); }
+    }
+    return r;
+  };
+}
+actions.pickSup = function (v) { state.contactFor = v || 'f_sup'; if (hasNative) Android.pickContact(); else toast('Yalnız telefonda işləyir'); };
+{
+  const cp = window.onContactPicked;
+  window.onContactPicked = function (name, phone) {
+    const f = state.contactFor;
+    state.contactFor = null;
+    if (f) {
+      const el = document.getElementById(f), v = (name || '').trim() || (phone || '').trim();
+      if (el) { el.value = v; if (state.sheet && state.sheet.hand && f === 'f_hsup') state.sheet.hand.sup = v; }
+      return;
+    }
+    return cp(name, phone);
+  };
+}
+
+// ---- a new customer's name or phone: customers already in the list come up to choose ----
+function custSugHtml(q, byPhone) {
+  q = String(q || '').trim();
+  if (q.length < (byPhone ? 3 : 2)) return '';
+  const list = db.people.filter(p => byPhone ? phoneMatch(p.phone, q) : smartMatch(p.name, q)).slice(0, 6);
+  if (!list.length) return '';
+  return `<div class="note" style="margin:6px 0 2px;color:var(--debt);font-weight:600">⚠ ${tr('Belə müştəri var — seçin')}:</div><div class="chips">`
+    + list.map(p => { const b = balanceOf(p.id); return `<button class="chip" data-a="custPick" data-v="${p.id}">${esc(p.name)}${p.phone ? ' · ' + esc(p.phone) : ''}${b > 0 ? ' · ' + money(b) : ''}</button>`; }).join('') + '</div>';
+}
+app.addEventListener('input', e => {
+  const s = state.sheet;
+  if (!s || s.kind !== 'person' || s.id || !['', 'cash', 'loss'].includes(s.mode || '') || (e.target.id !== 'f_name' && e.target.id !== 'f_phone')) return;
+  const box = document.getElementById('custSug');
+  if (!box) return;
+  if (s.dup && e.target.id === 'f_name' && norm(e.target.value) !== norm(s.dupName)) { delete s.dup; delete s.dupName; }
+  box.innerHTML = custSugHtml(e.target.value, e.target.id === 'f_phone');
+  translatePage(box);
+});
+actions.custPick = function (id) {
+  const p = db.people.find(x => x.id === id), s = state.sheet;
+  if (!p || !s) return;
+  const n = document.getElementById('f_name'), ph = document.getElementById('f_phone');
+  if (n) n.value = p.name;
+  if (ph) ph.value = p.phone || '';
+  s.dup = p.id; s.dupName = p.name;
+  const box = document.getElementById('custSug');
+  if (box) box.innerHTML = `<div class="note" style="margin:6px 0 2px;color:var(--pay);font-weight:600">✓ ${esc(p.name)} — ${tr('köhnə müştəri seçildi, üzərinə yazılacaq')}</div>`;
+  const am = document.getElementById('f_amount'); if (am) am.focus();
+};
+
+// ---- two cards of the same customer joined into one ----
+actions.mergeOpen = function () { const id = state.sheet && state.sheet.id; if (id) { state.sheet = { kind: 'merge', id, q: '' }; render(); } };
+actions.mergeInto = function (dst) {
+  const src = state.sheet.id, a = db.people.find(x => x.id === src), b = db.people.find(x => x.id === dst);
+  if (!a || !b) return;
+  if (!confirm(tr('«{a}» «{b}» ilə birləşdirilsin? Bütün borc, ödəniş və sifarişlər «{b}»-yə keçəcək.', { a: a.name, b: b.name }))) return;
+  const now = Date.now();
+  for (const t of db.tx) if (t.pid === src) { t.pid = dst; t.u = now; }
+  for (const o of db.orders) if (o.pid === src) { o.pid = dst; o.u = now; }
+  for (const x of db.hides || []) if (x.pid === src) { x.pid = dst; x.u = now; }
+  if (!b.phone && a.phone) b.phone = a.phone;
+  if (a.note) b.note = b.note ? b.note + '\n' + a.note : a.note;
+  if (a.photos && a.photos.length) b.photos = (b.photos || []).concat(a.photos).slice(0, typeof MAX_PHOTOS === 'number' ? MAX_PHOTOS : 6);
+  b.u = now;
+  db.people = db.people.filter(x => x.id !== src); db.removed[src] = now;
+  save(); state.sheet = null; state.person = dst; render(); window.scrollTo(0, 0);
+  toast(tr('Birləşdirildi'));
+};
+
+// ---- money given back to me: each return with its own day and hour ----
+function loanBackRows(l) {
+  const list = db.tx.filter(t => t.type === 'lback' && t.lid === l.id).sort((a, b) => (a.date + (a.time || hmOf(a.created || 0))).localeCompare(b.date + (b.time || hmOf(b.created || 0))));
+  return list.length ? '<div class="list" style="margin-top:6px">' + list.map(t => `<div class="row"><div class="grow"><div class="t pay">✓ ${tr('Qaytardı')}</div><div class="s">🕒 ${stamp(t.time ? t : Object.assign({}, t, { time: hmOf(t.created || Date.now()) }))}</div></div><div class="amt num pay">+${money(t.amount)}</div></div>`).join('') + '</div>' : `<p class="note" style="margin:4px 0 0">${tr('Hələ qaytarmayıb')}</p>`;
+}
+actions.loanPart = function () {
+  const l = db.loans.find(x => x.id === state.sheet.id);
+  if (!l) return;
+  const a = parseAmount(val('f_lbamt')), d = val('f_lbdate') || today(), tm = val('f_lbtime') || nowHM();
+  if (!a) return toast('Məbləğ yazın');
+  const use = Math.min(a, loanLeft(l));
+  if (use <= 0) return toast('Bu borc artıq qaytarılıb');
+  db.tx.push({ id: uid(), type: 'lback', lid: l.id, amount: use, date: d, time: tm, note: l.name, created: Date.now(), u: Date.now() });
+  l.back = (l.back || 0) + use; l.u = Date.now();
+  save(); render(); toast(tr('{name} {sum} qaytardı', { name: l.name, sum: money(use) }));
+};
+for (const k of ['loanBack', 'saveLoan']) {
+  const orig = actions[k];
+  actions[k] = function (...a) {
+    const before = new Set(db.tx.map(t => t.id));
+    const r = orig.apply(this, a);
+    let ch = false;
+    for (const t of db.tx) if (!before.has(t.id) && t.type === 'lback' && !t.time) { t.time = nowHM(); ch = true; }
+    if (ch) save();
+    return r;
+  };
+}
+
+// ---- a repair order: receipt, hand-over with Borc / Ödədi, returned unrepaired, warranty repair ----
+const HAND_RES = [['debt', 'Borc', 'debt'], ['paid', 'Ödədi', 'pay'], ['ret', 'Təmir olunmadı', 'zero'], ['wr', 'Zəmanətlə (pulsuz)', 'brand']];
+const handResName = k => (HAND_RES.find(x => x[0] === k) || ['', ''])[1];
+function handHtml(s, o) {
+  const H = s.hand, res = H.res, money_ = res === 'debt' || res === 'paid';
+  const chip = ([k, l]) => `<button class="chip" data-a="handRes" data-v="${k}" style="${res === k ? chipOn : ''}">${res === k ? '✓ ' : ''}${l}</button>`;
+  let h = `<div class="card" style="margin-top:12px"><b>📦 ${tr('Təhvil')} — ${ordNo(o)}</b>
+    <div class="chips" style="margin-top:8px">${HAND_RES.map(chip).join('')}</div>`;
+  if (money_) h += `<label>${tr('İşin qiyməti')} (${cur()})</label><input class="field big num" id="f_hprice" inputmode="decimal" placeholder="0" value="${esc(H.price || '')}">`
+    + (o.adv ? `<p class="note" style="margin-top:4px">💵 ${tr('Avans')}: ${money(o.adv)} — ${tr('qiymətdən çıxılır')}</p>` : '');
+  if (res !== 'ret') h += `<label>${tr('Hissə xərci')} (${cur()}, ${tr('istəyə bağlı')})</label><input class="field num" id="f_hcost" inputmode="decimal" placeholder="0" value="${esc(H.cost || '')}">
+    <label>Hissə kimdən alınıb</label><div style="display:flex;gap:8px"><input class="field" id="f_hsup" value="${esc(H.sup || '')}" placeholder="istəyə bağlı" style="flex:1;min-width:0"><button class="btn ghost" data-a="pickSup" data-v="f_hsup" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇 Kontaktdan</button></div>`;
+  if (res === 'paid') h += '<label>Ödəniş üsulu</label><div class="chips" style="margin-top:4px">' + METHODS.map(([k, l]) => `<button class="chip" data-a="handMethod" data-v="${k}" style="${H.method === k ? chipOn : ''}">${l}</button>`).join('') + '</div>';
+  if (res === 'debt') h += `<label>Ödəniş tarixi (istəyə bağlı)</label><input class="field" id="f_hdue" type="date" value="${esc(H.due || '')}"><div class="note" style="margin-top:4px">${tr('3 gün qabaqdan hər gün xatırladacaq')}</div>`;
+  if (res === 'ret') h += `<p class="note" style="margin-top:8px">${tr('Cihaz təmirsiz qaytarılır — gəlirə düşmür.')}</p>`;
+  if (res === 'wr') h += `<p class="note" style="margin-top:8px">${tr('Zəmanətlə pulsuz təmir — gəlirə düşmür, hissə xərci xərcə yazılır.')}</p>`;
+  return h + `<button class="btn payb" data-a="handDone">✅ ${tr('Təhvil ver')}</button><button class="btn ghost" data-a="handCancel" style="margin-top:6px">${tr('Ləğv et')}</button></div>`;
+}
+function handKeep() {
+  const H = state.sheet && state.sheet.hand; if (!H) return;
+  const g = id => document.getElementById(id);
+  if (g('f_hprice')) H.price = g('f_hprice').value;
+  if (g('f_hcost')) H.cost = g('f_hcost').value;
+  if (g('f_hsup')) H.sup = g('f_hsup').value;
+  if (g('f_hdue')) H.due = g('f_hdue').value;
+}
+{
+  const ros = renderOrderSheet;
+  renderOrderSheet = function (s) {
+    let h = ros(s);
+    const o = s.id && db.orders.find(x => x.id === s.id);
+    if (!o) return h;
+    if (s.hand && o.status !== 'verildi') {
+      h = h.replace(/<label style="display:flex;gap:10px;align-items:center;margin-top:12px;font-weight:600"><input type="checkbox" id="f_checked"[^]*?<\/label>/, '');
+      const at = h.indexOf('<label>Cihaz modeli</label>');
+      if (at >= 0) h = h.slice(0, at) + handHtml(s, o) + h.slice(at);
+    }
+    if (o.status === 'verildi' && o.res) {
+      const at = h.indexOf('<label>Cihaz modeli</label>');
+      const line = `<p class="note" style="margin-top:10px;font-weight:600">📦 ${tr('Təhvil')}: ${tr(handResName(o.res))}${o.price ? ' · ' + money(o.price) : ''}${o.doneAt ? ' · ' + fmtDate(o.doneAt) : ''}</p>`;
+      if (at >= 0) h = h.slice(0, at) + line + h.slice(at);
+    }
+    const sv = h.indexOf('data-a="saveOrder"');
+    if (sv >= 0) {
+      const end = h.indexOf('</button>', sv) + 9;
+      h = h.slice(0, end) + `<div class="two" style="margin-top:8px"><button class="btn ghost" style="margin:0" data-a="ordReceipt" data-v="${o.id}">🧾 ${tr('Qəbz (PDF)')}</button><button class="btn ghost" style="margin:0" data-a="ordReceiptWa" data-v="${o.id}">${WA_ICON}${tr('Qəbz WhatsApp-a')}</button></div>` + h.slice(end);
+    }
+    return h;
+  };
+}
+function ordReceiptRows(o) {
+  const p = db.people.find(x => x.id === o.pid);
+  const r = [[tr('Sifariş'), ordNo(o)], [tr('Qəbul tarixi'), tr(fmtDate(o.date))]];
+  if (p) r.push([tr('Müştəri'), p.name + (p.phone ? ' · ' + p.phone : '')]);
+  if (o.model) r.push([tr('Cihaz'), o.model]);
+  if (o.imei) r.push(['IMEI', o.imei]);
+  if (o.issue) r.push([tr('Nasazlıq'), o.issue]);
+  if (o.items && o.items.length) r.push([tr('Qəbul olunanlar'), o.items.map(x => tr(x)).join(', ')]);
+  if (o.adv) r.push([tr('Avans'), money(o.adv)]);
+  if (o.wdays) r.push([tr('Zəmanət'), tr('{0} gün', { 0: o.wdays })]);
+  return r;
+}
+actions.ordReceipt = function (id) {
+  const o = db.orders.find(x => x.id === id); if (!o) return;
+  const p = db.people.find(x => x.id === o.pid);
+  if (!(hasNative && Android.sharePdf)) return toast('Yalnız telefonda işləyir');
+  Android.sharePdf(JSON.stringify({ file: 'Qebz-' + String(o.no).padStart(4, '0') + '.pdf', title: tr('Təmir qəbzi'), sub: ordNo(o) + (p ? ' · ' + p.name : ''), rows: ordReceiptRows(o), foot: 'Hesabat · ' + tr(fmtDate(today())), share: tr('Qəbzi göndər') }));
+};
+actions.ordReceiptWa = function (id) {
+  const o = db.orders.find(x => x.id === id); if (!o) return;
+  const p = db.people.find(x => x.id === o.pid);
+  const text = tr('Salam!') + '\n' + tr('Təmir qəbzi') + '\n' + ordReceiptRows(o).map(r => r[0] + ': ' + r[1]).join('\n') + '\n' + tr('Təşəkkürlər.');
+  if (p && p.phone) location.href = 'https://wa.me/' + waNum(p.phone) + '?text=' + encodeURIComponent(text);
+  else if (hasNative && Android.shareText) Android.shareText(text);
+};
+{
+  const so = actions.saveOrder;
+  actions.saveOrder = function (...a) {
+    const s = state.sheet, isNew = s && !s.id, n = db.orders.length;
+    const r = so.apply(this, a);
+    if (isNew && db.orders.length > n) {
+      const o = db.orders[db.orders.length - 1];
+      state.sheet = { kind: 'order', id: o.id, pid: o.pid, items: (o.items || []).slice() }; render();
+    }
+    return r;
+  };
+  const os = actions.orderStatus;
+  actions.orderStatus = function (k, ...rest) {
+    const o = state.sheet && db.orders.find(x => x.id === state.sheet.id);
+    if (o && k === 'verildi' && o.status !== 'verildi') {
+      const c = document.getElementById('f_checked');
+      if (!state.sheet.hand && (!c || !c.checked)) return toast('Əvvəl «Hər şey yoxlanıldı» işarələyin');
+      if (!state.sheet.hand) state.sheet.hand = { res: 'debt', method: 'nagd', price: '', cost: '', sup: '', due: '' };
+      return render();
+    }
+    if (state.sheet) state.sheet.hand = null;
+    return os.call(this, k, ...rest);
+  };
+}
+actions.handRes = function (v) { handKeep(); state.sheet.hand.res = v; render(); };
+actions.handMethod = function (v) { handKeep(); state.sheet.hand.method = v; render(); };
+actions.handCancel = function () { state.sheet.hand = null; render(); };
+actions.handDone = function () {
+  handKeep();
+  const s = state.sheet, H = s.hand, o = db.orders.find(x => x.id === s.id);
+  if (!o || !H) return;
+  const price = parseAmount(H.price), cost = parseAmount(H.cost), sup = (H.sup || '').trim(), now = Date.now(), tm = nowHM(), td = today();
+  const note = [o.model, o.issue].filter(Boolean).join(' — ') + ' ' + ordNo(o);
+  if ((H.res === 'debt' || H.res === 'paid') && !price) return toast('Qiyməti yazın');
+  if (H.res === 'debt' || H.res === 'paid') {
+    const d = Object.assign({ id: uid(), pid: o.pid, type: 'debt', amount: price, date: td, time: tm, note, ord: o.id, created: now, u: now }, cost ? { cost } : {}, cost && sup ? { supplier: sup } : {}, H.res === 'debt' && H.due ? { due: H.due } : {});
+    db.tx.push(d);
+    // the advance paid at intake belongs to this very job
+    const adv = o.adv ? db.tx.find(t => t.type === 'pay' && t.pid === o.pid && !t.forDebt && String(t.note || '').includes(ordNo(o))) : null;
+    if (adv) { adv.forDebt = d.id; adv.u = now; }
+    if (H.res === 'paid') {
+      const rest = Math.max(0, price - (adv ? adv.amount : 0));
+      if (rest) db.tx.push({ id: uid(), pid: o.pid, type: 'pay', amount: rest, date: td, time: tm, note: tr('Ödəniş') + ' ' + ordNo(o), forDebt: d.id, method: H.method || 'nagd', created: now + 1, u: now });
+    }
+  } else if (H.res === 'wr' && cost) {
+    db.tx.push(Object.assign({ id: uid(), type: 'exp', amount: cost, date: td, time: tm, note: tr('Zəmanət') + ': ' + note, created: now, u: now }, sup ? { supplier: sup } : {}));
+  }
+  Object.assign(o, { status: 'verildi', doneAt: td, res: H.res, u: now }, price ? { price } : {});
+  if (H.res === 'ret') o.ret = true;
+  if (H.res === 'wr') o.wr = true;
+  o.log = (o.log || []).concat({ s: 'verildi', d: td });
+  s.hand = null;
+  save(); render(); toast(tr('{0} təhvil verildi', { 0: ordNo(o) }) + ' · ' + tr(handResName(o.res)));
+};
+
+// ---- WhatsApp reminder to every late debtor, one after another ----
+actions.bulkStart = function () {
+  const q = overdueAll().filter(x => x.p.phone).map(x => x.p.id);
+  if (!q.length) return toast('Telefon nömrəsi olan gecikən borclu yoxdur');
+  state.sheet = { kind: 'bulk', q, i: 0 }; render();
+};
+actions.bulkSend = function () {
+  const s = state.sheet, p = db.people.find(x => x.id === s.q[s.i]);
+  s.i++;
+  render();
+  if (p) location.href = waLink(p, balanceOf(p.id), db.card ? db.card.v : '');
+};
+actions.bulkSkip = function () { state.sheet.i++; render(); };
+
+// ---- money hidden: in the settings, no screenshots, and a shake hides every amount ----
+window.onShake = function () {
+  const on = document.body.classList.toggle('blurnum');
+  if (hasNative && Android.haptic) Android.haptic();
+  toast(on ? 'Rəqəmlər gizləndi — yenə silkələyin' : 'Rəqəmlər göründü');
+};
+{ const st = document.createElement('style'); st.textContent = 'body.blurnum .num,body.blurnum .amt{filter:blur(9px)!important}'; document.head.appendChild(st); }
+actions.toggleSecure = function () { if (!hasNative || !Android.setSecure) return toast('Yalnız telefonda işləyir'); Android.setSecure(!Android.secureOn()); render(); };
+actions.toggleShake = function () { if (!hasNative || !Android.setShake) return toast('Yalnız telefonda işləyir'); Android.setShake(!Android.shakeOn()); render(); toast(Android.shakeOn() ? 'Telefonu silkələyəndə bütün rəqəmlər gizlənəcək' : 'Sönülüdür'); };
+
+// ---- the month's report to Gmail, as Excel or PDF ----
+const mmail = () => { try { return localStorage.getItem('mmail') || ''; } catch (e) { return ''; } };
+const prevMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+actions.openMonthMail = function () { state.sheet = { kind: 'mmail' }; render(); };
+actions.setMonthMail = function (v) { try { localStorage.setItem('mmail', v || ''); if (v) localStorage.setItem('mmailSent', prevMonth()); } catch (e) {} updateShortcuts(); render(); };
+function sendMonthMail(month, fmt) {
+  const m = +month.slice(5), subject = tr('Aylıq hesabat') + ' — ' + monthName(MONTHS[m - 1]) + ' ' + month.slice(0, 4);
+  if (!hasNative) return toast('Yalnız telefonda işləyir');
+  if (fmt === 'pdf') monthPdf(month, { mail: true, to: sync.account || '', subject });
+  else Android.mailBase64(toBase64(buildXlsx(reportSheets(month))), 'Hesabat-' + month + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', sync.account || '', subject);
+  try { localStorage.setItem('mmailSent', month); } catch (e) {}
+}
+actions.mmailSend = function (v) { const f = v || mmail() || 'xlsx'; state.sheet = null; render(); sendMonthMail(prevMonth(), f); };
+actions.mmailNow = function (v) { state.sheet = null; render(); sendMonthMail(state.month || today().slice(0, 7), v); };
+actions.mmailLater = function () { try { localStorage.setItem('mmailSent', prevMonth()); } catch (e) {} state.sheet = null; render(); };
+function monthMailAsk() {
+  if (!mmail() || state.pin || state.sheet) return;
+  let sent = ''; try { sent = localStorage.getItem('mmailSent') || ''; } catch (e) {}
+  if (sent >= prevMonth()) return;
+  state.sheet = { kind: 'mmailAsk' }; render();
+}
+{
+  const sd = subsDue;
+  subsDue = function () {
+    const out = sd();
+    if (mmail()) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); const k = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-01'; out.push({ d: k, u: k, line: tr('Ötən ayın hesabatı hazırdır — Gmail-ə göndərin') }); }
+    return out;
+  };
+}
+
+// ---- the new sheets ----
+{
+  const es = extraSheet;
+  extraSheet = function (s) {
+    const k = s.kind;
+    if (k === 'merge') {
+      const src = db.people.find(x => x.id === s.id), q = s.q || '';
+      const list = db.people.filter(p => p.id !== s.id && (!q || smartMatch(p.name, q) || phoneMatch(p.phone, q))).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 40);
+      return `<h2>🔗 ${tr('Birləşdir')}</h2><p class="note" style="margin-top:-8px">${esc(src ? src.name : '')} — ${tr('hansı müştəri ilə birləşsin?')}</p>
+        <input class="field" id="dq" value="${esc(q)}" placeholder="${tr('Ad və ya telefon')}">
+        <div class="list" style="margin-top:10px">${list.map(p => `<button class="row" data-a="mergeInto" data-v="${p.id}"><div class="avatar">${esc(initials(p.name))}</div><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${[p.phone ? esc(p.phone) : '', balanceOf(p.id) > 0 ? tr('Borcu') + ': ' + money(balanceOf(p.id)) : ''].filter(Boolean).join(' · ') || '&nbsp;'}</div></div></button>`).join('') || '<div class="empty" style="padding:16px">Tapılmadı</div>'}</div>`;
+    }
+    if (k === 'bulk') {
+      const done = s.i >= s.q.length, p = !done && db.people.find(x => x.id === s.q[s.i]);
+      if (done || !p) return `<h2>${WA_ICON}${tr('Hamısına xatırlatma')}</h2><div class="empty">✓ ${tr('Hamısına göndərildi')} (${s.q.length})</div>`;
+      return `<h2>${WA_ICON}${tr('Hamısına xatırlatma')}</h2><p class="note" style="margin-top:-8px">${s.i + 1} / ${s.q.length}</p>
+        <div class="list"><div class="row"><div class="avatar">${esc(initials(p.name))}</div><div class="grow"><div class="t">${esc(p.name)}</div><div class="s"><span class="neg">${tr('{0} gün gecikir', { 0: overdueOf(p.id).days })}</span></div></div><div class="amt num debt">${money(balanceOf(p.id))}</div></div></div>
+        <button class="btn payb" data-a="bulkSend">${WA_ICON}${tr('Göndər')}</button><button class="btn ghost" data-a="bulkSkip">${tr('Keç (göndərmə)')}</button>`;
+    }
+    if (k === 'mmail') {
+      const m = mmail(), opt = (v, l) => `<button class="chip" data-a="setMonthMail" data-v="${v}" style="${m === v ? chipOn : ''}">${m === v ? '✓ ' : ''}${l}</button>`;
+      return `<h2>📧 ${tr('Aylıq hesabat Gmail-ə')}</h2><p class="note" style="margin-top:-8px">${tr('Hər ayın 1-də ötən ayın hesabatı hazır olur, Gmail açılır — yalnız «Göndər» basırsınız.')}</p>
+        <div class="chips">${opt('', 'Sönülüdür')}${opt('xlsx', 'Excel')}${opt('pdf', 'PDF')}</div>
+        ${sync.account ? `<p class="note">${tr('Ünvan')}: ${esc(sync.account)}</p>` : `<p class="note">${tr('Google yedək qoşulanda ünvan özü yazılacaq')}</p>`}
+        <div class="section-title">${tr('İndi göndər')} — ${MONTHS[+(state.month || today()).slice(5, 7) - 1]}</div>
+        <div class="two"><button class="btn ghost" style="margin:0" data-a="mmailNow" data-v="xlsx">📊 Excel</button><button class="btn ghost" style="margin:0" data-a="mmailNow" data-v="pdf">📄 PDF</button></div>`;
+    }
+    if (k === 'mmailAsk') {
+      const pm = prevMonth();
+      return `<h2>📧 ${tr('Ötən ayın hesabatı hazırdır')}</h2><p class="note" style="margin-top:-8px">${MONTHS[+pm.slice(5) - 1]} ${pm.slice(0, 4)} · ${mmail() === 'pdf' ? 'PDF' : 'Excel'}</p>
+        <button class="btn payb" data-a="mmailSend">📧 ${tr('Gmail-ə göndər')}</button><button class="btn ghost" data-a="mmailLater">${tr('Bu ay göndərmə')}</button>`;
+    }
+    if (k === 'freeOrders') {
+      const m = state.month, list = db.orders.filter(o => (o.ret || o.wr) && o.doneAt && monthKey(o.doneAt) === m).sort((a, b) => b.doneAt.localeCompare(a.doneAt));
+      return `<h2>🛡 ${tr('Pulsuz qaytarılanlar')} — ${MONTHS[+m.slice(5) - 1]}</h2>
+        <div class="card"><div class="kv"><span>${tr('Təmir olunmadı')}</span><b class="num">${list.filter(o => o.ret).length}</b></div><div class="kv"><span>${tr('Zəmanətlə (pulsuz)')}</span><b class="num">${list.filter(o => o.wr).length}</b></div></div>`
+        + (list.length ? '<div class="list">' + list.map(o => `<button class="row" data-a="openOrder" data-v="${o.id}"><div class="grow"><div class="t">${ordNo(o)} · ${esc(nameOf(o.pid))}</div><div class="s">${esc(o.model || '')} · ${tr(handResName(o.res))} · ${fmtDate(o.doneAt)}</div></div></button>`).join('') + '</div>' : '<div class="empty" style="padding:16px">Yoxdur</div>');
+    }
+    if (k === 'woList') {
+      const m = state.month, list = db.tx.filter(t => t.type === 'adj' && t.wo && monthKey(t.date) === m);
+      return `<h2>📉 ${tr('Silinən borclar (zərər)')} — ${MONTHS[+m.slice(5) - 1]}</h2>`
+        + (list.length ? '<div class="list">' + list.map(t => `<div class="row"><div class="grow"><div class="t">${esc(nameOf(t.pid))}</div><div class="s">🕒 ${stamp(t)}</div></div><div class="amt num debt">${money(-t.amount)}</div></div>`).join('') + '</div>'
+          + `<div class="card"><div class="kv total"><span>Cəmi</span><b class="num neg">${money(list.reduce((s2, t) => s2 - t.amount, 0))}</b></div></div>` : '<div class="empty" style="padding:16px">Yoxdur</div>');
+    }
+    const r = es(s);
+    if (k === 'overdue' && r != null && overdueAll().some(x => x.p.phone)) return r + `<button class="btn payb" data-a="bulkStart">${WA_ICON}${tr('Hamısına ardıcıl xatırlat')}</button>`;
+    return r;
+  };
+}
+actions.openFreeOrders = function () { state.sheet = { kind: 'freeOrders' }; render(); };
+actions.openWo = function () { state.sheet = { kind: 'woList' }; render(); };
+{
+  const re = reportExtras;
+  reportExtras = function () {
+    const m = state.month, h = re();
+    const free = db.orders.filter(o => (o.ret || o.wr) && o.doneAt && monthKey(o.doneAt) === m);
+    const wo = db.tx.reduce((s2, t) => s2 + (t.type === 'adj' && t.wo && monthKey(t.date) === m ? -t.amount : 0), 0);
+    const add = tile('openFreeOrders', '', 'Pulsuz qaytarılan / zəmanətlə', free.filter(o => o.ret).length + ' / ' + free.filter(o => o.wr).length, '', '#7C3AED')
+      + tile('openWo', '', 'Silinən borclar (zərər)', money(wo), '', '#E5484D');
+    const at = h.lastIndexOf('</div>');
+    return at >= 0 ? h.slice(0, at) + add + h.slice(at) : h + add;
+  };
+}
+{
+  const rs = renderSheet;
+  renderSheet = function () {
+    let h = rs();
+    const s = state.sheet;
+    if (s && s.kind === 'person' && !s.id && ['', 'cash', 'loss'].includes(s.mode || '')) h = h.replace(/(<input class="field" id="f_name"[^>]*>)/, '$1<div id="custSug"></div>');
+    if (s && s.kind === 'person' && s.id) h = h.replace('<button class="btn danger" data-a="delPerson">', `<button class="btn ghost" data-a="mergeOpen">🔗 ${tr('Başqa müştəri ilə birləşdir')}</button><button class="btn danger" data-a="delPerson">`);
+    if (s && s.kind === 'loan' && s.id) {
+      const l = db.loans.find(x => x.id === s.id);
+      if (l) {
+        // the old one-number field is replaced by returns written one by one, each with its day and hour
+        h = h.replace(/<label>Qaytarıb \([^)]*\)<\/label><input class="field num" id="f_back"[^>]*>/, `<input type="hidden" id="f_back" value="${amountInput(l.back)}">`);
+        const box = `<div class="card" style="margin-top:12px"><b>${tr('Qaytarılan pul')}</b>${loanBackRows(l)}
+          ${loanLeft(l) > 0 ? `<label>${tr('Qaytardığı məbləğ')} (${cur()})</label><input class="field num" id="f_lbamt" inputmode="decimal" placeholder="0">
+          <div class="two" style="margin-top:8px"><input class="field" id="f_lbdate" type="date" value="${today()}"><input class="field" id="f_lbtime" type="time" value="${nowHM()}"></div>
+          <button class="btn payb" data-a="loanPart">+ ${tr('Qaytardı — yaz')}</button>
+          <p class="note" style="margin:4px 0 0">${tr('Qalıb')}: <b>${money(loanLeft(l))}</b></p>` : ''}</div>`;
+        h = h.replace('<button class="btn primary" data-a="saveLoan">', box + '<button class="btn primary" data-a="saveLoan">');
+      }
+    }
+    return h;
+  };
+}
+{
+  const rsp = renderSettingsPage;
+  renderSettingsPage = function () {
+    const h = rsp();
+    const sec = hasNative && Android.secureOn && Android.secureOn(), sh = hasNative && Android.shakeOn && Android.shakeOn(), mm = mmail();
+    const grp = `<div class="slabel">${tr('Gizlilik')}</div><div class="sgroup">
+        ${srow('toggleSecure', 'shield', '#334155', 'Ekran şəklinə qadağa', sec ? 'Açıqdır' : 'Sönülüdür')}
+        ${srow('toggleShake', 'eyeOff', '#B45309', 'Silkələyəndə rəqəmləri gizlət', sh ? 'Açıqdır' : 'Sönülüdür')}
+      </div>
+      <div class="slabel">Məlumat</div>`;
+    return h.replace('<div class="slabel">Məlumat</div>', grp)
+      .replace(/(<div class="slabel">Məlumat<\/div>\s*<div class="sgroup">)/, `$1${srow('openMonthMail', 'send', '#DB4437', 'Aylıq hesabat Gmail-ə', mm === 'pdf' ? 'PDF' : mm === 'xlsx' ? 'Excel' : 'Sönülüdür')}`);
+  };
+}
+// the trash keeps things for 30 days, then they go for good
+{
+  const old = db => { const lim = Date.now() - 30 * 864e5, gone = (db.trash || []).filter(e => e.at && e.at < lim); if (!gone.length) return false; gone.forEach(e => { db.removed[e.id] = Date.now(); }); db.trash = db.trash.filter(e => !gone.includes(e)); return true; };
+  const ld = load;
+  load = function () { const r = ld.apply(this, arguments); try { if (old(db)) saveLocal(); } catch (e) {} return r; };
+}
+{ const ra = window.onAppResume; window.onAppResume = function () { ra(); setTimeout(monthMailAsk, 700); }; }
+setTimeout(monthMailAsk, 900);
 
 load();
 syncLoanTx();
