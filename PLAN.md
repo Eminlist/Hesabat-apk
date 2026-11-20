@@ -46,3 +46,12 @@ Qayda: yalnız aşağıdakılar edilir, özündən əlavə yoxdur. Hər mərhəl
       Görünüş, Məlumat, Haqqında; vahid ikonlar və boşluqlar
 
 Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üçün.
+
+## Mərhələ 4 — HAZIR (3.1.3 Rev. 04): buxalter hesablaması
+- [x] Kassa üsulu: gəlir = alınan pul (borc ödənişi + nağd iş + digər gəlir), ödənildiyi gün
+- [x] Müştəri borcu gəlir sayılmır; ayrıca cəmi göstərilir
+- [x] Xərclər (hissə, iş xərci, ziyan, xərclərim) gəlirdən çıxılır və göstərilir; mənfi qırmızı
+- [x] Gecikən borc (ödəniş günü keçib): qırmızı, gün sayı ilə; proqramda xəbərdarlıq + gündə bir dəfə siyahı
+- [x] Ödəniş üsulu: yalnız Nağd və Köçürmə
+- [x] Kredit hissəsi ekranlardan çıxarıldı
+- [x] Əsas ekran sadələşdi: Bu ay / Bu gün (gəlir, xərc, qalıq), borclar, sifarişlər

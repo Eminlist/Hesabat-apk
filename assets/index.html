@@ -195,6 +195,24 @@
   nav .navplus svg { width: 26px; height: 26px; }
   .chev { color: var(--muted); font-size: 22px; }
   .tile .ar { font-style: normal; }
+  .hm-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+  .hm-title { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+  .hm-link { color: var(--brand); text-transform: none; letter-spacing: 0; cursor: pointer; }
+  .hm-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 16px; }
+  .hm-row b { font-size: 19px; }
+  .hm-sub { font-size: 12px; color: var(--muted); margin: -4px 0 4px; text-align: right; }
+  .hm-net { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 12px; font-weight: 700; }
+  .hm-net b { font-size: 26px; }
+  .hm-warn { background: #FEE2E2; color: #B91C1C; border-radius: 10px; padding: 8px 10px; font-size: 13px; font-weight: 700; margin-top: 8px; text-align: center; }
+  .hm-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+  .hm-3 small, .hm-mini small { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .hm-3 b { font-size: 17px; }
+  .hm-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hm-mini { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; text-align: left; color: var(--text); display: flex; flex-direction: column; gap: 2px; }
+  .hm-mini b { font-size: 19px; }
+  .hm-mini span { font-size: 12px; color: var(--muted); }
+  .odban { display: block; width: 100%; text-align: left; background: #FEE2E2; color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 14px; padding: 12px 14px; font-weight: 700; margin-bottom: 10px; }
+  :root[data-theme="dark"] .odban { background: #450A0A; color: #FCA5A5; border-color: #7F1D1D; }
 </style>
 </head>
 <body>
@@ -207,7 +225,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 03';
+const APP_VERSION = '3.1.3 Rev. 04';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], removed: {} };
 
 function load() {
@@ -477,10 +495,12 @@ function byDay(list) {
   }
   return Object.values(m).sort((a, b) => b.date.localeCompare(a.date));
 }
-// business income: work written to ustas + extra income − business expenses
-const income = r => r.debt + (r.inc || 0) - r.exp;
-// Hesabat tab: income without business expenses, but spare parts never count as income
-const workNet = r => r.debt - ((r.cost || 0) - (r.icost || 0));
+// Cash basis (like a bookkeeper): income is money actually received — debt payments, cash jobs,
+// other income — on the day it came in. A written debt is NOT income until it is paid.
+// Spare parts, business costs and losses come off on the day they were spent.
+const income = r => (r.pay || 0) + (r.inc || 0) - r.exp;
+// money received for debt work, less the spare parts bought for debt work in the same period
+const workNet = r => (r.pay || 0) - ((r.cost || 0) - (r.icost || 0));
 const incNet = r => (r.inc || 0) - (r.icost || 0);
 const gross = r => workNet(r) + incNet(r) - (r.loss || 0);
 // incNet split for showing: cash jobs and "Digər gəlir" (the total stays incNet)
@@ -685,6 +705,7 @@ function allPeriod() {
   return `<div style="font-size:12px;opacity:.85;margin-top:2px">${f(first)} – ${f(today())}</div>`;
 }
 function renderHeader() {
+  if (state.tab === 'home') return `<header><div class="hrow"><h1>Hesabat</h1><div style="display:flex;gap:8px"><button class="hbtn" data-a="tab" data-v="settings" title="Ayarlar">⚙️</button><button class="hbtn" data-a="openTrash" title="Zibil qutusu">${TRASH_ICON}${db.trash.length ? `<span>${db.trash.length}</span>` : ''}</button></div></div></header>`;
   const d = byDay(db.tx.filter(t => t.date === today()))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
   const n = db.trash.length;
   return `<header><div class="hrow"><h1>Hesabat</h1>${state.tab !== 'settings' ? (() => { const cm = state.tab === 'people' ? today().slice(0, 7) : state.month; return `<div class="hinc" data-a="toggleHideInc"><small>${state.tab === 'report' ? 'Ümumi gəlir' : 'Gəlirim'} — ${MONTHS[+cm.slice(5) - 1]}</small><b class="num">${state.hideInc ? '• • • •' : money(income(totals(cm)))}</b></div>`; })() : ''}<div style="display:flex;gap:8px"><button class="hbtn" data-a="tab" data-v="settings" title="Ayarlar" style="${state.tab === 'settings' ? 'background:rgba(255,255,255,.3)' : ''}">⚙️</button><button class="hbtn" data-a="openTrash" title="Zibil qutusu">${TRASH_ICON}${n ? `<span>${n}</span>` : ''}</button></div></div><div class="stats">
@@ -695,7 +716,7 @@ function renderHeader() {
       ? `<button class="stat" data-a="openMineDays" style="text-align:left;color:#fff"><small>Xərclərim — ${MONTHS[+state.month.slice(5) - 1]} ›</small><b class="num">${money(mineTotal(state.month))}</b></button>
          <button class="stat" data-a="openToday" style="text-align:left;color:#fff"><small>Bu günkü gəlir ›</small><b class="num">${money(income(d))}</b></button>`
       : state.tab === 'report'
-      ? `${(() => { const owe = monthOwed(state.month), left = income(totals(state.month)) - owe; return `<div class="stat"><small>Müştərilərin borcu</small><b class="num">${money(owe)}</b></div>
+      ? `${(() => { const owe = monthOwed(state.month), left = income(totals(state.month)); return `<div class="stat"><small>Müştərilərin borcu</small><b class="num">${money(owe)}</b></div>
          <div class="stat"><small>Əlimə gələn</small><b class="num">${netHtml(left)}</b></div>`; })()}
          <button class="stat" data-a="openAllMonths" style="text-align:left;color:#fff"><small>Bütün dövrün gəliri ›</small><b class="num">${money(gross(totals()))}</b>${allPeriod()}</button>
          <button class="stat" data-a="openAllLeft" style="text-align:left;color:#fff"><small>Bütün dövrün qalığı ›</small><b class="num">${netHtml(allMonths().reduce((x, m) => x + gross(totals(m)) - mineTotal(m), 0))}</b>${allPeriod()}</button>`
@@ -744,6 +765,8 @@ function openDebtSplit() {
 }
 const debtSince = pid => debtState(pid).since;
 function debtAge(pid) {
+  const od = overdueOf(pid);
+  if (od.days > 0) return `<span class="neg">⏰ ${tr('{0} gün gecikir', { 0: od.days })}</span>`;
   const d = debtSince(pid);
   if (!d) return '';
   const n = Math.floor((new Date(today()) - new Date(d)) / 864e5);
@@ -880,7 +903,7 @@ function txRow(t, paidIds, left, sub, part) {
           <div class="grow"><div class="t ${t.type === 'adj' ? 'zero' : t.type}">${sub ? '↳ ' : ''}${t.type === 'debt' ? (t.addTo ? (t.amount ? 'Əlavə iş' : 'Əlavə xərc') : 'Borc yazıldı') : t.type === 'pay' ? 'Ödəniş alındı' : t.type === 'loss' ? '📉 Ziyan' : t.wo ? '📉 Borc silindi' : 'Məbləğ düzəlişi'}${t.type === 'debt' && t.amount && paidIds.has(t.id) ? ' <span class="badge ok">✓ ödənilib</span>' : t.type === 'debt' && left < t.amount ? ` <span class="badge" style="background:var(--debt-soft);color:var(--debt)">qalıb ${money(left)}</span>` : ''}</div>
           ${t.note || t.type === 'debt' ? `<div class="s">${t.note ? esc(t.note) : 'Səbəb yazılmayıb (toxunun)'}</div>` : ''}
           ${t.cost ? `<div class="s"><span class="exp">Xərc −${money(t.cost)}</span>${t.type === 'loss' ? '' : ` · qazanc ${money(t.amount - t.cost)}`}</div>` : ''}
-          ${t.type === 'debt' && t.due && !paidIds.has(t.id) ? `<div class="s"><span class="${t.due <= today() ? 'debt' : ''}" style="font-weight:600">📅 Ödəniş tarixi: ${fmtDate(t.due)}</span></div>` : ''}
+          ${t.type === 'debt' && t.due && !paidIds.has(t.id) ? (t.due < today() ? `<div class="s"><span class="neg">⏰ ${tr('{0} gün gecikir', { 0: daysBetween(t.due, today()) })} · ${fmtDate(t.due)}</span></div>` : `<div class="s"><span class="${t.due === today() ? 'debt' : ''}" style="font-weight:600">📅 Ödəniş tarixi: ${fmtDate(t.due)}${t.due === today() ? ' · ' + tr('bu gün') : ''}</span></div>`) : ''}
           <div class="s">🕒 ${stamp(t)}</div></div>
           <div class="amt num ${t.type === 'adj' ? 'zero' : t.type === 'loss' ? 'debt' : t.type}">${t.type === 'loss' ? '−' + money(t.amount) : part != null && part !== Math.abs(t.amount) ? '−' + money(part) + `<small>${money(Math.abs(t.amount))}-dan</small>` : t.type === 'pay' ? '−' + money(t.amount) : t.type === 'adj' ? (t.amount > 0 ? '+' : '') + money(t.amount) : '+' + money(t.amount)}</div>
           <span class="del" style="display:grid;place-items:center">✎</span>
@@ -1209,7 +1232,8 @@ document.addEventListener('pointerdown', e => {
 app.addEventListener('input', e => { if (isCalcField(e.target)) updCalc(e.target); });
 
 // ---------- payment method and part supplier on the entry forms ----------
-const METHODS = [['nagd', 'Nağd'], ['kart', 'Kart'], ['kocurme', 'Köçürmə']];
+// only two ways: cash or transfer (an old "kart" entry counts as a transfer)
+const METHODS = [['nagd', 'Nağd'], ['kocurme', 'Köçürmə']];
 const methodName = k => (METHODS.find(x => x[0] === k) || METHODS[0])[1];
 const chipOn = 'background:var(--brand);color:#fff;border-color:var(--brand)';
 function sheetExtras(s, h) {
@@ -1254,18 +1278,16 @@ function healthScore(month) {
   const inc = income(totals(month)), mine = mineTotal(month);
   if (inc <= 0) return null;
   const sr = (inc - mine) / inc;
-  const p1 = Math.max(0, Math.min(40, sr / 0.3 * 40));
+  const p1 = Math.max(0, Math.min(60, sr / 0.3 * 60));
   const owe = outstanding() / inc;
-  const p2 = Math.max(0, Math.min(30, 30 * (1 - Math.max(0, owe - 0.2) / 1.3)));
-  const bpm = db.borrow.reduce((s, l) => { const c = borrowCalc(l); return s + (c.left > 0 ? c.pmt : 0); }, 0) / inc;
-  const p3 = Math.max(0, Math.min(30, 30 * (1 - Math.max(0, bpm - 0.1) / 0.4)));
-  const score = Math.round(p1 + p2 + p3);
+  const p2 = Math.max(0, Math.min(40, 40 * (1 - Math.max(0, owe - 0.2) / 1.3)));
+  const score = Math.round(p1 + p2);
   const [label, col] = score >= 80 ? ['Əla', '#16A34A'] : score >= 60 ? ['Yaxşı', '#0D9488'] : score >= 40 ? ['Orta', '#D97706'] : ['Zəif', '#DC2626'];
-  return { score, label, col, parts: [['Qənaət (gəlirin nə qədəri qalır)', Math.round(p1), 40, Math.round(sr * 100) + '%'], ['Müştəri borcları', Math.round(p2), 30, money(outstanding())], ['Aldığım borc və kreditlər', Math.round(p3), 30, money(borrowLeft())]] };
+  return { score, label, col, parts: [['Qənaət (gəlirin nə qədəri qalır)', Math.round(p1), 60, Math.round(sr * 100) + '%'], ['Müştəri borcları', Math.round(p2), 40, money(outstanding())]] };
 }
 
 // ---------- change journal (kept in the data, so it is saved to Google with it) ----------
-const JKINDS = ['tx', 'people', 'orders', 'cats', 'loans', 'borrow'];
+const JKINDS = ['tx', 'people', 'orders', 'cats', 'loans'];
 function jdesc(k, r) {
   try {
     if (k === 'tx') return (txLabel(r) || r.type) + ' ' + money(r.amount || r.cost || 0) + (r.pid ? ' — ' + nameOf(r.pid) : '') + (r.note ? ' (' + r.note + ')' : '');
@@ -1403,27 +1425,48 @@ function importRows(rows) {
 function tile(a, v, label, value, sub, color) {
   return `<button class="tile" ${a ? `data-a="${a}"${v ? ` data-v="${v}"` : ''}` : 'disabled'}${color ? ` style="border-left:5px solid ${color}"` : ''}><small>${label}${a ? '<em class="ar"> ›</em>' : ''}</small><b class="num">${value}</b>${sub ? `<span>${sub}</span>` : ''}</button>`;
 }
+// income received and money spent (spare parts, business costs, losses + my own expenses)
+function flow(list, mineFilter) {
+  const r = { pay: 0, inc: 0, exp: 0 };
+  for (const t of list) {
+    if (t.corr || (t.type === 'adj' && t.wo)) continue;
+    if (t.type === 'pay') r.pay += t.amount;
+    if (t.type === 'inc') r.inc += t.amount;
+    if (t.type === 'loss') r.exp += t.amount;
+    if (t.cost) r.exp += t.cost;
+  }
+  const mine = db.tx.reduce((x, t) => x + (t.type === 'pexp' && mineFilter(t) ? t.amount : 0), 0);
+  const got = r.pay + r.inc, spent = r.exp + mine;
+  return { got, spent, parts: r.exp, mine, net: got - spent };
+}
 function renderHome() {
   const td = today(), m = td.slice(0, 7);
-  const d = byDay(db.tx.filter(t => t.date === td))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
-  const spent = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === td ? t.amount : 0), 0);
-  const ws = weekStart(td), wk = byDay(db.tx.filter(t => t.date >= ws && t.date <= td)).reduce((s, x) => s + income(x), 0);
-  const inc = income(totals(m)), mine = mineTotal(m), net = inc - mine;
+  const M = flow(db.tx.filter(t => monthKey(t.date) === m), t => monthKey(t.date) === m);
+  const D = flow(db.tx.filter(t => t.date === td), t => t.date === td);
+  const od = overdueAll(), odSum = od.reduce((x, o) => x + o.sum, 0);
   const open = db.orders.filter(o => o.status !== 'verildi'), ready = open.filter(o => o.status === 'hazir').length;
-  const hs = healthScore(m), kd = kassaDay(td), bl = borrowLeft();
-  return `<div class="dash">
-    ${tile('openToday', '', 'Bu gün gəlir', money(income(d)), tr('xərc') + ' ' + money(spent), '#14B8A6')}
-    ${tile('', '', 'Bu həftə gəlir', money(wk), '', '#0EA5E9')}
-    ${tile('tab', 'report', 'Bu ay gəlir', money(inc), tr('xərc') + ' ' + money(mine), '#16A34A')}
-    ${tile('tab', 'mine', 'Bu ay qalıq', netHtml(net), net < 0 ? tr('xərc gəlirdən çoxdur') : '', net < 0 ? '#DC2626' : '#16A34A')}
-    ${tile('openDebtors', '', 'Müştəri borcları', money(outstanding()), '', '#EF4444')}
-    ${tile('openOrders', '', 'Açıq sifarişlər', String(open.length), ready ? tr('{0} hazırdır', { 0: ready }) : '', '#D97706')}
-    ${tile('openKassa', '', 'Kassa (nağd)', money(kd.expect), kd.k.close != null ? tr('sayılıb') + ': ' + money(kd.k.close) : tr('gün başı') + ': ' + money(kd.k.open || 0), '#64748B')}
-    ${tile('openBorrow', '', 'Aldığım borclar', money(bl), db.borrow.length ? tr('{0} borc / kredit', { 0: db.borrow.filter(l => borrowCalc(l).left > 0).length }) : '', '#7C3AED')}
-    ${tile('openMethods', '', 'Ödəniş üsulları', MONTHS[+m.slice(5) - 1], '', '#0284C7')}
-    ${tile('openParts', '', 'Hissələr (xərc)', money(db.tx.reduce((s, t) => s + (t.cost && monthKey(t.date) === m ? t.cost : 0), 0)), MONTHS[+m.slice(5) - 1], '#B45309')}
+  const net = v => v < 0 ? `<b class="num neg">${money(v)}</b>` : `<b class="num">${money(v)}</b>`;
+  return overdueBanner() + `
+  <div class="hm-card">
+    <div class="hm-title"><span>Bu ay — ${MONTHS[+m.slice(5) - 1]}</span><span class="hm-link" data-a="tab" data-v="report">Hesabat ›</span></div>
+    <div class="hm-row"><span>⬆️ Gəlir</span><b class="num pay">+${money(M.got)}</b></div>
+    <div class="hm-row"><span>⬇️ Xərc</span><b class="num exp">−${money(M.spent)}</b></div>
+    ${M.spent ? `<div class="hm-sub">${M.parts ? tr('hissə və iş xərci') + ' ' + money(M.parts) : ''}${M.parts && M.mine ? ' · ' : ''}${M.mine ? tr('xərclərim') + ' ' + money(M.mine) : ''}</div>` : ''}
+    <div class="hm-row hm-net"><span>Qalıq</span>${net(M.net)}</div>
+    ${M.net < 0 ? '<div class="hm-warn">Bu ay xərc gəlirdən çoxdur</div>' : ''}
   </div>
-  ${hs ? `<button class="card health" data-a="openHealth"><div class="hsc" style="--c:${hs.col};--p:${hs.score}"><b>${hs.score}</b></div><div class="grow"><b>Pul sağlamlığı: <span style="color:${hs.col}">${hs.label}</span></b><div class="note">${MONTHS[+m.slice(5) - 1]} · 0–100 ›</div></div></button>` : ''}`;
+  <div class="hm-card">
+    <div class="hm-title"><span>Bu gün — ${fmtDate(td)}</span><span class="hm-link" data-a="openToday">Ətraflı ›</span></div>
+    <div class="hm-3">
+      <div><small>Gəlir</small><b class="num pay">+${money(D.got)}</b></div>
+      <div><small>Xərc</small><b class="num exp">−${money(D.spent)}</b></div>
+      <div><small>Qalıq</small>${net(D.net)}</div>
+    </div>
+  </div>
+  <div class="hm-2">
+    <button class="hm-mini" data-a="openDebtors"><small>Müştəri borcları ›</small><b class="num debt">${money(outstanding())}</b>${od.length ? `<span class="neg">⏰ ${tr('gecikən')} ${money(odSum)}</span>` : '<span>gecikən yoxdur</span>'}</button>
+    <button class="hm-mini" data-a="openOrders"><small>Açıq sifarişlər ›</small><b class="num">${open.length}</b><span>${ready ? tr('{0} hazırdır', { 0: ready }) : '&nbsp;'}</span></button>
+  </div>`;
 }
 function reportExtras() {
   const m = state.month, hs = healthScore(m);
@@ -1431,23 +1474,43 @@ function reportExtras() {
     ${tile('openMethods', '', 'Ödəniş üsulları', MONTHS[+m.slice(5) - 1], '', '#0284C7')}
     ${tile('openParts', '', 'Hissələr (xərc)', money(db.tx.reduce((s, t) => s + (t.cost && monthKey(t.date) === m ? t.cost : 0), 0)), '', '#B45309')}
     ${tile('openKassa', '', 'Kassa (nağd)', money(kassaDay(today()).expect), '', '#64748B')}
-    ${tile('openBorrow', '', 'Aldığım borclar', money(borrowLeft()), '', '#7C3AED')}
     ${tile('openHealth', '', 'Pul sağlamlığı', hs ? hs.score + ' · ' + tr(hs.label) : '—', '', hs ? hs.col : '#94A3B8')}
     ${tile('openJournal', '', 'Dəyişikliklər jurnalı', String(db.journal.length), '', '#475569')}
   </div>`;
 }
 
+// ---------- overdue debts (payment day passed, still unpaid) ----------
+const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5));
+function overdueOf(pid) {
+  let days = 0, sum = 0;
+  for (const x of debtState(pid).debts) if (x.left > 0 && x.t.due && x.t.due < today()) { sum += x.left; days = Math.max(days, daysBetween(x.t.due, today())); }
+  return { days, sum };
+}
+function overdueAll() {
+  return db.people.map(p => Object.assign({ p }, overdueOf(p.id))).filter(x => x.days > 0).sort((a, b) => b.days - a.days);
+}
+function overdueBanner() {
+  const o = overdueAll();
+  if (!o.length) return '';
+  return `<button class="odban" data-a="openOverdue">⚠ ${tr('{0} müştərinin borcu gecikir', { 0: o.length })} · ${money(o.reduce((s, x) => s + x.sum, 0))} ›</button>`;
+}
+
 // ---------- extra sheets ----------
 function extraSheet(s) {
   const k = s.kind;
+  if (k === 'overdue') {
+    const o = overdueAll();
+    return `<h2>⏰ Gecikən borclar</h2><p class="note" style="margin-top:-8px">Ödəniş günü keçib, borc hələ ödənməyib.</p>` + (o.length ? '<div class="list">' + o.map(x => `<button class="row" data-a="open" data-v="${x.p.id}"><div class="grow"><div class="t">${esc(x.p.name)}</div><div class="s"><span class="neg">${tr('{0} gün gecikir', { 0: x.days })}</span></div></div><div class="amt num debt">${money(x.sum)}</div></button>`).join('') + '</div>'
+      + `<div class="card"><div class="kv total"><span>Cəmi gecikən</span><b class="num neg">${money(o.reduce((s, x) => s + x.sum, 0))}</b></div></div>` : '<div class="empty">Gecikən borc yoxdur 👍</div>');
+  }
   if (k === 'orders') {
     const open = db.orders.filter(o => o.status !== 'verildi').sort((a, b) => b.no - a.no);
     return '<h2>📱 Açıq sifarişlər</h2>' + (open.length ? '<div class="list">' + open.map(o => orderRow(o).replace('<div class="t">', `<div class="t">${esc(nameOf(o.pid))} · `)).join('') + '</div>' : '<div class="empty">Açıq sifariş yoxdur</div>');
   }
   if (k === 'methods') {
-    const m = s.m || state.month || today().slice(0, 7), sum = { nagd: 0, kart: 0, kocurme: 0 };
-    for (const t of db.tx) if ((t.type === 'pay' || t.type === 'inc') && monthKey(t.date) === m) sum[t.method || 'nagd'] += t.amount;
-    const all = sum.nagd + sum.kart + sum.kocurme;
+    const m = s.m || state.month || today().slice(0, 7), sum = { nagd: 0, kocurme: 0 };
+    for (const t of db.tx) if ((t.type === 'pay' || t.type === 'inc') && monthKey(t.date) === m) sum[(t.method || 'nagd') === 'nagd' ? 'nagd' : 'kocurme'] += t.amount;
+    const all = sum.nagd + sum.kocurme;
     return `<h2>💳 Ödəniş üsulları — ${MONTHS[+m.slice(5) - 1]}</h2><div class="card">${METHODS.map(([k2, l]) => `<div class="kv"><span>${l}${all ? ' · ' + Math.round(sum[k2] / all * 100) + '%' : ''}</span><b class="num">${money(sum[k2])}</b></div>`).join('')}<div class="kv total"><span>Cəmi alınan</span><b class="num">${money(all)}</b></div></div>`;
   }
   if (k === 'parts') {
@@ -1502,7 +1565,7 @@ function extraSheet(s) {
     return `<h2>❤️ Pul sağlamlığı — ${MONTHS[+m.slice(5) - 1]}</h2><div style="display:flex;justify-content:center;margin:6px 0 14px"><div class="hsc big" style="--c:${hs.col};--p:${hs.score}"><b>${hs.score}</b></div></div>
       <p style="text-align:center;font-weight:700;color:${hs.col};margin-top:0">${hs.label}</p>
       <div class="card">${hs.parts.map(([l, v, max, info]) => `<div class="kv"><span>${l}<br><small class="note">${info}</small></span><b class="num">${v} / ${max}</b></div>`).join('')}</div>
-      <p class="note">Bal ayın gəlirinə görə hesablanır: gəlirin nə qədəri qalır, müştərilərin borcu və sizin borc / kredit ödənişləriniz.</p>`;
+      <p class="note">Bal ayın alınan gəlirinə görə hesablanır: gəlirin nə qədəri qalır və müştərilərin borcu.</p>`;
   }
   if (k === 'journal') {
     const list = db.journal.slice(-300).reverse();
@@ -1615,16 +1678,18 @@ function nameOf(pid) {
 // one chosen day of the report: its figures and every job written that day
 function renderDay() {
   const d = state.day, day = byDay(db.tx.filter(t => t.date === d))[0] || { debt: 0, inc: 0, exp: 0, cost: 0, icost: 0, loss: 0, pay: 0 };
-  const list = db.tx.filter(t => t.date === d && !t.corr && (t.type === 'inc' || t.type === 'loss' || (t.type === 'adj' && !t.wo) || (t.type === 'debt' && t.pid))).sort((a, c) => (c.created || 0) - (a.created || 0));
+  const list = db.tx.filter(t => t.date === d && !t.corr && (t.type === 'inc' || t.type === 'pay' || t.type === 'loss' || (t.type === 'adj' && !t.wo) || (t.type === 'debt' && t.pid))).sort((a, c) => (c.created || 0) - (a.created || 0));
   const step = n => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   return `<div class="monthbar"><button class="iconbtn" data-a="dayStep" data-v="${step(-1)}">‹</button><b data-a="pickDate" style="cursor:pointer">${fmtDate(d)}<span> ▾</span></b><button class="iconbtn" data-a="dayStep" data-v="${step(1)}">›</button></div>
     <button class="btn ghost" data-a="wholeMonth" style="margin:0">← Bütün ay — ${MONTHS[+d.slice(5, 7) - 1]}</button>
     <div class="card" style="margin-top:12px">
-      <div class="kv"><span>Yazılan iş (borc)</span><b class="num debt">${money(workNet(day))}</b></div>
+      <div class="kv"><span>Borcdan alınan</span><b class="num pay">${money(day.pay || 0)}</b></div>
       ${incLines(day)}
+      ${day.cost ? `<div class="kv"><span>Hissə xərci</span><b class="num exp">−${money(day.cost)}</b></div>` : ''}
       ${day.dayLoss ? `<div class="kv"><span>Ziyan (aydan çıxılır)</span><b class="num debt">−${money(day.dayLoss)}</b></div>` : ''}
-      ${day.cost ? `<div class="kv"><span>Xərc</span><b class="num exp">${money(day.cost)}</b></div>` : ''}
-      <div class="kv total"><span>Xalis gəlir</span><span class="num pay">${money(gross(day))}</span></div>
+      <div class="kv total"><span>Xalis gəlir</span><span class="num pay">${netHtml(gross(day))}</span></div>
+      ${(() => { const mine = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === d ? t.amount : 0), 0); return mine ? `<div class="kv"><span>Xərclərim</span><b class="num exp">−${money(mine)}</b></div><div class="kv total"><span>Qalıq</span><span class="num">${netHtml(gross(day) - mine)}</span></div>` : ''; })()}
+      ${day.debt ? `<div class="kv"><span>Yazılan borc (gəlir deyil)</span><b class="num debt">${money(day.debt)}</b></div>` : ''}
     </div>
     <div class="list">${list.length ? list.map(t => `
       <button class="row" data-a="editTx" data-v="${t.id}">
@@ -1977,7 +2042,7 @@ function renderSheetBase() {
     const opt = sel => ms.map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${lbl(k)}</option>`).join('');
     const ta = totals(a), tb = totals(b);
     // [label, value, bold, a cost (less is better)]
-    const rows = [['Yazılan iş (borc)', r => workNet(r)], ['Nağd işlər', r => cashNet(r)], ['Digər gəlirlər', r => r.oth || 0], ['Ziyan', r => -(r.loss || 0)],
+    const rows = [['Borcdan alınan', r => workNet(r)], ['Nağd işlər', r => cashNet(r)], ['Digər gəlirlər', r => r.oth || 0], ['Ziyan', r => -(r.loss || 0)],
       ['Xalis gəlir', r => gross(r), 1], ['Xərclərim', (r, k) => mineTotal(k), 0, 1], ['Qalıq', (r, k) => gross(r) - mineTotal(k), 1]];
     h += `<h2>⚖️ İki ayı müqayisə et</h2>
       <div class="two"><select class="field" id="cmpA">${opt(a)}</select><select class="field" id="cmpB">${opt(b)}</select></div>
@@ -2068,7 +2133,7 @@ function renderSheetBase() {
   if (s.kind === 'today') {
     // every job of this month, day by day: customers' work, cash jobs and losses, with the day's income
     const cm = today().slice(0, 7);
-    const list = db.tx.filter(t => monthKey(t.date) === cm && !t.corr && (t.type === 'inc' || t.type === 'loss' || (t.type === 'adj' && !t.wo) || (t.type === 'debt' && t.pid)))
+    const list = db.tx.filter(t => monthKey(t.date) === cm && !t.corr && (t.type === 'inc' || t.type === 'pay' || t.type === 'loss' || (t.type === 'adj' && !t.wo) || (t.type === 'debt' && t.pid)))
       .sort((a, c) => c.date.localeCompare(a.date) || (c.created || 0) - (a.created || 0));
     const dates = [...new Set(list.map(t => t.date))];
     const row = t => t.type === 'loss' ? `
@@ -2130,10 +2195,18 @@ function renderSheetBase() {
     const [y, m] = state.month.split('-').map(Number), t = totals(state.month), net = gross(t);
     h += `<h2>📋 Ayın hesabı</h2><p class="note" style="margin-top:-8px">${MONTHS[m - 1]} ${y}</p>
       <div class="card">
-        <div class="kv"><span>Yazılan iş (borc)</span><b class="num debt">${money(workNet(t))}</b></div>
+        <div class="kv"><span>Borcdan alınan</span><b class="num pay">${money(t.pay || 0)}</b></div>
         ${incLines(t)}
+        ${t.cost ? `<div class="kv"><span>Hissə xərci</span><b class="num exp">−${money(t.cost)}</b></div>` : ''}
         ${t.loss ? `<div class="kv"><span>Ziyan</span><b class="num debt">−${money(t.loss)}</b></div>` : ''}
-        <div class="kv total"><span>Xalis gəlir</span><span class="num pay">${money(net)}</span></div>
+        <div class="kv total"><span>Xalis gəlir</span><span class="num">${netHtml(net)}</span></div>
+        <div class="kv"><span>Xərclərim</span><b class="num exp">−${money(mineTotal(state.month))}</b></div>
+        <div class="kv total"><span>Qalıq</span><span class="num">${netHtml(net - mineTotal(state.month))}</span></div>
+      </div>
+      <div class="card">
+        <div class="kv"><span>Bu ay yazılan borc (gəlir deyil)</span><b class="num debt">${money(t.debt)}</b></div>
+        <div class="kv"><span>Müştərilərin qalan borcu</span><b class="num debt">${money(outstanding())}</b></div>
+        ${(() => { const o = overdueAll(); return o.length ? `<div class="kv"><span>⏰ Gecikən borc (${o.length})</span><b class="num neg">${money(o.reduce((s, x) => s + x.sum, 0))}</b></div>` : ''; })()}
       </div>`;
     return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
   }
@@ -2141,7 +2214,7 @@ function renderSheetBase() {
     const y = +state.month.slice(0, 4), yt = yearTotals(y);
     h += `<h2>💰 İllik gəlir — ${y}</h2><p class="note" style="margin-top:-8px">1 Yanvar – 31 Dekabr ${y}</p>
       <div class="card" style="margin-bottom:12px">
-        <div class="kv"><span>Yazılan iş</span><b class="num debt">${money(workNet(yt))}</b></div>
+        <div class="kv"><span>Borcdan alınan</span><b class="num pay">${money(workNet(yt))}</b></div>
         ${incLines(yt)}
         ${yt.loss ? `<div class="kv"><span>Ziyan</span><b class="num debt">−${money(yt.loss)}</b></div>` : ''}
         <div class="kv total"><span>İllik xalis gəlir</span><span class="num pay">${money(gross(yt))}</span></div>
@@ -2156,7 +2229,7 @@ function renderSheetBase() {
     h += `<h2>🗓️ Günlər üzrə</h2><p class="note" style="margin-top:-8px">${MONTHS[+state.month.slice(5) - 1]} ${state.month.slice(0, 4)}</p>
       <div class="list">${days.map(d => `
         <div class="row"><div class="grow"><div class="t">${fmtDate(d.date)}</div>
-          <div class="s">${[d.debt ? 'Borc ' + money(workNet(d)) : '', hasCash(d) ? 'Nağd ' + money(cashNet(d)) : '', d.oth ? 'Digər ' + money(d.oth) : '', d.dayLoss ? 'Ziyan −' + money(d.dayLoss) : ''].filter(Boolean).join(' · ')}</div></div>
+          <div class="s">${[d.pay ? 'Borcdan ' + money(workNet(d)) : '', hasCash(d) ? 'Nağd ' + money(cashNet(d)) : '', d.oth ? 'Digər ' + money(d.oth) : '', d.dayLoss ? 'Ziyan −' + money(d.dayLoss) : ''].filter(Boolean).join(' · ')}</div></div>
           <div class="amt num ${gross(d) ? 'pay' : 'zero'}">${money(gross(d))}<small>günün gəliri</small></div></div>`).join('')}</div>`;
     return h + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
   }
@@ -2419,11 +2492,11 @@ function reportSheets(month) {
   const M = q => ({ v: Math.round(q) / 100, s: 2 }), MB = q => ({ v: Math.round(q) / 100, s: 3 }), B = s => ({ v: tr(s), s: 1 }), H = a => a.map(s => ({ v: tr(s), s: 4 }));
   const dmy = d => d.split('-').reverse().join('.');
   const summary = [[{ v: tr('Hesabat') + ' — ' + monthName(MONTHS[m - 1]) + ' ' + month.slice(0, 4), s: 1 }], [],
-    [tr('Yazılan iş (borc)'), M(workNet(t))], [tr('Nağd işlər'), M(cashNet(t))], [tr('Digər gəlirlər'), M(t.oth || 0)], [tr('Ziyan'), M(-(t.loss || 0))],
+    [tr('Borcdan alınan'), M(workNet(t))], [tr('Nağd işlər'), M(cashNet(t))], [tr('Digər gəlirlər'), M(t.oth || 0)], [tr('Ziyan'), M(-(t.loss || 0))],
     [B('Xalis gəlir'), MB(gross(t))], [tr('Xərclərim'), M(mine)], [B('Qalıq'), MB(gross(t) - mine)], [],
     [tr('Müştərilərin borcu'), M(monthOwed(month))]];
   const days = byDay(db.tx.filter(x => monthKey(x.date) === month && x.type !== 'pexp' && x.type !== 'exp' && x.type !== 'pay')).reverse();
-  const dayRows = [H(['Tarix', 'Yazılan iş (borc)', 'Nağd işlər', 'Digər gəlirlər', 'Ziyan', 'Günün gəliri'])]
+  const dayRows = [H(['Tarix', 'Borcdan alınan', 'Nağd işlər', 'Digər gəlirlər', 'Ziyan', 'Günün gəliri'])]
     .concat(days.map(d => [dmy(d.date), M(workNet(d)), M(cashNet(d)), M(d.oth || 0), M(-(d.dayLoss || 0)), M(gross(d))]));
   const cname = id => (db.cats.find(c => c.id === id) || {}).name || '';
   const txs = db.tx.filter(x => monthKey(x.date) === month && !x.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
@@ -2770,7 +2843,7 @@ const actions = {
     const t = totals(state.month);
     const lines = [
       `📊 Hesabat — ${MONTHS[m - 1]} ${y}`, '',
-      `Yazılan iş: ${money(workNet(t))}`,
+      `${tr('Borcdan alınan')}: ${money(workNet(t))}`,
       hasCash(t) ? `Nağd işlər: ${money(cashNet(t))}` : null,
       t.oth ? `Digər gəlirlər: ${money(t.oth)}` : null,
       t.loss ? `Ziyan: −${money(t.loss)}` : null,
@@ -3295,11 +3368,21 @@ function pushSummary() {
   const td = today(), d = byDay(db.tx.filter(t => t.date === td))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
   const spent = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === td ? t.amount : 0), 0);
   const recv = d.pay + db.tx.reduce((s, t) => s + (t.type === 'inc' && t.date === td ? t.amount : 0), 0);
-  const text = tr('Gəlir') + ': ' + money(income(d)) + ' · ' + tr('Alınan') + ': ' + money(recv) + ' · ' + tr('Xərc') + ': ' + money(spent) + ' · ' + tr('Qalıq') + ': ' + money(income(d) - spent);
+  const out = (d.exp || 0) + spent;
+  const text = tr('Alınan') + ': ' + money(recv) + ' · ' + tr('Xərc') + ': ' + money(out) + ' · ' + tr('Qalıq') + ': ' + money(recv - out) + (d.debt ? ' · ' + tr('Yeni borc') + ': ' + money(d.debt) : '');
   Android.setSummary(td, tr('Günün xülasəsi'), text, tr('Bu gün heç nə yazılmayıb'));
 }
 { const us = updateShortcuts; updateShortcuts = function () { us(); try { pushSummary(); } catch (e) {} }; }
 { const rr = renderReport; renderReport = function () { return rr() + reportExtras(); }; }
+{ const rp = renderPeople; renderPeople = function () { return overdueBanner() + rp(); }; }
+// once a day, on opening the app, the overdue debts are shown
+function overdueNotice() {
+  if (state.pin || state.sheet || !overdueAll().length) return;
+  let seen = ''; try { seen = localStorage.getItem('odShown') || ''; } catch (e) {}
+  if (seen === today()) return;
+  try { localStorage.setItem('odShown', today()); } catch (e) {}
+  state.sheet = { kind: 'overdue' }; render();
+}
 {
   const rm = renderMine;
   renderMine = function () {
@@ -3313,7 +3396,7 @@ function pushSummary() {
       : `<div class="list" style="margin-top:12px"><button class="row" data-a="openSecret"><div class="avatar" style="font-size:20px">🔒</div><div class="grow"><div class="t">Gizli bölmələr (${hidden.length})</div><div class="s">PIN ilə açılır</div></div><span class="chev">›</span></button></div>`);
   };
 }
-{ const ra = window.onAppResume; window.onAppResume = function () { if (state.secretOpen) { state.secretOpen = false; if (state.tab === 'mine' || state.cat) { state.cat = null; render(); } } ra(); }; }
+{ const ra = window.onAppResume; window.onAppResume = function () { setTimeout(overdueNotice, 300); if (state.secretOpen) { state.secretOpen = false; if (state.tab === 'mine' || state.cat) { state.cat = null; render(); } } ra(); }; }
 { const sr = window.onSyncRemote; window.onSyncRemote = function (t) { sr(t); db.journal.sort((a, b) => a.at - b.at); jsnap = jsnapshot(); }; }
 for (const k of ['saveTx', 'savePerson']) {
   const orig = actions[k];
@@ -3358,6 +3441,7 @@ window.onImportedXlsx = async function (b64) {
   try { importRows(await xlsxRows(b64dec(b64))); } catch (e) { alert('Excel faylı oxunmadı'); }
 };
 Object.assign(actions, {
+  openOverdue() { state.sheet = { kind: 'overdue' }; render(); },
   setMethod(v) { state.sheet.method = v; render(); },
   openOrders() { state.sheet = { kind: 'orders' }; render(); },
   openMethods() { state.sheet = { kind: 'methods' }; render(); },
@@ -3458,6 +3542,7 @@ if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
 }
 render();
 updateShortcuts();
+setTimeout(overdueNotice, 400);
 if (hasNative && Android.takeLaunchTarget) window.onLaunchTarget(Android.takeLaunchTarget());
 runSync();
 </script>
