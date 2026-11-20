@@ -59,3 +59,16 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 ## Mərhələ 5 — HAZIR (3.1.3 Rev. 05): cibimə girən-çıxan hamısı
 - [x] Borc verdiyim pul verildiyi günün xərci, qaytarılan pul qaytarıldığı günün gəliri
 - [x] Borc verəndə «Nə vaxt qaytaracaq» tarixi; o gün telefon bildirişi; gecikəndə qırmızı + gün, proqramda xəbərdarlıq
+
+## Mərhələ 6 — HAZIR (3.1.3 Rev. 06): yeni dizayn və yeni funksiyalar
+- [x] Yeni dizayn: gündüz — firuzəyi balans kartı; gecə — qara-qızılı, azca dumanlı
+- [x] İlk səhifə sadə: bu ayın qalığı (gəlir / xərc), bu gün, borc kartları, son əməliyyatlar
+- [x] Ayarlar yuxarıda ⚙️ — bir siyahı, rəngli ikonlarla (dil, valyuta, tema, xülasə, yedək, PIN, fayllar, jurnal, zibil qutusu, məxfilik, versiya)
+- [x] Zibil qutusu yalnız bir yerdə: Ayarlar
+- [x] Məxfilik siyasəti proqramın içində açılır
+- [x] Xərclər: kateqoriya üzrə dairəvi qrafik (faizlə)
+- [x] Abunələr və aylıq ödənişlər: vaxtından əvvəl xatırlatma, «Ödədim» xərci yazır
+- [x] Aylıq hesabat PDF
+- [x] + → Xərc: bölmə adına görə avtomatik seçilir
+- [x] + → Borc verdim (−) / Borc aldım (+, qaytarma tarixi və xatırlatma; qaytardığım −)
+- [x] Hesabat: gün üzrə gəlir / xərc xətti qrafiki

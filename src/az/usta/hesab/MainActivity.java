@@ -81,11 +81,13 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         Window w = getWindow();
         if (Build.VERSION.SDK_INT >= 21) {
-            w.setStatusBarColor(Color.parseColor("#0F766E"));
-            w.setNavigationBarColor(Color.parseColor("#F4F6F8"));
+            w.setStatusBarColor(Color.parseColor("#F4F7F9"));
+            w.setNavigationBarColor(Color.parseColor("#FFFFFF"));
         }
         if (Build.VERSION.SDK_INT >= 26) {
-            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         }
 
         gsync = new GoogleSync(this);
@@ -903,12 +905,15 @@ public class MainActivity extends Activity {
                 @Override
                 public void run() {
                     Window w = getWindow();
-                    w.setStatusBarColor(Color.parseColor(dark ? "#0D5F59" : "#0F766E"));
-                    w.setNavigationBarColor(Color.parseColor(dark ? "#0E1418" : "#F4F6F8"));
+                    // light: pale page colour with dark icons; dark: black-gold with light icons
+                    w.setStatusBarColor(Color.parseColor(dark ? "#070708" : "#F4F7F9"));
+                    w.setNavigationBarColor(Color.parseColor(dark ? "#0E0D0B" : "#FFFFFF"));
                     if (Build.VERSION.SDK_INT >= 26) {
-                        w.getDecorView().setSystemUiVisibility(dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+                        w.getDecorView().setSystemUiVisibility(dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                    } else if (Build.VERSION.SDK_INT >= 23) {
+                        w.getDecorView().setSystemUiVisibility(dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
                     }
-                    web.setBackgroundColor(Color.parseColor(dark ? "#0E1418" : "#F4F6F8"));
+                    web.setBackgroundColor(Color.parseColor(dark ? "#070708" : "#F4F7F9"));
                 }
             });
         }
@@ -1011,7 +1016,7 @@ public class MainActivity extends Activity {
                 i.setType("application/pdf");
                 i.putExtra(Intent.EXTRA_STREAM, uri);
                 i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(i, "Qəbzi göndər"));
+                startActivity(Intent.createChooser(i, o.optString("share", "Qəbzi göndər")));
             } catch (Exception e) {
                 MainActivity.this.toast("PDF yaradılmadı");
             }
