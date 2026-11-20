@@ -22,6 +22,7 @@
     ['Borcumu qaytardım', 'Я вернул долг', 'Borcumu ödedim', 'I paid back'],
     ['Bu ay ödəyənlər ({0})', 'Оплатили в этом месяце ({0})', 'Bu ay ödeyenler ({0})', 'Paid this month ({0})'],
     ['Bu ayın qalığı', 'Остаток за месяц', 'Bu ayın kalanı', 'Left this month'],
+    ['Bu ayın gəliri', 'Доход за месяц', 'Bu ayın geliri', 'Income this month'],
     ['Bu ayın əməliyyatları', 'Операции за месяц', 'Bu ayın işlemleri', 'This month\'s entries'],
     ['Bu gün alınan ›', 'Получено сегодня ›', 'Bugün alınan ›', 'Received today ›'],
     ['Müştərilərin ümumi borcu ›', 'Общий долг клиентов ›', 'Müşterilerin toplam borcu ›', 'Customers\' total debt ›'],

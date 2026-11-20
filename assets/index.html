@@ -305,7 +305,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 09';
+const APP_VERSION = '3.1.3 Rev. 10';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], subs: [], removed: {} };
 
 function load() {
@@ -868,9 +868,9 @@ function renderHeader() {
     const M = flow(db.tx.filter(t => monthKey(t.date) === cm), t => monthKey(t.date) === cm, false);
     return topbar() + `<header>
       <div class="hrow"><span class="hchip">${IC.cal.replace('<svg', '<svg width="15" height="15"')} ${MONTHS[+cm.slice(5) - 1]} ${cm.slice(0, 4)}</span><button class="heye" data-a="toggleHideInc" title="Gizlət" aria-label="Gizlət">${state.hideInc ? IC.eyeOff : IC.eye}</button></div>
-      <div class="hbal"><small>Bu ayın qalığı</small><b class="num${M.net < 0 && !state.hideInc ? ' neg-hero' : ''}">${heroMoney(M.net)}</b></div>
+      <div class="hbal" data-a="openToday" style="cursor:pointer"><small>Bu ayın gəliri</small><b class="num${M.got < 0 && !state.hideInc ? ' neg-hero' : ''}">${heroMoney(M.got)}</b></div>
       <div class="hsplit">
-        <button class="hio" data-a="openToday"><i>${IC.down}</i><span style="min-width:0"><small>Gəlir</small><b class="num">${heroMoney(M.got, '+')}</b></span></button>
+        <button class="hio" data-a="homeMonth"><i>${IC.cash}</i><span style="min-width:0"><small>Qalıq</small><b class="num">${heroMoney(M.net)}</b></span></button>
         <div class="sep"></div>
         <button class="hio" data-a="homeMonth"><i>${IC.up}</i><span style="min-width:0"><small>Xərc</small><b class="num">${state.hideInc ? '• • • •' : (M.spent ? '−' : '') + money(M.spent)}</b></span></button>
       </div></header>`;

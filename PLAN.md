@@ -91,3 +91,6 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 - [x] Xərclərim köhnədəki kimi ayrıca; Qalıq = Gəlirim − Xərclərim
 - [x] Borc verdim və Borc aldım heç bir hesaba qarışmır — öz bölmələrində, qaytarma günü və bildirişlərlə
 - [x] Aylıq PDF hesabat da eyni hesablama ilə
+
+## Mərhələ 10 — HAZIR (3.1.3 Rev. 10)
+- [x] Əsas ekran: ortada böyük «Bu ayın gəliri»; aşağıda Qalıq və Xərc
