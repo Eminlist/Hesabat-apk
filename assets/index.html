@@ -225,7 +225,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 04';
+const APP_VERSION = '3.1.3 Rev. 05';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], removed: {} };
 
 function load() {
@@ -245,6 +245,7 @@ function load() {
   if (!db.removed || typeof db.removed !== 'object') db.removed = {};
 }
 function save() {
+  syncLoanTx();
   journalDiff();
   saveLocal();
   scheduleSync();
@@ -267,7 +268,7 @@ function updateShortcuts() {
   if (Android.setWidget) Android.setWidget(today(), tr('Bu günkü gəlir'), money(income(d)), money(0));
   // debts with a payment day still open: the phone reminds on that day (and every day after, until paid)
   if (Android.setDueList) {
-    const od = orderDue(), items = dueItems().concat(od);
+    const od = orderDue().concat(loanDue()), items = dueItems().concat(od);
     Android.setDueList(JSON.stringify(od.length ? { title: tr('Hesabat: xatırlatma'), more: tr('{0} xatırlatma'), items } : { title: tr('Ödəniş günü çatıb'), more: tr('{0} müştərinin ödəniş günü çatıb'), items }));
   }
 }
@@ -466,7 +467,7 @@ function calcBalance(pid) {
   return b;
 }
 function totals(filterMonth) {
-  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0 };
+  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0, lend: 0, lback: 0 };
   for (const t of db.tx) {
     if (filterMonth && monthKey(t.date) !== filterMonth) continue;
     if (t.type in r) r[t.type] += t.amount;
@@ -483,7 +484,8 @@ function byDay(list) {
   const m = {};
   for (const t of list) {
     if (t.corr) continue; // a deleted old debt counts against the month only, never against a single day
-    const d = m[t.date] || (m[t.date] = { date: t.date, debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0, dayLoss: 0, items: [] });
+    const d = m[t.date] || (m[t.date] = { date: t.date, debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0, lend: 0, lback: 0, dayLoss: 0, items: [] });
+    if (t.type === 'lend' || t.type === 'lback') { d[t.type] += t.amount; continue; }
     // a loss is listed on its day but comes off the month's income only, never off a day's
     if (t.type === 'adj' && t.wo) continue; // ...but off no single day
     if (t.type === 'loss') { d.dayLoss += t.amount + (t.cost || 0); d.items.push(t); continue; }
@@ -498,11 +500,12 @@ function byDay(list) {
 // Cash basis (like a bookkeeper): income is money actually received — debt payments, cash jobs,
 // other income — on the day it came in. A written debt is NOT income until it is paid.
 // Spare parts, business costs and losses come off on the day they were spent.
-const income = r => (r.pay || 0) + (r.inc || 0) - r.exp;
+// money I lent goes out of my pocket that day; money given back comes in on the day it came
+const income = r => (r.pay || 0) + (r.inc || 0) + (r.lback || 0) - r.exp - (r.lend || 0);
 // money received for debt work, less the spare parts bought for debt work in the same period
 const workNet = r => (r.pay || 0) - ((r.cost || 0) - (r.icost || 0));
 const incNet = r => (r.inc || 0) - (r.icost || 0);
-const gross = r => workNet(r) + incNet(r) - (r.loss || 0);
+const gross = r => workNet(r) + incNet(r) - (r.loss || 0) + (r.lback || 0) - (r.lend || 0);
 // incNet split for showing: cash jobs and "Digər gəlir" (the total stays incNet)
 const cashNet = r => incNet(r) - (r.oth || 0);
 const hasCash = r => (r.inc || 0) - (r.oth || 0) !== 0;
@@ -1427,17 +1430,19 @@ function tile(a, v, label, value, sub, color) {
 }
 // income received and money spent (spare parts, business costs, losses + my own expenses)
 function flow(list, mineFilter) {
-  const r = { pay: 0, inc: 0, exp: 0 };
+  const r = { pay: 0, inc: 0, exp: 0, lend: 0, lback: 0 };
   for (const t of list) {
     if (t.corr || (t.type === 'adj' && t.wo)) continue;
     if (t.type === 'pay') r.pay += t.amount;
     if (t.type === 'inc') r.inc += t.amount;
+    if (t.type === 'lend') r.lend += t.amount;
+    if (t.type === 'lback') r.lback += t.amount;
     if (t.type === 'loss') r.exp += t.amount;
     if (t.cost) r.exp += t.cost;
   }
   const mine = db.tx.reduce((x, t) => x + (t.type === 'pexp' && mineFilter(t) ? t.amount : 0), 0);
-  const got = r.pay + r.inc, spent = r.exp + mine;
-  return { got, spent, parts: r.exp, mine, net: got - spent };
+  const got = r.pay + r.inc + r.lback, spent = r.exp + mine + r.lend;
+  return { got, spent, parts: r.exp, mine, lend: r.lend, lback: r.lback, net: got - spent };
 }
 function renderHome() {
   const td = today(), m = td.slice(0, 7);
@@ -1451,7 +1456,8 @@ function renderHome() {
     <div class="hm-title"><span>Bu ay — ${MONTHS[+m.slice(5) - 1]}</span><span class="hm-link" data-a="tab" data-v="report">Hesabat ›</span></div>
     <div class="hm-row"><span>⬆️ Gəlir</span><b class="num pay">+${money(M.got)}</b></div>
     <div class="hm-row"><span>⬇️ Xərc</span><b class="num exp">−${money(M.spent)}</b></div>
-    ${M.spent ? `<div class="hm-sub">${M.parts ? tr('hissə və iş xərci') + ' ' + money(M.parts) : ''}${M.parts && M.mine ? ' · ' : ''}${M.mine ? tr('xərclərim') + ' ' + money(M.mine) : ''}</div>` : ''}
+    ${M.spent ? `<div class="hm-sub">${[M.parts ? tr('hissə və iş xərci') + ' ' + money(M.parts) : '', M.mine ? tr('xərclərim') + ' ' + money(M.mine) : '', M.lend ? tr('borc verdim') + ' ' + money(M.lend) : ''].filter(Boolean).join(' · ')}</div>` : ''}
+    ${M.lback ? `<div class="hm-sub">${tr('gəlirə daxildir: verdiyim borcdan qaytarılan')} ${money(M.lback)}</div>` : ''}
     <div class="hm-row hm-net"><span>Qalıq</span>${net(M.net)}</div>
     ${M.net < 0 ? '<div class="hm-warn">Bu ay xərc gəlirdən çoxdur</div>' : ''}
   </div>
@@ -1490,18 +1496,39 @@ function overdueAll() {
   return db.people.map(p => Object.assign({ p }, overdueOf(p.id))).filter(x => x.days > 0).sort((a, b) => b.days - a.days);
 }
 function overdueBanner() {
-  const o = overdueAll();
-  if (!o.length) return '';
-  return `<button class="odban" data-a="openOverdue">⚠ ${tr('{0} müştərinin borcu gecikir', { 0: o.length })} · ${money(o.reduce((s, x) => s + x.sum, 0))} ›</button>`;
+  const o = overdueAll(), l = loansLate();
+  return (o.length ? `<button class="odban" data-a="openOverdue">⚠ ${tr('{0} müştərinin borcu gecikir', { 0: o.length })} · ${money(o.reduce((s, x) => s + x.sum, 0))} ›</button>` : '')
+    + (l.length ? `<button class="odban" data-a="openLoans">⚠ ${tr('{0} nəfər verdiyim borcu qaytarmağı gecikdirir', { 0: l.length })} · ${money(l.reduce((s, x) => s + loanLeft(x), 0))} ›</button>` : '');
 }
+
+// ---------- money I lent: out on the day given, in on the day returned ----------
+function syncLoanTx() {
+  const ids = new Set(db.loans.map(l => l.id)), now = Date.now();
+  for (const l of db.loans) {
+    const t = db.tx.find(x => x.id === 'L' + l.id);
+    if (!t) {
+      db.tx.push({ id: 'L' + l.id, type: 'lend', lid: l.id, amount: l.amount, date: l.date, note: l.name, created: l.created || now, u: now });
+      // older entries kept only the total given back; it is booked on the day of the loan
+      if (l.back > 0 && !db.tx.some(x => x.type === 'lback' && x.lid === l.id)) db.tx.push({ id: 'LB' + l.id, type: 'lback', lid: l.id, amount: l.back, date: l.date, note: l.name, created: now, u: now });
+    } else if (t.amount !== l.amount || t.date !== l.date || t.note !== l.name) Object.assign(t, { amount: l.amount, date: l.date, note: l.name, u: now });
+  }
+  const gone = db.tx.filter(t => (t.type === 'lend' || t.type === 'lback') && !ids.has(t.lid));
+  if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
+}
+function loanDue() {
+  return db.loans.filter(l => l.due && loanLeft(l) > 0).map(l => ({ d: l.due, line: `${l.name} — ${money(loanLeft(l))}: ${tr('borcu qaytarma günü')}` }));
+}
+const loansLate = () => db.loans.filter(l => l.due && loanLeft(l) > 0 && l.due < today());
 
 // ---------- extra sheets ----------
 function extraSheet(s) {
   const k = s.kind;
   if (k === 'overdue') {
-    const o = overdueAll();
+    const o = overdueAll(), ll = loansLate();
+    const lp = ll.length ? '<div class="section-title">Verdiyim borclar</div><div class="list">' + ll.map(x => `<button class="row" data-a="openLoans"><div class="grow"><div class="t">${esc(x.name)}</div><div class="s"><span class="neg">${tr('{0} gün gecikir', { 0: daysBetween(x.due, today()) })}</span></div></div><div class="amt num debt">${money(loanLeft(x))}</div></button>`).join('') + '</div>' : '';
+    if (!o.length && ll.length) return '<h2>⏰ Gecikən borclar</h2>' + lp;
     return `<h2>⏰ Gecikən borclar</h2><p class="note" style="margin-top:-8px">Ödəniş günü keçib, borc hələ ödənməyib.</p>` + (o.length ? '<div class="list">' + o.map(x => `<button class="row" data-a="open" data-v="${x.p.id}"><div class="grow"><div class="t">${esc(x.p.name)}</div><div class="s"><span class="neg">${tr('{0} gün gecikir', { 0: x.days })}</span></div></div><div class="amt num debt">${money(x.sum)}</div></button>`).join('') + '</div>'
-      + `<div class="card"><div class="kv total"><span>Cəmi gecikən</span><b class="num neg">${money(o.reduce((s, x) => s + x.sum, 0))}</b></div></div>` : '<div class="empty">Gecikən borc yoxdur 👍</div>');
+      + `<div class="card"><div class="kv total"><span>Cəmi gecikən</span><b class="num neg">${money(o.reduce((s, x) => s + x.sum, 0))}</b></div></div>` + lp : '<div class="empty">Gecikən borc yoxdur 👍</div>');
   }
   if (k === 'orders') {
     const open = db.orders.filter(o => o.status !== 'verildi').sort((a, b) => b.no - a.no);
@@ -1625,7 +1652,7 @@ function renderLoans() {
     <button class="row" data-a="editLoan" data-v="${l.id}" data-hold="loan:${l.id}">
       <div class="avatar" style="background:#FEF3C7;color:#B45309">${esc(initials(l.name))}</div>
       <div class="grow"><div class="t">${esc(l.name)}</div>
-        <div class="s">${fmtDate(l.date)}${l.note ? ' · ' + esc(l.note) : ''}${l.phone ? ' · ' + esc(l.phone) : ''}${l.back && loanLeft(l) > 0 ? ' · qaytarıb ' + money(l.back) : ''}</div></div>
+        <div class="s">${fmtDate(l.date)}${l.note ? ' · ' + esc(l.note) : ''}${l.phone ? ' · ' + esc(l.phone) : ''}${l.back && loanLeft(l) > 0 ? ' · qaytarıb ' + money(l.back) : ''}</div>${l.due && loanLeft(l) > 0 ? `<div class="s">${l.due < today() ? `<span class="neg">⏰ ${tr('{0} gün gecikir', { 0: daysBetween(l.due, today()) })} · ${fmtDate(l.due)}</span>` : `<span style="font-weight:600">📅 ${tr('Qaytarma günü')}: ${fmtDate(l.due)}${l.due === today() ? ' · ' + tr('bu gün') : ''}</span>`}</div>` : ''}</div>
       <div class="amt num ${loanLeft(l) > 0 ? 'debt' : 'pay'}">${money(loanLeft(l) > 0 ? loanLeft(l) : l.amount)}<small>${loanLeft(l) > 0 ? 'borcludur' : 'qaytarıb'}</small></div>
     </button>`;
   const sum = open.reduce((s, l) => s + loanLeft(l), 0);
@@ -1633,7 +1660,7 @@ function renderLoans() {
     <header><button data-a="closeLoans">←</button><h1>Mənə borclu olanlar</h1></header>
     <div style="background:var(--brand);color:#fff;padding:0 16px 20px;margin-top:-1px">
       <div class="bal"><small>Mənə qaytarılmalı</small><b class="num">${money(sum)}</b></div>
-      <div style="text-align:center;opacity:.85;font-size:13px">Bu borclar gəlir və xərc hesablarına qarışmır</div>
+      <div style="text-align:center;opacity:.85;font-size:13px">Verdiyim borc xərc, qaytarılan pul gəlir kimi hesablanır</div>
     </div>
     <main>
       <button class="btn primary" data-a="newLoan" style="margin-top:0">+ Borc verdim</button>
@@ -1687,6 +1714,8 @@ function renderDay() {
       ${incLines(day)}
       ${day.cost ? `<div class="kv"><span>Hissə xərci</span><b class="num exp">−${money(day.cost)}</b></div>` : ''}
       ${day.dayLoss ? `<div class="kv"><span>Ziyan (aydan çıxılır)</span><b class="num debt">−${money(day.dayLoss)}</b></div>` : ''}
+      ${day.lend ? `<div class="kv"><span>Borc verdim</span><b class="num exp">−${money(day.lend)}</b></div>` : ''}
+      ${day.lback ? `<div class="kv"><span>Verdiyim borcdan qaytarılan</span><b class="num pay">+${money(day.lback)}</b></div>` : ''}
       <div class="kv total"><span>Xalis gəlir</span><span class="num pay">${netHtml(gross(day))}</span></div>
       ${(() => { const mine = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === d ? t.amount : 0), 0); return mine ? `<div class="kv"><span>Xərclərim</span><b class="num exp">−${money(mine)}</b></div><div class="kv total"><span>Qalıq</span><span class="num">${netHtml(gross(day) - mine)}</span></div>` : ''; })()}
       ${day.debt ? `<div class="kv"><span>Yazılan borc (gəlir deyil)</span><b class="num debt">${money(day.debt)}</b></div>` : ''}
@@ -2066,6 +2095,8 @@ function renderSheetBase() {
       ${s.id ? `<label>Qaytarıb (${cur()})</label><input class="field num" id="f_back" inputmode="decimal" placeholder="0" value="${amountInput(l.back)}">` : ''}
       <label>Tarix</label><input class="field" id="f_date" type="date" value="${l.date}">
       <label>Qeyd (istəyə bağlı)</label><input class="field" id="f_note" value="${esc(l.note || '')}" placeholder="məs. maşın təmiri üçün">
+      <label>Nə vaxt qaytaracaq</label><input class="field" id="f_ldue" type="date" value="${esc(l.due || '')}">
+      <p class="note" style="margin-top:4px">O gün telefon xatırladacaq. Gecikərsə, qırmızı ilə göstəriləcək.</p>
       <button class="btn primary" data-a="saveLoan">Yadda saxla</button>
       ${s.id && loanLeft(l) > 0 ? '<button class="btn payb" data-a="loanBack">✅ Hamısını qaytardı</button>' : ''}
       ${s.id ? '<button class="btn danger" data-a="delLoan">Sil</button>' : ''}`;
@@ -2199,6 +2230,8 @@ function renderSheetBase() {
         ${incLines(t)}
         ${t.cost ? `<div class="kv"><span>Hissə xərci</span><b class="num exp">−${money(t.cost)}</b></div>` : ''}
         ${t.loss ? `<div class="kv"><span>Ziyan</span><b class="num debt">−${money(t.loss)}</b></div>` : ''}
+        ${t.lend ? `<div class="kv"><span>Borc verdim</span><b class="num exp">−${money(t.lend)}</b></div>` : ''}
+        ${t.lback ? `<div class="kv"><span>Verdiyim borcdan qaytarılan</span><b class="num pay">+${money(t.lback)}</b></div>` : ''}
         <div class="kv total"><span>Xalis gəlir</span><span class="num">${netHtml(net)}</span></div>
         <div class="kv"><span>Xərclərim</span><b class="num exp">−${money(mineTotal(state.month))}</b></div>
         <div class="kv total"><span>Qalıq</span><span class="num">${netHtml(net - mineTotal(state.month))}</span></div>
@@ -3374,10 +3407,27 @@ function pushSummary() {
 }
 { const us = updateShortcuts; updateShortcuts = function () { us(); try { pushSummary(); } catch (e) {} }; }
 { const rr = renderReport; renderReport = function () { return rr() + reportExtras(); }; }
+{
+  const sl = actions.saveLoan, lb = actions.loanBack;
+  const backTx = (l, before) => { const d = (l.back || 0) - before; if (d) db.tx.push({ id: uid(), type: 'lback', lid: l.id, amount: d, date: today(), note: l.name, created: Date.now(), u: Date.now() }); };
+  actions.saveLoan = function (...a) {
+    const id = state.sheet && state.sheet.id, due = val('f_ldue'), old = id && db.loans.find(x => x.id === id), before = old ? old.back || 0 : 0, n = db.loans.length;
+    const r = sl.apply(this, a);
+    const l = id ? db.loans.find(x => x.id === id) : db.loans.length > n ? db.loans[db.loans.length - 1] : null;
+    if (l) { if (due) l.due = due; else delete l.due; if (id) backTx(l, before); save(); render(); }
+    return r;
+  };
+  actions.loanBack = function (...a) {
+    const l = db.loans.find(x => x.id === state.sheet.id), before = l ? l.back || 0 : 0;
+    const r = lb.apply(this, a);
+    if (l) { backTx(l, before); save(); render(); }
+    return r;
+  };
+}
 { const rp = renderPeople; renderPeople = function () { return overdueBanner() + rp(); }; }
 // once a day, on opening the app, the overdue debts are shown
 function overdueNotice() {
-  if (state.pin || state.sheet || !overdueAll().length) return;
+  if (state.pin || state.sheet || (!overdueAll().length && !loansLate().length)) return;
   let seen = ''; try { seen = localStorage.getItem('odShown') || ''; } catch (e) {}
   if (seen === today()) return;
   try { localStorage.setItem('odShown', today()); } catch (e) {}
@@ -3533,6 +3583,7 @@ app.addEventListener('change', e => { if (e.target.id === 'f_kdate' && state.she
 { const keep = ['az', 'ru', 'tr', 'en']; for (let i = LANGS.length - 1; i >= 0; i--) if (!keep.includes(LANGS[i][0])) LANGS.splice(i, 1); }
 
 load();
+syncLoanTx();
 if (db.lang && !LANGS.some(l => l[0] === db.lang.v)) db.lang = { v: 'az', u: Date.now() };
 jsnap = jsnapshot();
 if (hasNative && Android.syncLinked) sync.account = Android.syncLinked();

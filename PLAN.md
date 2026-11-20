@@ -55,3 +55,7 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 - [x] Ödəniş üsulu: yalnız Nağd və Köçürmə
 - [x] Kredit hissəsi ekranlardan çıxarıldı
 - [x] Əsas ekran sadələşdi: Bu ay / Bu gün (gəlir, xərc, qalıq), borclar, sifarişlər
+
+## Mərhələ 5 — HAZIR (3.1.3 Rev. 05): cibimə girən-çıxan hamısı
+- [x] Borc verdiyim pul verildiyi günün xərci, qaytarılan pul qaytarıldığı günün gəliri
+- [x] Borc verəndə «Nə vaxt qaytaracaq» tarixi; o gün telefon bildirişi; gecikəndə qırmızı + gün, proqramda xəbərdarlıq
