@@ -146,7 +146,11 @@
     ['Verdiyim borcdan qaytarılan: {0}', 'Возвращено из данного в долг: {0}', 'Verdiğim borçtan geri gelen: {0}', 'Returned from money I lent: {0}'],
     ['Xərclərim', 'Мои расходы', 'Giderlerim', 'My expenses'],
     ['Digər gəlirlər', 'Другие доходы', 'Diğer gelirler', 'Other income'],
-    ['⚖️ İki ayı müqayisə et', '⚖️ Сравнить два месяца', '⚖️ İki ayı karşılaştır', '⚖️ Compare two months']
+    ['⚖️ İki ayı müqayisə et', '⚖️ Сравнить два месяца', '⚖️ İki ayı karşılaştır', '⚖️ Compare two months'],
+    // 3.1.3 Rev. 07: every change goes to Google at once
+    ['Hər dəyişiklik dərhal Google hesabınıza yazılır. Yeni telefonda eyni hesabı seçin', 'Каждое изменение сразу сохраняется в ваш аккаунт Google. На новом телефоне выберите тот же аккаунт', 'Her değişiklik anında Google hesabınıza yazılır. Yeni telefonda aynı hesabı seçin', 'Every change is saved to your Google account at once. On a new phone choose the same account'],
+    ['Göndərilir...', 'Отправляется...', 'Gönderiliyor...', 'Sending...'],
+    ['Dəyişikliklər telefonda saxlanıb, internet gələn kimi göndəriləcək', 'Изменения сохранены в телефоне и отправятся, как только появится интернет', 'Değişiklikler telefonda kayıtlı, internet gelince gönderilecek', 'Changes are kept on the phone and will be sent as soon as the internet is back']
   ];
   const L = { ru: 1, tr: 2, en: 3 };
   for (const l in L) if (window.I18N && window.I18N[l]) for (const row of K) if (window.I18N[l][row[0]] == null) window.I18N[l][row[0]] = row[L[l]];

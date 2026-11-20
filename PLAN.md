@@ -72,3 +72,9 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 - [x] + → Xərc: bölmə adına görə avtomatik seçilir
 - [x] + → Borc verdim (−) / Borc aldım (+, qaytarma tarixi və xatırlatma; qaytardığım −)
 - [x] Hesabat: gün üzrə gəlir / xərc xətti qrafiki
+
+## Mərhələ 7 — HAZIR (3.1.3 Rev. 07): hər dəyişiklik dərhal Google hesabına
+- [x] Hər dəyişiklik 1 saniyə sonra Google hesabına gedir (əvvəl 3 san.)
+- [x] Göndərilməmiş dəyişiklik yadda qalır (proqram bağlansa da) və proqramdan çıxanda, açanda dərhal göndərilir
+- [x] İnternet yoxdursa: internet gələn kimi özü göndərir; arada özü təkrar yoxlayır (15 san. → 5 dəq.)
+- [x] Ayarlar → Google yedək: «Göndərilir...» / «internet gələn kimi göndəriləcək» yazısı

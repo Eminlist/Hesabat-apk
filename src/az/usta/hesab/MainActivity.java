@@ -49,6 +49,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private GoogleSync gsync;
+    private android.net.ConnectivityManager.NetworkCallback netCb;
     /** Kept while a printout is being prepared, so it isn't thrown away halfway. */
     private WebView printWeb;
     /** Where a home-screen shortcut asked to go ("mine" or "cat:<id>"); handed to the page once. */
@@ -193,6 +194,18 @@ public class MainActivity extends Activity {
         web.loadUrl("file:///android_asset/index.html");
         setContentView(web);
         registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        // internet came back: changes that could not be sent go to Google at once
+        try {
+            netCb = new android.net.ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(android.net.Network n) {
+                    js("window.onOnline && window.onOnline()");
+                }
+            };
+            ((android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE)).registerDefaultNetworkCallback(netCb);
+        } catch (Exception ignored) {
+            netCb = null;
+        }
         // a newer version on GitHub is fetched quietly and offered with «Quraşdır»
         updater = new Updater(this);
     }
@@ -203,6 +216,10 @@ public class MainActivity extends Activity {
             unregisterReceiver(screenOff);
         } catch (Exception ignored) {
         }
+        try {
+            if (netCb != null) ((android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb);
+        } catch (Exception ignored) {
+        }
         super.onDestroy();
     }
 
@@ -211,6 +228,13 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         String go = intent.getStringExtra("go");
         if (go != null) js("window.onLaunchTarget && window.onLaunchTarget(" + JSONObject.quote(go) + ")");
+    }
+
+    /** Leaving the app: a change still waiting is sent to Google right now, not later. */
+    @Override
+    protected void onPause() {
+        super.onPause();
+        js("window.onAppPause && window.onAppPause()");
     }
 
     @Override
