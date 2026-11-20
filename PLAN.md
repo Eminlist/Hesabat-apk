@@ -94,3 +94,9 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 
 ## Mərhələ 10 — HAZIR (3.1.3 Rev. 10)
 - [x] Əsas ekran: ortada böyük «Bu ayın gəliri»; aşağıda Qalıq və Xərc
+
+## İki proqram ayrıldı (20.11.2026)
+- **Akif Hesabat** = «Hesabatım» (az.usta.hesabatim) — kod əsas qovluqda; APK: Hesabatim-*.apk
+- **Emin Hesabat** = «Hesabat» (az.usta.hesab) — kod `emin/` qovluğunda (3.1.3 Rev. 07); APK: Hesabat-*.apk
+- Hər birinin öz release-i var; proqram yalnız öz APK-sı olan release-i götürür, o birinin yeniləməsini almır
+- Yeni versiya: yalnız dəyişən proqramın versionCode-u artırılır (hər iki proqram üçün nömrələr təkrarlanmır)

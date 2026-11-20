@@ -26,7 +26,7 @@ import java.net.URL;
  */
 public class Updater {
 
-    private static final String LATEST = "https://api.github.com/repos/Eminlist/Hesabat-apk/releases/latest";
+    private static final String RELEASES = "https://api.github.com/repos/Eminlist/Hesabat-apk/releases?per_page=30";
     private static final String FILE = "Hesabat-update.apk";
     private static boolean running;
     private static long lastCheck;
@@ -79,36 +79,45 @@ public class Updater {
     }
 
     private void work() throws Exception {
-        JSONObject rel = new JSONObject(get(LATEST));
-        // release tags are "r<versionCode>", e.g. r168
-        String tag = rel.optString("tag_name", "");
-        if (!tag.startsWith("r")) return;
-        int code = Integer.parseInt(tag.substring(1));
+        // the newest release that carries THIS app's APK (Emin Hesabat: Hesabat-*.apk,
+        // Akif Hesabat: Hesabatim-*.apk); the other app's releases are skipped. Tags are "r<versionCode>".
+        JSONArray list = new JSONArray(get(RELEASES));
+        String url = null, name = null;
+        long size = -1;
+        int code = -1;
+        for (int r = 0; r < list.length() && url == null; r++) {
+            JSONObject rel = list.getJSONObject(r);
+            String tag = rel.optString("tag_name", "");
+            if (!tag.startsWith("r") || rel.optBoolean("draft") || rel.optBoolean("prerelease")) continue;
+            JSONArray assets = rel.optJSONArray("assets");
+            for (int i = 0; assets != null && i < assets.length(); i++) {
+                JSONObject a = assets.getJSONObject(i);
+                String an = a.optString("name");
+                if (an.endsWith(".apk") && an.startsWith(apkPrefix())) {
+                    try {
+                        code = Integer.parseInt(tag.substring(1));
+                    } catch (NumberFormatException e) {
+                        break;
+                    }
+                    url = a.optString("browser_download_url");
+                    size = a.optLong("size", -1);
+                    name = rel.optString("name", tag);
+                    break;
+                }
+            }
+        }
         final File f = apkFile();
-        if (code <= myCode()) {
+        if (url == null || code <= myCode()) {
             f.delete(); // an old download is no longer needed
             return;
         }
-        String url = null;
-        long size = -1;
-        JSONArray assets = rel.optJSONArray("assets");
-        for (int i = 0; assets != null && i < assets.length(); i++) {
-            JSONObject a = assets.getJSONObject(i);
-            String an = a.optString("name");
-            if (an.endsWith(".apk") && an.startsWith(apkPrefix())) {
-                url = a.optString("browser_download_url");
-                size = a.optLong("size", -1);
-                break;
-            }
-        }
-        if (url == null) return;
         if (!(f.exists() && f.length() == size)) download(url, f);
         if (size > 0 && f.length() != size) return;
-        final String name = rel.optString("name", tag);
+        final String title = name;
         act.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                offer(name, f);
+                offer(title, f);
             }
         });
     }
