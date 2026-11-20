@@ -14,7 +14,10 @@ import java.io.FileNotFoundException;
 /** Serves backup files from cache/share so other apps (Google Drive, Gmail...) can read them. */
 public class ShareProvider extends ContentProvider {
 
-    public static final String AUTHORITY = "az.usta.hesab.share";
+    /** "<package>.share" — each of the two apps (Hesabat, Hesabatım) has its own. */
+    public static String authority(android.content.Context c) {
+        return c.getPackageName() + ".share";
+    }
 
     private File fileFor(Uri uri) throws FileNotFoundException {
         String name = new File(uri.getLastPathSegment()).getName();

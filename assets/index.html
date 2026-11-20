@@ -305,7 +305,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 07';
+const APP_VERSION = '3.1.3 Rev. 08';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], subs: [], removed: {} };
 
 function load() {
@@ -1685,19 +1685,17 @@ function overdueBanner() {
     + (l.length ? `<button class="odban" data-a="openLoans">⚠ ${tr('{0} nəfər verdiyim borcu qaytarmağı gecikdirir', { 0: l.length })} · ${money(l.reduce((s, x) => s + loanLeft(x), 0))} ›</button>` : '');
 }
 
-// ---------- money I lent: out on the day given, in on the day returned ----------
+// ---------- money I lent: kept apart from the daily / monthly income and expenses ----------
+// (Rev. 07) Lending is not counted in any day's or month's income, expense or balance; it lives only
+// in «Mənə borclu olanlar» with its return day, reminders and overdue warnings. Entries the older
+// versions booked into the day's money are taken out here. Returns true when something was removed.
 function syncLoanTx() {
-  const ids = new Set(db.loans.map(l => l.id)), now = Date.now();
-  for (const l of db.loans) {
-    const t = db.tx.find(x => x.id === 'L' + l.id);
-    if (!t) {
-      db.tx.push({ id: 'L' + l.id, type: 'lend', lid: l.id, amount: l.amount, date: l.date, note: l.name, created: l.created || now, u: now });
-      // older entries kept only the total given back; it is booked on the day of the loan
-      if (l.back > 0 && !db.tx.some(x => x.type === 'lback' && x.lid === l.id)) db.tx.push({ id: 'LB' + l.id, type: 'lback', lid: l.id, amount: l.back, date: l.date, note: l.name, created: now, u: now });
-    } else if (t.amount !== l.amount || t.date !== l.date || t.note !== l.name) Object.assign(t, { amount: l.amount, date: l.date, note: l.name, u: now });
-  }
-  const gone = db.tx.filter(t => (t.type === 'lend' || t.type === 'lback') && !ids.has(t.lid));
-  if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
+  const now = Date.now();
+  const gone = db.tx.filter(t => t.type === 'lend' || t.type === 'lback');
+  if (!gone.length) return false;
+  gone.forEach(t => { db.removed[t.id] = now; });
+  db.tx = db.tx.filter(t => !gone.includes(t));
+  return true;
 }
 function loanDue() {
   return db.loans.filter(l => l.due && loanLeft(l) > 0).map(l => ({ d: l.due, line: `${l.name} — ${money(loanLeft(l))}: ${tr('borcu qaytarma günü')}` }));
@@ -3658,7 +3656,7 @@ function pushSummary() {
 { const rr = renderReport; renderReport = function () { return rr() + reportExtras(); }; }
 {
   const sl = actions.saveLoan, lb = actions.loanBack;
-  const backTx = (l, before) => { const d = (l.back || 0) - before; if (d) db.tx.push({ id: uid(), type: 'lback', lid: l.id, amount: d, date: today(), note: l.name, created: Date.now(), u: Date.now() }); };
+  const backTx = () => {}; // returned money is kept on the loan only, not in the day's income
   actions.saveLoan = function (...a) {
     const id = state.sheet && state.sheet.id, due = val('f_ldue'), old = id && db.loans.find(x => x.id === id), before = old ? old.back || 0 : 0, n = db.loans.length;
     const r = sl.apply(this, a);
@@ -4254,7 +4252,7 @@ app.addEventListener('input', e => {
 });
 
 load();
-syncLoanTx();
+const loansMoved = syncLoanTx();
 syncBorrowTx();
 if (db.lang && !LANGS.some(l => l[0] === db.lang.v)) db.lang = { v: 'az', u: Date.now() };
 jsnap = jsnapshot();
@@ -4264,6 +4262,7 @@ if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
   if (bioOn()) setTimeout(() => Android.bioPrompt(), 300);
 }
 render();
+if (loansMoved) saveLocal();
 updateShortcuts();
 setTimeout(overdueNotice, 400);
 if (hasNative && Android.takeLaunchTarget) window.onLaunchTarget(Android.takeLaunchTarget());

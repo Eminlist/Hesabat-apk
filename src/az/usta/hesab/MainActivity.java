@@ -580,7 +580,7 @@ public class MainActivity extends Activity {
                 dir.mkdirs();
                 for (File old : dir.listFiles()) old.delete();
                 writeAll(new FileOutputStream(new File(dir, name)), json);
-                Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
+                Uri uri = Uri.parse("content://" + ShareProvider.authority(MainActivity.this) + "/" + Uri.encode(name));
                 Intent i = new Intent(Intent.ACTION_SEND);
                 i.setType("application/json");
                 i.putExtra(Intent.EXTRA_STREAM, uri);
@@ -712,7 +712,7 @@ public class MainActivity extends Activity {
                 FileOutputStream out = new FileOutputStream(new File(dir, name));
                 out.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT));
                 out.close();
-                Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
+                Uri uri = Uri.parse("content://" + ShareProvider.authority(MainActivity.this) + "/" + Uri.encode(name));
                 Intent i = new Intent(Intent.ACTION_SEND);
                 i.setType(mime);
                 i.putExtra(Intent.EXTRA_STREAM, uri);
@@ -1035,7 +1035,7 @@ public class MainActivity extends Activity {
                 doc.writeTo(out);
                 out.close();
                 doc.close();
-                Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
+                Uri uri = Uri.parse("content://" + ShareProvider.authority(MainActivity.this) + "/" + Uri.encode(name));
                 Intent i = new Intent(Intent.ACTION_SEND);
                 i.setType("application/pdf");
                 i.putExtra(Intent.EXTRA_STREAM, uri);

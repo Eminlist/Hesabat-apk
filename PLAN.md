@@ -78,3 +78,9 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 - [x] Göndərilməmiş dəyişiklik yadda qalır (proqram bağlansa da) və proqramdan çıxanda, açanda dərhal göndərilir
 - [x] İnternet yoxdursa: internet gələn kimi özü göndərir; arada özü təkrar yoxlayır (15 san. → 5 dəq.)
 - [x] Ayarlar → Google yedək: «Göndərilir...» / «internet gələn kimi göndəriləcək» yazısı
+
+## Mərhələ 8 — HAZIR (3.1.3 Rev. 08)
+- [x] Borc verdiyim pul gündəlik/aylıq gəlir-xərcə qarışmır (nə verəndə xərc, nə qaytaranda gəlir);
+      yalnız «Mənə borclu olanlar» bölməsində qalır — qaytarma günü, bildiriş, gecikmə, mesajlar əvvəlki kimi
+- [x] İkinci proqram «Hesabatım» (az.usta.hesabatim): Hesabat-ın yanında ayrıca qurulur, öz məlumatı,
+      öz Google faylı (Hesabatim-sinxron.json), öz avtoyeniləməsi (Hesabatim-*.apk)

@@ -47,6 +47,11 @@ public class Updater {
         }
     }
 
+    /** Release files: Hesabat-3.1.3-RevNN.apk for Hesabat, Hesabatim-3.1.3-RevNN.apk for Hesabatım. */
+    private String apkPrefix() {
+        return "az.usta.hesab".equals(act.getPackageName()) ? "Hesabat-" : "Hesabatim-";
+    }
+
     private File apkFile() {
         File dir = new File(act.getCacheDir(), "share");
         dir.mkdirs();
@@ -89,7 +94,8 @@ public class Updater {
         JSONArray assets = rel.optJSONArray("assets");
         for (int i = 0; assets != null && i < assets.length(); i++) {
             JSONObject a = assets.getJSONObject(i);
-            if (a.optString("name").endsWith(".apk")) {
+            String an = a.optString("name");
+            if (an.endsWith(".apk") && an.startsWith(apkPrefix())) {
                 url = a.optString("browser_download_url");
                 size = a.optLong("size", -1);
                 break;
@@ -132,7 +138,7 @@ public class Updater {
                 android.widget.Toast.makeText(act, "İcazəni açın, sonra proqrama qayıdın", android.widget.Toast.LENGTH_LONG).show();
                 return;
             }
-            Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + f.getName());
+            Uri uri = Uri.parse("content://" + ShareProvider.authority(act) + "/" + f.getName());
             Intent i = new Intent(Intent.ACTION_VIEW);
             i.setDataAndType(uri, "application/vnd.android.package-archive");
             i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);

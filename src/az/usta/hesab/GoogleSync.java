@@ -29,7 +29,8 @@ import java.nio.charset.Charset;
  */
 class GoogleSync {
 
-    static final String FILE_NAME = "Hesabat-sinxron.json";
+    /** Hesabat and Hesabatım share the Google Cloud project, so each keeps its own file there. */
+    private final String FILE_NAME;
     private static final String SCOPE = "oauth2:https://www.googleapis.com/auth/drive.appdata";
     private static final String API = "https://www.googleapis.com/drive/v3/files";
     private static final String UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
@@ -59,6 +60,7 @@ class GoogleSync {
     GoogleSync(Activity activity) {
         this.activity = activity;
         this.prefs = activity.getSharedPreferences("gsync", Activity.MODE_PRIVATE);
+        this.FILE_NAME = "az.usta.hesab".equals(activity.getPackageName()) ? "Hesabat-sinxron.json" : "Hesabatim-sinxron.json";
     }
 
     /** The linked Google account (e-mail), or "" when sync is off. */
