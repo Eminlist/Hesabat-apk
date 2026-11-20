@@ -39,6 +39,7 @@ public class DueReceiver extends BroadcastReceiver {
         } else {
             // the phone restarted or the app was updated: alarms are gone, set it again
             schedule(c, true);
+            SummaryReceiver.schedule(c);
         }
     }
 

@@ -173,6 +173,28 @@
   .card.row[data-a=openMonth] { border-left-color: var(--pay); }
   .card.row[data-a=openYear], .card.row[data-a=openTop] { border-left-color: #F59E0B; }
   .card.row[data-a=openLoans] { border-left-color: var(--debt); }
+  /* Rev. 03 */
+  .neg { color: #DC2626 !important; font-weight: 800; }
+  header .neg { color: #fff !important; background: #DC2626; border-radius: 8px; padding: 0 6px; }
+  .calcbar { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+  .calcbar button { min-width: 46px; padding: 8px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-size: 19px; font-weight: 700; color: var(--brand); }
+  .calcres { margin-left: auto; font-weight: 700; color: var(--muted); }
+  .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; text-align: left; display: flex; flex-direction: column; gap: 3px; min-height: 84px; color: var(--text); }
+  .tile:active { background: var(--bg); }
+  .tile small { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .tile b { font-size: 18px; }
+  .tile span { font-size: 12px; color: var(--muted); }
+  .card.health { display: flex; gap: 14px; align-items: center; width: 100%; text-align: left; margin-top: 10px; color: var(--text); }
+  .hsc { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--line) 0); flex: none; }
+  .hsc b { width: 46px; height: 46px; border-radius: 50%; background: var(--card); display: grid; place-items: center; font-size: 17px; color: var(--c); }
+  .hsc.big { width: 110px; height: 110px; } .hsc.big b { width: 90px; height: 90px; font-size: 32px; }
+  nav { align-items: flex-end; }
+  nav .navplus { flex: none; width: 64px; padding: 0; align-self: center; }
+  nav .navplus span { width: 54px; height: 54px; border-radius: 50%; margin: -22px auto 6px; display: grid; place-items: center; background: linear-gradient(145deg, #14B8A6, #0F766E); color: #fff; box-shadow: 0 6px 16px rgba(15,118,110,.4); border: 4px solid var(--card); }
+  nav .navplus svg { width: 26px; height: 26px; }
+  .chev { color: var(--muted); font-size: 22px; }
+  .tile .ar { font-style: normal; }
 </style>
 </head>
 <body>
@@ -180,12 +202,13 @@
 <div id="app"></div>
 
 <script src="i18n.js"></script>
+<script src="i18n2.js"></script>
 <script>
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 02';
-let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], removed: {} };
+const APP_VERSION = '3.1.3 Rev. 03';
+let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], removed: {} };
 
 function load() {
   let raw = '';
@@ -200,9 +223,11 @@ function load() {
   if (!Array.isArray(db.cards)) db.cards = [];
   if (!Array.isArray(db.hides)) db.hides = [];
   if (!Array.isArray(db.orders)) db.orders = [];
+  for (const k of ['kassa', 'borrow', 'journal']) if (!Array.isArray(db[k])) db[k] = [];
   if (!db.removed || typeof db.removed !== 'object') db.removed = {};
 }
 function save() {
+  journalDiff();
   saveLocal();
   scheduleSync();
 }
@@ -255,7 +280,7 @@ function mergeDb(a, b) {
   const removed = Object.assign({}, a.removed);
   for (const [id, t] of Object.entries(b.removed || {})) if (!(removed[id] >= t)) removed[id] = t;
   const out = Object.assign({}, a, { removed });
-  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders']) {
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders', 'kassa', 'borrow', 'journal']) {
     const m = new Map();
     for (const r of (a[key] || []).concat(b[key] || [])) {
       const cur = m.get(r.id);
@@ -401,8 +426,7 @@ function money(q) { // q = qəpik (integer)
   return (neg ? '−' : '') + s + (c ? ',' + pad(c) : '') + ' ' + cur();
 }
 function parseAmount(s) {
-  s = String(s || '').replace(/\s/g, '').replace(',', '.');
-  const v = parseFloat(s);
+  const v = calcExpr(s);
   return isFinite(v) && v > 0 ? Math.round(v * 100) : 0;
 }
 // "21 Oktyabr 2026, 14:35" – the day it's booked on, plus the hour it was typed in
@@ -499,7 +523,7 @@ function calcRecentKey(p) {
 function lastActivity(pid) { return cached('l' + pid, () => { let d = ''; for (const t of txOf(pid)) if (t.date > d) d = t.date; return d; }); }
 
 // ---------- state & routing ----------
-const state = { tab: 'people', q: '', person: null, cat: null, loans: false, trash: false, month: today().slice(0, 7), sheet: null };
+const state = { tab: 'home', q: '', person: null, cat: null, loans: false, trash: false, month: today().slice(0, 7), sheet: null };
 // open/closed sections are remembered on this phone, also after the app is closed
 const FOLDS = ['showToday', 'showPaid'];
 try { const f = JSON.parse(localStorage.getItem('folds') || '{}'); FOLDS.forEach(k => { state[k] = !!f[k]; }); } catch (e) {}
@@ -531,6 +555,7 @@ const ADD_ICONS = {
   loss: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17l-8.5-8.5-5 5L2 7"/><path d="M16 17h6v-6"/></svg>'
 };
 const ICONS = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>',
   people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   report: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>',
   mine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 6V4h12v2"/><circle cx="16" cy="15" r="1.5"/></svg>',
@@ -562,11 +587,10 @@ function drawPage() {
   else if (state.loans) h = renderLoans();
   else {
     h = renderHeader();
-    h += '<main>' + (state.tab === 'people' ? renderPeople() : state.tab === 'report' ? renderReport() : state.tab === 'mine' ? renderMine() : renderSettings()) + '</main>';
-    if (state.tab === 'people') h += `<button class="fabp" data-a="newPerson" title="Əlavə et" aria-label="Əlavə et">${ADD_ICONS.plus}</button>`;
+    h += '<main>' + (state.tab === 'home' ? renderHome() : state.tab === 'people' ? renderPeople() : state.tab === 'report' ? renderReport() : state.tab === 'mine' ? renderMine() : renderSettings()) + '</main>';
     if (state.tab === 'mine') h += '<button class="fab" data-a="newCat">+ Bölmə</button>';
-    h += '<nav>' + [['people', 'Müştərilər'], ['mine', 'Xərclərim'], ['report', 'Hesabat'], ['settings', 'Ayarlar']].map(([k, l]) =>
-      `<button class="${state.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${ICONS[k]}${l}</button>`).join('') + '</nav>';
+    const nb = ([k, l]) => `<button class="${state.tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${ICONS[k]}${l}</button>`;
+    h += '<nav>' + [['home', 'Əsas'], ['people', 'Müştərilər']].map(nb).join('') + `<button class="navplus" data-a="newPerson" title="Əlavə et" aria-label="Əlavə et"><span>${ADD_ICONS.plus}</span></button>` + [['mine', 'Xərclər'], ['report', 'Hesabat']].map(nb).join('') + '</nav>';
   }
   if (state.sheet && sheetGone(state.sheet)) state.sheet = null;
   if (state.sheet) h += renderSheet();
@@ -604,7 +628,8 @@ function noAutofill(root) {
 
 // ---------- in-place redraw ----------
 function morphChildren(from, to) {
-  const a = [...from.childNodes], b = [...to.childNodes];
+  // the calculator keys under a field are not part of the drawn page
+  const a = [...from.childNodes].filter(n => !(n.classList && n.classList.contains('calcbar'))), b = [...to.childNodes];
   for (let i = 0; i < b.length; i++) { if (i < a.length) morphNode(a[i], b[i]); else from.appendChild(b[i]); }
   for (let i = b.length; i < a.length; i++) a[i].remove();
 }
@@ -662,7 +687,7 @@ function allPeriod() {
 function renderHeader() {
   const d = byDay(db.tx.filter(t => t.date === today()))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
   const n = db.trash.length;
-  return `<header><div class="hrow"><h1>Hesabat</h1>${state.tab !== 'settings' ? (() => { const cm = state.tab === 'people' ? today().slice(0, 7) : state.month; return `<div class="hinc" data-a="toggleHideInc"><small>${state.tab === 'report' ? 'Ümumi gəlir' : 'Gəlirim'} — ${MONTHS[+cm.slice(5) - 1]}</small><b class="num">${state.hideInc ? '• • • •' : money(income(totals(cm)))}</b></div>`; })() : ''}<div style="display:flex;gap:8px"><button class="hbtn" data-a="toggleTheme" title="Gecə / gündüz">${theme === 'dark' ? '☀️' : '🌙'}</button><button class="hbtn" data-a="openTrash" title="Zibil qutusu">${TRASH_ICON}${n ? `<span>${n}</span>` : ''}</button></div></div><div class="stats">
+  return `<header><div class="hrow"><h1>Hesabat</h1>${state.tab !== 'settings' ? (() => { const cm = state.tab === 'people' ? today().slice(0, 7) : state.month; return `<div class="hinc" data-a="toggleHideInc"><small>${state.tab === 'report' ? 'Ümumi gəlir' : 'Gəlirim'} — ${MONTHS[+cm.slice(5) - 1]}</small><b class="num">${state.hideInc ? '• • • •' : money(income(totals(cm)))}</b></div>`; })() : ''}<div style="display:flex;gap:8px"><button class="hbtn" data-a="tab" data-v="settings" title="Ayarlar" style="${state.tab === 'settings' ? 'background:rgba(255,255,255,.3)' : ''}">⚙️</button><button class="hbtn" data-a="openTrash" title="Zibil qutusu">${TRASH_ICON}${n ? `<span>${n}</span>` : ''}</button></div></div><div class="stats">
     ${state.tab === 'settings'
       ? (() => { const c = CURRENCIES.find(x => x[0] === cur()) || CURRENCIES[0], l = LANGS.find(x => x[0] === (db.lang && db.lang.v || 'az')); return `<button class="stat" data-a="openLang" style="text-align:left;color:#fff"><small>🌐 Dil ›</small><b style="font-size:19px">${l[2]} ${l[1]}</b></button>
          <button class="stat" data-a="openCur" style="text-align:left;color:#fff"><small>💱 Valyuta ›</small><b style="font-size:19px">${c[0]} ${c[2]}</b></button>`; })()
@@ -671,9 +696,9 @@ function renderHeader() {
          <button class="stat" data-a="openToday" style="text-align:left;color:#fff"><small>Bu günkü gəlir ›</small><b class="num">${money(income(d))}</b></button>`
       : state.tab === 'report'
       ? `${(() => { const owe = monthOwed(state.month), left = income(totals(state.month)) - owe; return `<div class="stat"><small>Müştərilərin borcu</small><b class="num">${money(owe)}</b></div>
-         <div class="stat"><small>Əlimə gələn</small><b class="num">${money(left)}</b></div>`; })()}
+         <div class="stat"><small>Əlimə gələn</small><b class="num">${netHtml(left)}</b></div>`; })()}
          <button class="stat" data-a="openAllMonths" style="text-align:left;color:#fff"><small>Bütün dövrün gəliri ›</small><b class="num">${money(gross(totals()))}</b>${allPeriod()}</button>
-         <button class="stat" data-a="openAllLeft" style="text-align:left;color:#fff"><small>Bütün dövrün qalığı ›</small><b class="num">${money(allMonths().reduce((x, m) => x + gross(totals(m)) - mineTotal(m), 0))}</b>${allPeriod()}</button>`
+         <button class="stat" data-a="openAllLeft" style="text-align:left;color:#fff"><small>Bütün dövrün qalığı ›</small><b class="num">${netHtml(allMonths().reduce((x, m) => x + gross(totals(m)) - mineTotal(m), 0))}</b>${allPeriod()}</button>`
       : (() => { const sp = openDebtSplit(); return `<button class="stat" data-a="openDebtors" style="text-align:left;color:#fff"><small>Müştərilərin ümumi borcu <span>›</span></small><b class="num">${money(sp.before + sp.now)}</b></button>
          <button class="stat" data-a="openMonthDebtors" style="text-align:left;color:#fff"><small>Bu ayın borcu — ${MONTHS[+today().slice(5, 7) - 1]} <span>›</span></small><b class="num">${money(sp.now)}</b></button>`; })()}
     ${state.tab === 'settings' ? '' : state.tab === 'mine'
@@ -682,7 +707,7 @@ function renderHeader() {
         : `<div class="stat"><small>Bu gün xərclədiyim</small><b class="num">${money(db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === today() ? t.amount : 0), 0))}</b></div>`; })()
       : state.tab === 'report' ? '' : `<button class="stat" data-a="openReceived" style="text-align:left;color:#fff"><small>Bu gün alınan <span>›</span></small><b class="num">${money(d.pay + db.tx.reduce((s, t) => s + (t.type === 'inc' && t.date === today() ? t.amount : 0), 0))}</b></button>`}
     ${state.tab === 'report' || state.tab === 'settings' ? '' : state.tab === 'mine'
-      ? (() => { const left = income(totals(state.month)) - mineTotal(state.month); return `<div class="stat"><small>Qalıq</small><b class="num" style="${left < 0 ? 'color:#FFD7C7' : ''}">${money(left)}</b></div>`; })()
+      ? (() => { const left = income(totals(state.month)) - mineTotal(state.month); return `<div class="stat"><small>Qalıq</small><b class="num">${netHtml(left)}</b></div>`; })()
       : `<button class="stat" data-a="openToday" style="text-align:left;color:#fff"><small>Bu günkü gəlir ›</small><b class="num">${money(income(d))}</b></button>`}
   </div></header>`;
 }
@@ -1044,6 +1069,7 @@ function renderOrderSheet(s) {
       <button class="btn ghost" data-a="toggleDpin" style="width:auto;margin:0;padding:0 16px">${s.showPin ? '🙈' : '👁'}</button></div>
     <label>Cihazla qəbul olunanlar</label><div class="chips">${OITEMS.map(x => `<button class="chip" data-a="ordItem" data-v="${x}" style="${items.includes(x) ? 'background:var(--brand);color:#fff;border-color:var(--brand)' : ''}">${items.includes(x) ? '✓ ' : ''}${x}</button>`).join('')}</div>
     <label>Zəmanət (gün)</label><input class="field num" id="f_wdays" inputmode="numeric" value="${v.wdays || ''}" placeholder="0">
+    ${o ? (o.adv ? `<p class="note">💵 Avans: <b>${money(o.adv)}</b></p>` : '') : `<label>Avans — ilkin ödəniş (${cur()})</label><input class="field num" id="f_adv" inputmode="decimal" placeholder="0">`}
     <button class="btn payb" data-a="saveOrder">Yadda saxla</button>`;
   if (o && o.log && o.log.length) h += '<div class="section-title">Tarixçə</div><div class="list">' + o.log.map(x => `<div class="row"><div class="grow"><div class="t">${ostOf(x.s)[1]}</div></div><span class="s" style="color:var(--muted)">${fmtDate(x.d)}</span></div>`).join('') + '</div>';
   if (o) h += '<button class="btn ghost" data-a="delOrder" style="color:var(--debt)">Sifarişi sil</button>';
@@ -1129,6 +1155,397 @@ function receiptPdf(p) {
     file: 'Borc-qebzi.pdf', title: tr('Borc qəbzi'), sub: p.name + ' · ' + tr(fmtDate(today())), rows,
     foot: (ords.length ? tr('Sifariş') + ': ' + ords.join(', ') + ' · ' : '') + 'Hesabat'
   }));
+}
+
+// ======================= 3.1.3 Rev. 03 =======================
+// a negative result (spent more than earned) is shown red with a minus
+const netHtml = v => v < 0 ? `<span class="neg">${money(v)}</span>` : money(v);
+const weekStart = d => addDays(d, -((new Date(d + 'T12:00:00').getDay() + 6) % 7));
+
+// ---------- calculator inside amount fields: 120+50 → 170 ----------
+function calcExpr(s) {
+  s = String(s || '').replace(/\s/g, '').replace(/,/g, '.').replace(/[x×X]/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+  if (!s || !/^[\d.+\-*/()]+$/.test(s)) return NaN;
+  let i = 0;
+  const num = () => { const st = i; while (i < s.length && /[\d.]/.test(s[i])) i++; return st === i ? NaN : parseFloat(s.slice(st, i)); };
+  const fac = () => { if (s[i] === '-') { i++; return -fac(); } if (s[i] === '+') { i++; return fac(); } if (s[i] === '(') { i++; const v = expr(); if (s[i] === ')') i++; return v; } return num(); };
+  const term = () => { let v = fac(); while (s[i] === '*' || s[i] === '/') { const o = s[i++], w = fac(); v = o === '*' ? v * w : v / w; } return v; };
+  const expr = () => { let v = term(); while (s[i] === '+' || s[i] === '-') { const o = s[i++], w = term(); v = o === '+' ? v + w : v - w; } return v; };
+  const v = expr();
+  return i === s.length && isFinite(v) ? v : NaN;
+}
+const isCalcField = e => e && e.tagName === 'INPUT' && e.getAttribute('inputmode') === 'decimal';
+function updCalc(f) {
+  const bar = f.nextElementSibling;
+  if (!bar || !bar.classList.contains('calcbar')) return;
+  const hasOp = /\d\s*[+\-−*/×÷x]\s*\d/.test(f.value), v = calcExpr(f.value);
+  bar.querySelector('.calcres').textContent = hasOp && isFinite(v) ? '= ' + money(Math.round(v * 100)) : '';
+}
+app.addEventListener('focusin', e => {
+  if (!isCalcField(e.target)) return;
+  document.querySelectorAll('.calcbar').forEach(b => { if (b.previousElementSibling !== e.target) b.remove(); });
+  if (e.target.nextElementSibling && e.target.nextElementSibling.classList.contains('calcbar')) return;
+  const bar = document.createElement('div');
+  bar.className = 'calcbar';
+  bar.innerHTML = ['+', '−', '×', '÷', '='].map(o => `<button type="button" data-op="${o}">${o}</button>`).join('') + '<span class="calcres"></span>';
+  e.target.after(bar); updCalc(e.target);
+});
+app.addEventListener('focusout', e => {
+  if (!isCalcField(e.target)) return;
+  setTimeout(() => { if (document.activeElement !== e.target) { const b = e.target.nextElementSibling; if (b && b.classList.contains('calcbar')) b.remove(); } }, 200);
+});
+// the operator keys never take the focus away, so the keyboard stays open
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest && e.target.closest('.calcbar button');
+  if (!b) return;
+  e.preventDefault();
+  const f = b.parentNode.previousElementSibling;
+  if (!f) return;
+  if (b.dataset.op === '=') { const v = calcExpr(f.value); if (isFinite(v)) f.value = String(Math.round(v * 100) / 100); }
+  else { const p = f.selectionStart == null ? f.value.length : f.selectionStart; f.value = f.value.slice(0, p) + b.dataset.op + f.value.slice(f.selectionEnd == null ? p : f.selectionEnd); try { f.setSelectionRange(p + 1, p + 1); } catch (x) {} }
+  f.dispatchEvent(new Event('input', { bubbles: true }));
+  f.focus();
+});
+app.addEventListener('input', e => { if (isCalcField(e.target)) updCalc(e.target); });
+
+// ---------- payment method and part supplier on the entry forms ----------
+const METHODS = [['nagd', 'Nağd'], ['kart', 'Kart'], ['kocurme', 'Köçürmə']];
+const methodName = k => (METHODS.find(x => x[0] === k) || METHODS[0])[1];
+const chipOn = 'background:var(--brand);color:#fff;border-color:var(--brand)';
+function sheetExtras(s, h) {
+  let x = '';
+  const t = s.id && db.tx.find(y => y.id === s.id);
+  if (h.includes('id="f_cost"')) x += `<label>Hissə kimdən alınıb</label><input class="field" id="f_sup" value="${esc(t && t.supplier || '')}" placeholder="istəyə bağlı, məs. təchizatçının adı">`;
+  const payLike = s.kind === 'tx' ? (['pay', 'inc', 'pexp', 'exp'].includes(s.type) || s.markPaid || s.cash) : s.mode === 'cash' || s.mode === 'other';
+  if (payLike) {
+    const m = s.method || (t && t.method) || 'nagd';
+    x += '<label>Ödəniş üsulu</label><div class="chips" style="margin-top:4px">' + METHODS.map(([k, l]) => `<button class="chip" data-a="setMethod" data-v="${k}" style="${m === k ? chipOn : ''}">${l}</button>`).join('') + '</div>';
+  }
+  return x;
+}
+function catSecretHtml(s) {
+  const c = s.id && db.cats.find(x => x.id === s.id);
+  return `<label style="display:flex;gap:10px;align-items:center;margin-top:14px;font-weight:600"><input type="checkbox" id="f_secret" style="width:22px;height:22px"${c && c.secret ? ' checked' : ''}> 🔒 Gizli bölmə (yalnız PIN ilə görünür)</label>`;
+}
+
+// ---------- kassa: cash at the start and end of the day ----------
+function kassaDay(d) {
+  const k = db.kassa.find(x => x.date === d) || {};
+  let cin = 0, cout = 0;
+  for (const t of db.tx) if (t.date === d && (t.method || 'nagd') === 'nagd') {
+    if (t.type === 'pay' || t.type === 'inc') cin += t.amount;
+    if (t.type === 'pexp') cout += t.amount;
+  }
+  return { k, cin, cout, expect: (k.open || 0) + cin - cout };
+}
+
+// ---------- money I borrowed / credits ----------
+function borrowCalc(l) {
+  const P = l.amount || 0, n = l.months || 0, r = (l.rate || 0) / 1200;
+  const pmt = n ? (r ? P * r / (1 - Math.pow(1 + r, -n)) : P / n) : 0;
+  const total = Math.round(n ? pmt * n : P * (1 + (l.rate || 0) / 100));
+  const paid = (l.pays || []).reduce((s, x) => s + x.amount, 0);
+  return { pmt: Math.round(pmt), total, paid, left: Math.max(0, total - paid), interest: total - P };
+}
+const borrowLeft = () => db.borrow.reduce((s, l) => s + borrowCalc(l).left, 0);
+
+// ---------- money health score 0–100 ----------
+function healthScore(month) {
+  const inc = income(totals(month)), mine = mineTotal(month);
+  if (inc <= 0) return null;
+  const sr = (inc - mine) / inc;
+  const p1 = Math.max(0, Math.min(40, sr / 0.3 * 40));
+  const owe = outstanding() / inc;
+  const p2 = Math.max(0, Math.min(30, 30 * (1 - Math.max(0, owe - 0.2) / 1.3)));
+  const bpm = db.borrow.reduce((s, l) => { const c = borrowCalc(l); return s + (c.left > 0 ? c.pmt : 0); }, 0) / inc;
+  const p3 = Math.max(0, Math.min(30, 30 * (1 - Math.max(0, bpm - 0.1) / 0.4)));
+  const score = Math.round(p1 + p2 + p3);
+  const [label, col] = score >= 80 ? ['Əla', '#16A34A'] : score >= 60 ? ['Yaxşı', '#0D9488'] : score >= 40 ? ['Orta', '#D97706'] : ['Zəif', '#DC2626'];
+  return { score, label, col, parts: [['Qənaət (gəlirin nə qədəri qalır)', Math.round(p1), 40, Math.round(sr * 100) + '%'], ['Müştəri borcları', Math.round(p2), 30, money(outstanding())], ['Aldığım borc və kreditlər', Math.round(p3), 30, money(borrowLeft())]] };
+}
+
+// ---------- change journal (kept in the data, so it is saved to Google with it) ----------
+const JKINDS = ['tx', 'people', 'orders', 'cats', 'loans', 'borrow'];
+function jdesc(k, r) {
+  try {
+    if (k === 'tx') return (txLabel(r) || r.type) + ' ' + money(r.amount || r.cost || 0) + (r.pid ? ' — ' + nameOf(r.pid) : '') + (r.note ? ' (' + r.note + ')' : '');
+    if (k === 'people') return tr('Müştəri') + ': ' + r.name;
+    if (k === 'orders') return ordNo(r) + ' ' + (r.model || '') + ' — ' + tr(ostOf(r.status)[1]);
+    if (k === 'cats') return tr('Bölmə') + ': ' + r.name;
+    if (k === 'borrow') return tr('Borc / kredit') + ': ' + r.name + ' ' + money(r.amount);
+    return tr('Borc verdim') + ': ' + (r.name || '') + ' ' + money(r.amount || 0);
+  } catch (e) { return k; }
+}
+let jsnap = null;
+function jsnapshot() { const m = new Map(); for (const k of JKINDS) for (const r of db[k] || []) m.set(r.id, { k, u: r.u || 0, r }); return m; }
+function journalDiff() {
+  const now = jsnapshot();
+  if (!jsnap) { jsnap = now; return; }
+  const at = Date.now(), add = [];
+  for (const [id, x] of now) { const o = jsnap.get(id); if (!o) add.push('➕ ' + jdesc(x.k, x.r)); else if (o.u !== x.u) add.push('✏️ ' + jdesc(x.k, x.r)); }
+  for (const [id, o] of jsnap) if (!now.has(id)) add.push('🗑 ' + jdesc(o.k, o.r));
+  jsnap = now;
+  for (const t of add.slice(0, 30)) db.journal.push({ id: uid(), at, t, u: at });
+  if (db.journal.length > 1000) db.journal.splice(0, db.journal.length - 1000);
+}
+
+// ---------- backup with a password (AES-GCM) ----------
+const b64dec = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function pwKey(pw, salt) {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptText(text, pw) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await pwKey(pw, salt), new TextEncoder().encode(text));
+  return JSON.stringify({ hesabatEnc: 1, salt: toBase64(salt), iv: toBase64(iv), data: toBase64(new Uint8Array(data)) });
+}
+async function decryptText(o, pw) {
+  const d = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64dec(o.iv) }, await pwKey(pw, b64dec(o.salt)), b64dec(o.data));
+  return new TextDecoder().decode(d);
+}
+
+// ---------- import from an old notebook: CSV or Excel (.xlsx) ----------
+function parseCSV(text) {
+  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+  const first = lines[0], delim = ['\t', ';', ','].map(d => [d, first.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+  return lines.map(l => {
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < l.length; i++) {
+      const c = l[i];
+      if (q) { if (c === '"' && l[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+      else if (c === '"') q = true; else if (c === delim) { out.push(cur); cur = ''; } else cur += c;
+    }
+    out.push(cur); return out.map(x => x.trim());
+  });
+}
+async function unzipEntry(u8, name) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let e = u8.length - 22;
+  while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('zip');
+  let p = dv.getUint32(e + 16, true);
+  const cnt = dv.getUint16(e + 10, true);
+  for (let i = 0; i < cnt; i++) {
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    const n = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nlen));
+    if (n === name) {
+      const ln = dv.getUint16(off + 26, true), lx = dv.getUint16(off + 28, true), data = u8.subarray(off + 30 + ln + lx, off + 30 + ln + lx + csize);
+      if (method === 0) return new TextDecoder().decode(data);
+      return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    }
+    p += 46 + nlen + xlen + clen;
+  }
+  return null;
+}
+async function xlsxRows(u8) {
+  const ss = await unzipEntry(u8, 'xl/sharedStrings.xml'), sh = await unzipEntry(u8, 'xl/worksheets/sheet1.xml');
+  if (!sh) throw new Error('sheet');
+  const P = new DOMParser();
+  const strs = ss ? [...P.parseFromString(ss, 'application/xml').getElementsByTagName('si')].map(si => [...si.getElementsByTagName('t')].map(t => t.textContent).join('')) : [];
+  const out = [];
+  for (const r of P.parseFromString(sh, 'application/xml').getElementsByTagName('row')) {
+    const row = [];
+    for (const c of r.getElementsByTagName('c')) {
+      const col = (c.getAttribute('r') || '').replace(/\d+/g, '').split('').reduce((s, ch) => s * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+      const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
+      const val = t === 's' ? strs[+(v && v.textContent)] : t === 'inlineStr' ? [...c.getElementsByTagName('t')].map(x => x.textContent).join('') : v ? v.textContent : '';
+      row[col >= 0 ? col : row.length] = val;
+    }
+    out.push(Array.from(row, x => x == null ? '' : String(x)));
+  }
+  return out.filter(r => r.some(x => x.trim()));
+}
+function importDate(v) {
+  v = String(v || '').trim();
+  if (/^\d{4,5}(\.\d+)?$/.test(v) && +v > 20000 && +v < 80000) { const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(+v) * 864e5); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);
+  m = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/); if (m) return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + pad(+m[2]) + '-' + pad(+m[1]);
+  return today();
+}
+function importRows(rows) {
+  if (!rows.length) return alert('Faylda sətir tapılmadı');
+  const H = rows[0].map(x => norm(x));
+  const find = re => H.findIndex(h => re.test(h));
+  let col = { date: find(/tarix|date|дата|tarih/), name: find(/müştəri|musteri|müşteri|^ad$|name|клиент/), type: find(/növ|nov|type|тип|tür/), amount: find(/məbləğ|mebleg|amount|сумма|tutar|qiymət|qiymet/), note: find(/qeyd|note|примеч|açıqlama/) };
+  const hasHead = col.amount >= 0;
+  if (!hasHead) col = { date: 0, name: 1, type: 2, amount: 3, note: 4 };
+  const typeOf = (s, name) => { s = norm(s); return /borc|debt|долг|borç/.test(s) ? 'debt' : /ödən|oden|ödeme|pay|оплат/.test(s) ? 'pay' : /xərc|xerc|exp|расход|gider/.test(s) ? 'pexp' : /gəlir|gelir|inc|доход|nağd|nagd/.test(s) ? 'inc' : name ? 'debt' : 'inc'; };
+  const now = Date.now(), add = [], ppl = new Map(db.people.map(p => [norm(p.name), p])), newP = [];
+  let cat = null; const cnt = { debt: 0, pay: 0, inc: 0, pexp: 0 };
+  for (const r of rows.slice(hasHead ? 1 : 0)) {
+    const g = k => col[k] >= 0 ? (r[col[k]] || '').trim() : '';
+    const amount = parseAmount(g('amount'));
+    if (!amount) continue;
+    const name = g('name'), type = typeOf(g('type'), name), note = g('note'), date = importDate(g('date'));
+    const t = { id: uid(), type, amount, date, created: now + add.length, u: now };
+    if (note) t.note = note;
+    if (type === 'debt' || type === 'pay') {
+      if (!name) continue;
+      let p = ppl.get(norm(name));
+      if (!p) { p = { id: uid(), name, created: now, u: now }; ppl.set(norm(name), p); newP.push(p); }
+      t.pid = p.id;
+    } else if (type === 'pexp') {
+      if (!cat) { cat = db.cats.find(c => c.name === 'İdxal'); if (!cat) { cat = { id: uid(), name: 'İdxal', created: now, u: now }; newP.push(Object.assign(cat, { _cat: 1 })); } }
+      t.cid = cat.id;
+    } else { t.other = true; t.note = note || name || tr('İdxal'); }
+    cnt[type]++; add.push(t);
+  }
+  if (!add.length) return alert('Faylda məbləği olan sətir tapılmadı');
+  if (!confirm(tr('{n} sətir tapıldı: {d} borc, {p} ödəniş, {i} gəlir, {e} xərc. Əlavə olunsun?', { n: add.length, d: cnt.debt, p: cnt.pay, i: cnt.inc, e: cnt.pexp }))) return;
+  for (const x of newP) { if (x._cat) { delete x._cat; db.cats.push(x); } else db.people.push(x); }
+  db.tx.push(...add);
+  save(); state.sheet = null; render(); toast(tr('{0} sətir əlavə olundu', { 0: add.length }));
+}
+
+// ---------- the main screen (dashboard) ----------
+function tile(a, v, label, value, sub, color) {
+  return `<button class="tile" ${a ? `data-a="${a}"${v ? ` data-v="${v}"` : ''}` : 'disabled'}${color ? ` style="border-left:5px solid ${color}"` : ''}><small>${label}${a ? '<em class="ar"> ›</em>' : ''}</small><b class="num">${value}</b>${sub ? `<span>${sub}</span>` : ''}</button>`;
+}
+function renderHome() {
+  const td = today(), m = td.slice(0, 7);
+  const d = byDay(db.tx.filter(t => t.date === td))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
+  const spent = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === td ? t.amount : 0), 0);
+  const ws = weekStart(td), wk = byDay(db.tx.filter(t => t.date >= ws && t.date <= td)).reduce((s, x) => s + income(x), 0);
+  const inc = income(totals(m)), mine = mineTotal(m), net = inc - mine;
+  const open = db.orders.filter(o => o.status !== 'verildi'), ready = open.filter(o => o.status === 'hazir').length;
+  const hs = healthScore(m), kd = kassaDay(td), bl = borrowLeft();
+  return `<div class="dash">
+    ${tile('openToday', '', 'Bu gün gəlir', money(income(d)), tr('xərc') + ' ' + money(spent), '#14B8A6')}
+    ${tile('', '', 'Bu həftə gəlir', money(wk), '', '#0EA5E9')}
+    ${tile('tab', 'report', 'Bu ay gəlir', money(inc), tr('xərc') + ' ' + money(mine), '#16A34A')}
+    ${tile('tab', 'mine', 'Bu ay qalıq', netHtml(net), net < 0 ? tr('xərc gəlirdən çoxdur') : '', net < 0 ? '#DC2626' : '#16A34A')}
+    ${tile('openDebtors', '', 'Müştəri borcları', money(outstanding()), '', '#EF4444')}
+    ${tile('openOrders', '', 'Açıq sifarişlər', String(open.length), ready ? tr('{0} hazırdır', { 0: ready }) : '', '#D97706')}
+    ${tile('openKassa', '', 'Kassa (nağd)', money(kd.expect), kd.k.close != null ? tr('sayılıb') + ': ' + money(kd.k.close) : tr('gün başı') + ': ' + money(kd.k.open || 0), '#64748B')}
+    ${tile('openBorrow', '', 'Aldığım borclar', money(bl), db.borrow.length ? tr('{0} borc / kredit', { 0: db.borrow.filter(l => borrowCalc(l).left > 0).length }) : '', '#7C3AED')}
+    ${tile('openMethods', '', 'Ödəniş üsulları', MONTHS[+m.slice(5) - 1], '', '#0284C7')}
+    ${tile('openParts', '', 'Hissələr (xərc)', money(db.tx.reduce((s, t) => s + (t.cost && monthKey(t.date) === m ? t.cost : 0), 0)), MONTHS[+m.slice(5) - 1], '#B45309')}
+  </div>
+  ${hs ? `<button class="card health" data-a="openHealth"><div class="hsc" style="--c:${hs.col};--p:${hs.score}"><b>${hs.score}</b></div><div class="grow"><b>Pul sağlamlığı: <span style="color:${hs.col}">${hs.label}</span></b><div class="note">${MONTHS[+m.slice(5) - 1]} · 0–100 ›</div></div></button>` : ''}`;
+}
+function reportExtras() {
+  const m = state.month, hs = healthScore(m);
+  return `<div class="section-title">Əlavə hesabatlar</div><div class="dash">
+    ${tile('openMethods', '', 'Ödəniş üsulları', MONTHS[+m.slice(5) - 1], '', '#0284C7')}
+    ${tile('openParts', '', 'Hissələr (xərc)', money(db.tx.reduce((s, t) => s + (t.cost && monthKey(t.date) === m ? t.cost : 0), 0)), '', '#B45309')}
+    ${tile('openKassa', '', 'Kassa (nağd)', money(kassaDay(today()).expect), '', '#64748B')}
+    ${tile('openBorrow', '', 'Aldığım borclar', money(borrowLeft()), '', '#7C3AED')}
+    ${tile('openHealth', '', 'Pul sağlamlığı', hs ? hs.score + ' · ' + tr(hs.label) : '—', '', hs ? hs.col : '#94A3B8')}
+    ${tile('openJournal', '', 'Dəyişikliklər jurnalı', String(db.journal.length), '', '#475569')}
+  </div>`;
+}
+
+// ---------- extra sheets ----------
+function extraSheet(s) {
+  const k = s.kind;
+  if (k === 'orders') {
+    const open = db.orders.filter(o => o.status !== 'verildi').sort((a, b) => b.no - a.no);
+    return '<h2>📱 Açıq sifarişlər</h2>' + (open.length ? '<div class="list">' + open.map(o => orderRow(o).replace('<div class="t">', `<div class="t">${esc(nameOf(o.pid))} · `)).join('') + '</div>' : '<div class="empty">Açıq sifariş yoxdur</div>');
+  }
+  if (k === 'methods') {
+    const m = s.m || state.month || today().slice(0, 7), sum = { nagd: 0, kart: 0, kocurme: 0 };
+    for (const t of db.tx) if ((t.type === 'pay' || t.type === 'inc') && monthKey(t.date) === m) sum[t.method || 'nagd'] += t.amount;
+    const all = sum.nagd + sum.kart + sum.kocurme;
+    return `<h2>💳 Ödəniş üsulları — ${MONTHS[+m.slice(5) - 1]}</h2><div class="card">${METHODS.map(([k2, l]) => `<div class="kv"><span>${l}${all ? ' · ' + Math.round(sum[k2] / all * 100) + '%' : ''}</span><b class="num">${money(sum[k2])}</b></div>`).join('')}<div class="kv total"><span>Cəmi alınan</span><b class="num">${money(all)}</b></div></div>`;
+  }
+  if (k === 'parts') {
+    const m = state.month || today().slice(0, 7), list = db.tx.filter(t => t.cost && monthKey(t.date) === m).sort((a, b) => b.date.localeCompare(a.date));
+    const bySup = new Map(); list.forEach(t => { const n = t.supplier || tr('Göstərilməyib'); bySup.set(n, (bySup.get(n) || 0) + t.cost); });
+    return `<h2>🔩 Hissələr — ${MONTHS[+m.slice(5) - 1]}</h2><p class="note" style="margin-top:-8px">Hissənin qiyməti avtomatik xərcə düşür və gəlirdən çıxılır.</p>
+      ${bySup.size ? '<div class="card">' + [...bySup.entries()].sort((a, b) => b[1] - a[1]).map(([n, v]) => `<div class="kv"><span>🏪 ${esc(n)}</span><b class="num exp">${money(v)}</b></div>`).join('') + '</div>' : ''}
+      ${list.length ? '<div class="list">' + list.map(t => `<div class="row"><div class="grow"><div class="t">${esc(t.note || txLabel(t))}</div><div class="s">${fmtDate(t.date)}${t.pid ? ' · ' + esc(nameOf(t.pid)) : ''}${t.supplier ? ' · 🏪 ' + esc(t.supplier) : ''}</div></div><div class="amt num exp">${money(t.cost)}</div></div>`).join('') + '</div>' : '<div class="empty">Bu ay hissə xərci yoxdur</div>'}`;
+  }
+  if (k === 'kassa') {
+    const d = s.d || today(), x = kassaDay(d);
+    return `<h2>💵 Kassa</h2><label>Gün</label><input class="field" id="f_kdate" type="date" value="${d}">
+      <label>Gün başı nağd pul</label><input class="field num" id="f_kopen" inputmode="decimal" value="${x.k.open != null ? x.k.open / 100 : ''}" placeholder="0">
+      <div class="card" style="margin-top:12px"><div class="kv"><span>+ Nağd daxil olan</span><b class="num pay">${money(x.cin)}</b></div><div class="kv"><span>− Nağd xərc</span><b class="num exp">${money(x.cout)}</b></div><div class="kv total"><span>Kassada olmalıdır</span><b class="num">${netHtml(x.expect)}</b></div></div>
+      <label>Gün sonu sayılan pul</label><input class="field num" id="f_kclose" inputmode="decimal" value="${x.k.close != null ? x.k.close / 100 : ''}" placeholder="0">
+      ${x.k.close != null ? `<p class="note">Fərq: <b class="${x.k.close - x.expect < 0 ? 'neg' : ''}">${money(x.k.close - x.expect)}</b></p>` : ''}
+      <button class="btn payb" data-a="saveKassa">Yadda saxla</button>`;
+  }
+  if (k === 'borrow') {
+    return `<h2>🏦 Aldığım borclar və kreditlər</h2>` + (db.borrow.length ? '<div class="list">' + db.borrow.map(l => { const c = borrowCalc(l); return `<button class="row" data-a="viewBorrow" data-v="${l.id}"><div class="grow"><div class="t">${esc(l.name)}</div><div class="s">${money(l.amount)}${l.rate ? ' · ' + l.rate + '%' : ''}${l.months ? ' · ' + l.months + ' ' + tr('ay') + ' · ' + tr('ayda') + ' ' + money(c.pmt) : ''}</div></div><div class="amt num ${c.left ? 'debt' : 'pay'}">${c.left ? money(c.left) : '✓'}<small>qalıq</small></div></button>`; }).join('') + '</div>' : '<div class="empty">Hələ borc / kredit yazılmayıb</div>')
+      + `<div class="card"><div class="kv total"><span>Cəmi qalıq</span><b class="num">${money(borrowLeft())}</b></div></div><button class="btn primary" data-a="editBorrow">+ Borc / kredit əlavə et</button>`;
+  }
+  if (k === 'borrowEdit') {
+    const l = s.id ? db.borrow.find(x => x.id === s.id) : { name: '', amount: 0, rate: '', months: '', start: today() };
+    return `<h2>${s.id ? 'Borcu dəyiş' : 'Yeni borc / kredit'}</h2>
+      <label>Kimdən / hansı bank</label><input class="field" id="f_bname" value="${esc(l.name)}" placeholder="məs. Kapital Bank">
+      <label>Məbləğ (${cur()})</label><input class="field num" id="f_bamount" inputmode="decimal" value="${l.amount ? l.amount / 100 : ''}" placeholder="0">
+      <div class="two"><div><label>İllik faiz (%)</label><input class="field num" id="f_brate" inputmode="decimal" value="${l.rate || ''}" placeholder="0"></div>
+      <div><label>Müddət (ay)</label><input class="field num" id="f_bmonths" inputmode="numeric" value="${l.months || ''}" placeholder="0"></div></div>
+      <label>Başlama tarixi</label><input class="field" id="f_bstart" type="date" value="${esc(l.start || today())}">
+      <p class="note">Müddət yazılsa, aylıq ödəniş hesablanır. Yazılmasa, faiz bütün məbləğə bir dəfə gəlir.</p>
+      <button class="btn primary" data-a="saveBorrow">Yadda saxla</button>`;
+  }
+  if (k === 'borrowView') {
+    const l = db.borrow.find(x => x.id === s.id); if (!l) return '';
+    const c = borrowCalc(l);
+    return `<h2>🏦 ${esc(l.name)}</h2><div class="card">
+      <div class="kv"><span>Alınan məbləğ</span><b class="num">${money(l.amount)}</b></div>
+      <div class="kv"><span>Faiz</span><b class="num exp">${money(c.interest)}${l.rate ? ' · ' + l.rate + '%' : ''}</b></div>
+      ${l.months ? `<div class="kv"><span>Aylıq ödəniş</span><b class="num">${money(c.pmt)} × ${l.months}</b></div>` : ''}
+      <div class="kv"><span>Ümumi qaytarılacaq</span><b class="num">${money(c.total)}</b></div>
+      <div class="kv"><span>Ödənib</span><b class="num pay">${money(c.paid)}</b></div>
+      <div class="kv total"><span>Qalıq</span><b class="num ${c.left ? 'debt' : 'pay'}">${money(c.left)}</b></div></div>
+      <label>Ödəniş yaz (${cur()})</label><div style="display:flex;gap:8px"><input class="field num" id="f_bpay" inputmode="decimal" value="${c.pmt && c.left ? Math.min(c.pmt, c.left) / 100 : ''}" placeholder="0" style="flex:1;min-width:0"><input class="field" id="f_bpdate" type="date" value="${today()}" style="flex:1;min-width:0"></div>
+      <button class="btn payb" data-a="payBorrow">Ödəniş yaz</button>
+      ${(l.pays || []).length ? '<div class="section-title">Ödənişlər</div><div class="list">' + l.pays.slice().reverse().map(x => `<div class="row"><div class="grow"><div class="t">${fmtDate(x.d)}</div></div><div class="amt num pay">${money(x.amount)}</div></div>`).join('') + '</div>' : ''}
+      <div class="two" style="margin-top:10px"><button class="btn ghost" style="margin:0" data-a="editBorrow" data-v="${l.id}">✎ Dəyiş</button><button class="btn danger" style="margin:0" data-a="delBorrow">Sil</button></div>`;
+  }
+  if (k === 'health') {
+    const m = state.month || today().slice(0, 7), hs = healthScore(m);
+    if (!hs) return '<h2>❤️ Pul sağlamlığı</h2><div class="empty">Bu ay hələ gəlir yoxdur</div>';
+    return `<h2>❤️ Pul sağlamlığı — ${MONTHS[+m.slice(5) - 1]}</h2><div style="display:flex;justify-content:center;margin:6px 0 14px"><div class="hsc big" style="--c:${hs.col};--p:${hs.score}"><b>${hs.score}</b></div></div>
+      <p style="text-align:center;font-weight:700;color:${hs.col};margin-top:0">${hs.label}</p>
+      <div class="card">${hs.parts.map(([l, v, max, info]) => `<div class="kv"><span>${l}<br><small class="note">${info}</small></span><b class="num">${v} / ${max}</b></div>`).join('')}</div>
+      <p class="note">Bal ayın gəlirinə görə hesablanır: gəlirin nə qədəri qalır, müştərilərin borcu və sizin borc / kredit ödənişləriniz.</p>`;
+  }
+  if (k === 'journal') {
+    const list = db.journal.slice(-300).reverse();
+    return `<h2>📜 Dəyişikliklər jurnalı</h2><p class="note" style="margin-top:-8px">Google hesabındakı yedəkdə də saxlanılır.</p>` + (list.length ? '<div class="list">' + list.map(j => { const t = new Date(j.at); return `<div class="row"><div class="grow"><div class="t" style="white-space:normal">${esc(j.t)}</div><div class="s">${t.getDate()} ${MONTHS[t.getMonth()]} ${t.getFullYear()}, ${pad(t.getHours())}:${pad(t.getMinutes())}</div></div></div>`; }).join('') + '</div>' : '<div class="empty">Hələ dəyişiklik yoxdur</div>');
+  }
+  if (k === 'backup') {
+    return `<h2>📤 Faylı göndər</h2><label>Parol (istəyə bağlı)</label><input class="field" id="f_bpw" placeholder="parolsuz göndərmək üçün boş saxlayın" style="-webkit-text-security:disc">
+      <p class="note">Parol qoysanız, fayl şifrələnir və yalnız bu parolla bərpa olunur. Parolu unutsanız, faylı açmaq mümkün olmayacaq.</p>
+      <button class="btn primary" data-a="doShare">Göndər</button>`;
+  }
+  if (k === 'decrypt') {
+    return `<h2>🔐 Şifrəli fayl</h2><label>Parol</label><input class="field" id="f_dpw" style="-webkit-text-security:disc" data-autofocus>
+      <button class="btn primary" data-a="doDecrypt">Aç və bərpa et</button>`;
+  }
+  if (k === 'secretPin') {
+    return `<h2>🔒 Gizli bölmələr</h2><label>PIN kod</label><input class="field num" id="f_spin" inputmode="numeric" style="-webkit-text-security:disc" data-autofocus>
+      <button class="btn primary" data-a="unlockSecret">Aç</button>`;
+  }
+  if (k === 'importHelp') {
+    return `<h2>📥 Excel / CSV-dən idxal</h2><p class="note" style="margin-top:-6px">Köhnə dəftəri Excel-ə yazın. Birinci sətirdə sütun adları olsun:</p>
+      <div class="card"><b>Tarix · Müştəri · Növ · Məbləğ · Qeyd</b><div class="note" style="margin-top:6px">Növ: borc, ödəniş, gəlir və ya xərc. Müştərisi olmayan sətir gəlir və ya xərc kimi yazılır.</div></div>
+      <button class="btn primary" data-a="import">Fayl seç (.xlsx, .csv)</button>`;
+  }
+  return null;
+}
+function settingsGroups() {
+  const c = CURRENCIES.find(x => x[0] === cur()) || CURRENCIES[0], l = LANGS.find(x => x[0] === lang()) || LANGS[0];
+  const st = hasNative && Android.summaryTime ? Android.summaryTime() : (localStorage.getItem('sumTime') || '');
+  const row = (a, icon, t, sub) => `<button class="row" data-a="${a}"><div class="avatar" style="font-size:20px">${icon}</div><div class="grow"><div class="t">${t}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div><span class="chev">›</span></button>`;
+  return `<div class="section-title">Görünüş</div><div class="list">
+      ${row('openLang', '🌐', 'Dil', l[2] + ' ' + l[1])}${row('openCur', '💱', 'Valyuta', c[0] + ' ' + c[2])}${row('toggleTheme', theme === 'dark' ? '☀️' : '🌙', 'Tema', theme === 'dark' ? 'Gecə' : 'Gündüz')}</div>
+    <div class="section-title">Bildirişlər</div><div class="card">
+      <b>🔔 Günün xülasəsi</b><div class="note">Hər gün seçdiyiniz saatda günün gəliri və xərci bildiriş kimi gəlir.</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><input class="field num" id="f_stime" inputmode="numeric" value="${esc(st)}" placeholder="21:00" style="flex:1;min-width:0">
+        <button class="btn ghost" data-a="pickSumTime" style="width:auto;margin:0;padding:0 16px">⏰</button><input type="time" id="f_stime2" style="position:absolute;opacity:0;width:1px;height:1px"></div>
+      <div class="two" style="margin-top:10px"><button class="btn primary" style="margin:0" data-a="saveSumTime">Yadda saxla</button><button class="btn ghost" style="margin:0" data-a="offSumTime">Söndür</button></div>
+      <div class="note" style="margin-top:6px">${st ? tr('Hər gün saat {0}-da', { 0: st }) : tr('Sönülüdür')}</div></div>
+    <div class="section-title">Məlumat</div><div class="list">
+      ${row('share', '📤', 'Faylı göndər', 'parol ilə şifrələmək olar')}${row('import', '📂', 'Fayldan bərpa et', 'Hesabat faylı (.json)')}${row('openImport', '📥', 'Excel / CSV-dən idxal', 'köhnə dəftərdən')}
+      ${row('openJournal', '📜', 'Dəyişikliklər jurnalı', db.journal.length + ' ' + tr('qeyd'))}${row('openTrash', '🗑', 'Zibil qutusu', String(db.trash.length))}
+      ${sync.account ? row('syncUnlink', '⛓', 'Google hesabından ayır', '') : ''}</div>
+    <div class="section-title">Haqqında</div><div class="card"><div class="kv"><span>Versiya</span><b>${APP_VERSION}</b></div><div class="kv"><span>Müştəri</span><b>${db.people.length}</b></div><div class="kv"><span>Əməliyyat</span><b>${db.tx.length}</b></div>
+      <a class="btn ghost" style="text-decoration:none;color:inherit" href="https://eminlist.github.io/Hesabat-apk/privacy.html">Məxfilik siyasəti</a></div>`;
 }
 
 // ---------- personal loans (money I lent; kept apart from every other total) ----------
@@ -1266,7 +1683,8 @@ function renderSettings() {
   }
   const lockOn = hasNative && Android.lockEnabled && Android.lockEnabled();
   const pinOn = hasNative && Android.pinSet && Android.pinSet();
-  return main + `
+  return '<div class="section-title" style="margin-top:0">Hesab və sinxron</div>' + main + `
+    <div class="section-title">Təhlükəsizlik</div>
     <div class="card">
       <div style="display:flex;align-items:center;gap:12px">
         <div style="font-size:28px">${pinOn || lockOn ? '🔒' : '🔓'}</div>
@@ -1282,13 +1700,7 @@ function renderSettings() {
         <div class="note" style="margin-top:6px">${scr ? 'Proqramdan çıxıb qayıdanda PIN soruşulmayacaq. Telefonun ekranı sönəndə proqram da kilidlənəcək.' : 'Proqramdan hər çıxanda PIN soruşulacaq.'}</div></div>`; })() : ''}
       ${lockOn && !pinOn ? '<p class="note" style="margin-bottom:0">İndi tətbiq telefonun kilidi ilə açılır. <a href="#" data-a="toggleLock">Söndür</a></p>' : ''}
     </div>
-    <details class="card more">
-      <summary>Əlavə</summary>
-      <button class="btn ghost" data-a="share">Faylı göndər (WhatsApp, Gmail...)</button>
-      <button class="btn ghost" data-a="import">Fayldan bərpa et</button>
-      ${sync.account ? '<button class="btn ghost" data-a="syncUnlink">Google hesabından ayır</button>' : ''}
-    </details>
-    <p class="note" style="text-align:center">${db.people.length} müştəri · ${db.tx.length} əməliyyat · versiya ${APP_VERSION}</p>`;
+    ` + settingsGroups();
 }
 
 function txLabel(t) {
@@ -1476,9 +1888,18 @@ function renderTplManage() {
 }
 
 function renderSheet() {
+  const h = renderSheetBase(), s = state.sheet;
+  if (!s || !['tx', 'person', 'cat'].includes(s.kind)) return h;
+  const at = h.indexOf(s.kind === 'tx' ? 'data-a="saveTx"' : s.kind === 'person' ? 'data-a="savePerson"' : 'data-a="saveCat"');
+  if (at < 0) return h;
+  const b = h.lastIndexOf('<button', at), x = s.kind === 'cat' ? catSecretHtml(s) : sheetExtras(s, h);
+  return x ? h.slice(0, b) + x + h.slice(b) : h;
+}
+function renderSheetBase() {
   const s = state.sheet;
   let h = '<div class="shade" data-a="closeShade"><div class="sheet">';
   if (s.kind === 'order') return h + renderOrderSheet(s) + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>';
+  { const x = extraSheet(s); if (x != null) return h + x + '<button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>'; }
   if (s.kind === 'remind') {
     h += `<h2>${WA_ICON}WhatsApp-da xatırlat</h2>
       <div class="tplbox"><div class="note"><b>💳 Kartlarım</b> — basın, o kartla göndərilsin</div>
@@ -1563,7 +1984,7 @@ function renderSheet() {
       <div class="list" style="margin-top:12px">${rows.map(([l, f, bold, cost]) => {
         const va = f(ta, a), vb = f(tb, b), d = vb - va, good = cost ? d < 0 : d > 0;
         return `<div class="row"><div class="grow"><div class="t"${bold ? ' style="font-weight:800"' : ''}>${l}</div>
-          <div class="s">${lbl(a)}: <b class="num">${money(va)}</b></div><div class="s">${lbl(b)}: <b class="num">${money(vb)}</b></div></div>
+          <div class="s">${lbl(a)}: <b class="num">${netHtml(va)}</b></div><div class="s">${lbl(b)}: <b class="num">${netHtml(vb)}</b></div></div>
           <div class="amt num ${!d ? 'zero' : good ? 'pay' : 'debt'}">${d > 0 ? '+' : ''}${money(d)}<small>fərq</small></div></div>`;
       }).join('')}</div>
       <p class="note" style="text-align:center">Fərq: ${lbl(b)} − ${lbl(a)}</p>`;
@@ -1698,7 +2119,7 @@ function renderSheet() {
     // the whole period month by month: income, or income − my spending = what was left
     const left = s.kind === 'allLeft', ms = allMonths();
     const val = m => left ? gross(totals(m)) - mineTotal(m) : gross(totals(m));
-    h += `<h2>${left ? '💼 Bütün dövrün qalığı' : '💰 Bütün dövrün gəliri'}</h2><p class="note" style="margin-top:-8px">cəmi ${money(ms.reduce((x, m) => x + val(m), 0))}</p>
+    h += `<h2>${left ? '💼 Bütün dövrün qalığı' : '💰 Bütün dövrün gəliri'}</h2><p class="note" style="margin-top:-8px">cəmi ${netHtml(ms.reduce((x, m) => x + val(m), 0))}</p>
       <div class="list">${ms.map(m => { const v = val(m), [y, mm] = m.split('-').map(Number); return `
         <button class="row" data-a="pickMonth" data-v="${m}"><div class="grow"><div class="t">${MONTHS[mm - 1]} ${y}</div>
           ${left ? `<div class="s">gəlir ${money(gross(totals(m)))} · xərc ${money(mineTotal(m))}</div>` : ''}</div>
@@ -2228,6 +2649,8 @@ const actions = {
     else {
       o = Object.assign({ id: uid(), pid: s.pid, no: db.orders.reduce((m, x) => Math.max(m, x.no || 0), 0) + 1, status: 'qebul', log: [{ s: 'qebul', d: f.date }], created: Date.now() }, f);
       db.orders.push(o);
+      const adv = parseAmount(val('f_adv'));
+      if (adv) { o.adv = adv; db.tx.push({ id: uid(), pid: s.pid, type: 'pay', amount: adv, date: f.date, note: tr('Avans') + ' ' + ordNo(o), method: 'nagd', created: Date.now(), u: Date.now() }); }
     }
     save(); state.sheet = null; render(); toast(tr('{0} yadda saxlandı', { 0: ordNo(o) }));
   },
@@ -2669,12 +3092,13 @@ window.onImported = function (text) {
   if (!Array.isArray(db.cards)) db.cards = [];
   if (!Array.isArray(db.hides)) db.hides = [];
   if (!Array.isArray(db.orders)) db.orders = [];
+  for (const k of ['kassa', 'borrow', 'journal']) if (!Array.isArray(db[k])) db[k] = [];
   if (!db.removed || typeof db.removed !== 'object') db.removed = {};
   // the imported data must win the next sync: its records count as just changed, and what is
   // on the phone but not in the file counts as just deleted (otherwise Drive would bring it back)
   const now = Date.now(), keep = new Set();
-  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders']) db[key].forEach(r => { r.u = now; keep.add(r.id); delete db.removed[r.id]; });
-  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders']) (before[key] || []).forEach(r => { if (!keep.has(r.id)) db.removed[r.id] = now; });
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders', 'kassa', 'borrow', 'journal']) db[key].forEach(r => { r.u = now; keep.add(r.id); delete db.removed[r.id]; });
+  for (const key of ['people', 'tx', 'cats', 'loans', 'tpls', 'cards', 'hides', 'trash', 'orders', 'kassa', 'borrow', 'journal']) (before[key] || []).forEach(r => { if (!keep.has(r.id)) db.removed[r.id] = now; });
   save(); state.person = null; state.tab = 'people'; render();
   toast('Bərpa olundu');
 };
@@ -2861,7 +3285,172 @@ app.addEventListener('keydown', e => {
   }
 });
 
+// ---------- Rev. 03: actions and hooks ----------
+function setSum(v) {
+  if (hasNative && Android.setSummaryTime) Android.setSummaryTime(v); else try { localStorage.setItem('sumTime', v); } catch (e) {}
+  updateShortcuts(); render();
+}
+function pushSummary() {
+  if (!hasNative || !Android.setSummary) return;
+  const td = today(), d = byDay(db.tx.filter(t => t.date === td))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
+  const spent = db.tx.reduce((s, t) => s + (t.type === 'pexp' && t.date === td ? t.amount : 0), 0);
+  const recv = d.pay + db.tx.reduce((s, t) => s + (t.type === 'inc' && t.date === td ? t.amount : 0), 0);
+  const text = tr('Gəlir') + ': ' + money(income(d)) + ' · ' + tr('Alınan') + ': ' + money(recv) + ' · ' + tr('Xərc') + ': ' + money(spent) + ' · ' + tr('Qalıq') + ': ' + money(income(d) - spent);
+  Android.setSummary(td, tr('Günün xülasəsi'), text, tr('Bu gün heç nə yazılmayıb'));
+}
+{ const us = updateShortcuts; updateShortcuts = function () { us(); try { pushSummary(); } catch (e) {} }; }
+{ const rr = renderReport; renderReport = function () { return rr() + reportExtras(); }; }
+{
+  const rm = renderMine;
+  renderMine = function () {
+    const all = db.cats, hidden = all.filter(c => c.secret);
+    if (!hidden.length) return rm();
+    let h;
+    db.cats = state.secretOpen ? all : all.filter(c => !c.secret);
+    try { h = db.cats.length ? rm() : ''; } finally { db.cats = all; }
+    return h + (state.secretOpen
+      ? '<button class="btn ghost" data-a="closeSecret">🔒 Gizli bölmələri bağla</button>'
+      : `<div class="list" style="margin-top:12px"><button class="row" data-a="openSecret"><div class="avatar" style="font-size:20px">🔒</div><div class="grow"><div class="t">Gizli bölmələr (${hidden.length})</div><div class="s">PIN ilə açılır</div></div><span class="chev">›</span></button></div>`);
+  };
+}
+{ const ra = window.onAppResume; window.onAppResume = function () { if (state.secretOpen) { state.secretOpen = false; if (state.tab === 'mine' || state.cat) { state.cat = null; render(); } } ra(); }; }
+{ const sr = window.onSyncRemote; window.onSyncRemote = function (t) { sr(t); db.journal.sort((a, b) => a.at - b.at); jsnap = jsnapshot(); }; }
+for (const k of ['saveTx', 'savePerson']) {
+  const orig = actions[k];
+  actions[k] = function (...a) {
+    const s = state.sheet || {}, sup = document.getElementById('f_sup') ? val('f_sup').trim() : null, m = s.method, editId = s.id, before = new Set(db.tx.map(t => t.id));
+    const r = orig.apply(this, a);
+    let ch = false;
+    for (const t of db.tx) {
+      if (before.has(t.id) && t.id !== editId) continue;
+      if (sup !== null && t.cost) { if (sup) t.supplier = sup; else delete t.supplier; ch = true; }
+      if (m && ['pay', 'inc', 'pexp', 'exp'].includes(t.type)) { t.method = m; ch = true; }
+    }
+    if (ch) saveLocal();
+    return r;
+  };
+}
+{
+  const sc = actions.saveCat;
+  actions.saveCat = function (...a) {
+    const box = document.getElementById('f_secret'), secret = !!(box && box.checked), id = state.sheet && state.sheet.id, before = new Set(db.cats.map(c => c.id));
+    const r = sc.apply(this, a);
+    const c = id ? db.cats.find(x => x.id === id) : db.cats.find(x => !before.has(x.id));
+    if (c && !!c.secret !== secret) { if (secret) c.secret = true; else delete c.secret; c.u = Date.now(); save(); render(); }
+    return r;
+  };
+  const oc = actions.openCat;
+  actions.openCat = function (v, e) { const c = db.cats.find(x => x.id === v); if (c && c.secret && !state.secretOpen) return actions.openSecret(); return oc.call(this, v, e); };
+  const tb = actions.tab;
+  actions.tab = function (v, e) { if (v !== 'mine') state.secretOpen = false; return tb.call(this, v, e); };
+}
+const importPlain = window.onImported;
+window.onImported = function (text) {
+  let d = null;
+  try { d = JSON.parse(text); } catch (e) {}
+  if (d && d.hesabatEnc) { state.sheet = { kind: 'decrypt', payload: d }; return render(); }
+  if (d) return importPlain(text);
+  const rows = parseCSV(text);
+  if (rows.length && rows.some(r => r.length > 1)) return importRows(rows);
+  alert('Fayl düzgün deyil');
+};
+window.onImportedXlsx = async function (b64) {
+  try { importRows(await xlsxRows(b64dec(b64))); } catch (e) { alert('Excel faylı oxunmadı'); }
+};
+Object.assign(actions, {
+  setMethod(v) { state.sheet.method = v; render(); },
+  openOrders() { state.sheet = { kind: 'orders' }; render(); },
+  openMethods() { state.sheet = { kind: 'methods' }; render(); },
+  openParts() { state.sheet = { kind: 'parts' }; render(); },
+  openKassa() { state.sheet = { kind: 'kassa', d: today() }; render(); },
+  saveKassa() {
+    const d = val('f_kdate') || today(), id = 'k' + d, o = val('f_kopen').trim(), c = val('f_kclose').trim();
+    let k = db.kassa.find(x => x.id === id);
+    if (!k) { k = { id, date: d }; db.kassa.push(k); }
+    if (o) k.open = parseAmount(o); else delete k.open;
+    if (c) k.close = parseAmount(c); else delete k.close;
+    k.u = Date.now(); save(); state.sheet = { kind: 'kassa', d }; render(); toast('Yadda saxlandı');
+  },
+  openBorrow() { state.sheet = { kind: 'borrow' }; render(); },
+  editBorrow(v) { state.sheet = { kind: 'borrowEdit', id: v || null }; render(); },
+  viewBorrow(v) { state.sheet = { kind: 'borrowView', id: v }; render(); },
+  saveBorrow() {
+    const name = val('f_bname').trim(), amount = parseAmount(val('f_bamount'));
+    if (!name) return toast('Kimdən alındığını yazın');
+    if (!amount) return toast('Məbləğ yazın');
+    const f = { name, amount, rate: Math.max(0, parseFloat(String(val('f_brate')).replace(',', '.')) || 0), months: Math.max(0, parseInt(val('f_bmonths'), 10) || 0), start: val('f_bstart') || today(), u: Date.now() };
+    let l = state.sheet.id && db.borrow.find(x => x.id === state.sheet.id);
+    if (l) Object.assign(l, f); else { l = Object.assign({ id: uid(), pays: [], created: Date.now() }, f); db.borrow.push(l); }
+    save(); state.sheet = { kind: 'borrowView', id: l.id }; render(); toast('Yadda saxlandı');
+  },
+  payBorrow() {
+    const l = db.borrow.find(x => x.id === state.sheet.id), amount = parseAmount(val('f_bpay'));
+    if (!l) return;
+    if (!amount) return toast('Məbləğ yazın');
+    l.pays = (l.pays || []).concat({ id: uid(), d: val('f_bpdate') || today(), amount }); l.u = Date.now();
+    save(); render(); toast('Ödəniş yazıldı');
+  },
+  delBorrow() {
+    const l = db.borrow.find(x => x.id === state.sheet.id);
+    if (!l || !confirm(tr('{0} silinsin?', { 0: l.name }))) return;
+    db.borrow = db.borrow.filter(x => x !== l); db.removed[l.id] = Date.now();
+    save(); state.sheet = { kind: 'borrow' }; render();
+  },
+  openHealth() { state.sheet = { kind: 'health' }; render(); },
+  openJournal() { state.sheet = { kind: 'journal' }; render(); },
+  openImport() { state.sheet = { kind: 'importHelp' }; render(); },
+  share() { state.sheet = { kind: 'backup' }; render(); },
+  async doShare() {
+    const pw = val('f_bpw');
+    let text = JSON.stringify(db, null, 1), name = 'Hesabat-' + today() + '.json';
+    if (pw) { text = await encryptText(text, pw); name = 'Hesabat-' + today() + '-sifreli.json'; }
+    state.sheet = null; render();
+    if (hasNative) Android.shareFile(text, name);
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text])); a.download = name; a.click(); }
+  },
+  async doDecrypt() {
+    const p = state.sheet.payload, pw = val('f_dpw');
+    let text;
+    try { text = await decryptText(p, pw); } catch (e) { return toast('Parol səhvdir'); }
+    state.sheet = null; render(); importPlain(text);
+  },
+  import() {
+    if (hasNative) return Android.importFile();
+    const i = document.createElement('input'); i.type = 'file';
+    i.onchange = async () => { const b = new Uint8Array(await i.files[0].arrayBuffer()); if (b[0] === 80 && b[1] === 75) window.onImportedXlsx(toBase64(b)); else window.onImported(new TextDecoder().decode(b)); };
+    i.click();
+  },
+  openSecret() {
+    if (hasNative && !(Android.pinSet && Android.pinSet())) return toast('Əvvəl Ayarlar → Təhlükəsizlik bölməsində PIN qoyun');
+    state.sheet = { kind: 'secretPin' }; render();
+  },
+  unlockSecret() {
+    const code = val('f_spin').trim();
+    if (hasNative && !Android.checkPin(code)) return toast('Səhv PIN kod');
+    state.secretOpen = true; state.sheet = null; render();
+  },
+  closeSecret() { state.secretOpen = false; state.cat = null; render(); },
+  pickSumTime() {
+    const t = document.getElementById('f_stime2'); if (!t) return;
+    t.onchange = () => { const f = document.getElementById('f_stime'); if (f && t.value) f.value = t.value; };
+    try { t.showPicker(); } catch (e) { t.focus(); t.click(); }
+  },
+  saveSumTime() {
+    let v = val('f_stime').trim().replace(/[.\-\s]/, ':');
+    if (/^\d{3,4}$/.test(v)) v = v.slice(0, -2) + ':' + v.slice(-2);
+    const m = v.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m || +m[1] > 23 || +m[2] > 59) return toast('Saatı düzgün yazın, məs. 21:00');
+    v = pad(+m[1]) + ':' + m[2]; setSum(v); toast(tr('Hər gün saat {0}-da', { 0: v }));
+  },
+  offSumTime() { setSum(''); toast('Günün xülasəsi söndürüldü'); }
+});
+app.addEventListener('change', e => { if (e.target.id === 'f_kdate' && state.sheet && state.sheet.kind === 'kassa') { state.sheet.d = e.target.value || today(); render(); } });
+// only the four chosen languages are offered
+{ const keep = ['az', 'ru', 'tr', 'en']; for (let i = LANGS.length - 1; i >= 0; i--) if (!keep.includes(LANGS[i][0])) LANGS.splice(i, 1); }
+
 load();
+if (db.lang && !LANGS.some(l => l[0] === db.lang.v)) db.lang = { v: 'az', u: Date.now() };
+jsnap = jsnapshot();
 if (hasNative && Android.syncLinked) sync.account = Android.syncLinked();
 if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
   state.pin = { mode: 'unlock', len: Android.pinLength(), entered: '', err: '' };

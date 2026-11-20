@@ -446,8 +446,17 @@ public class MainActivity extends Activity {
                     c.close();
                 }
             } else if (requestCode == REQ_IMPORT) {
-                String text = readAll(getContentResolver().openInputStream(uri));
-                js("window.onImported(" + org.json.JSONObject.quote(text) + ")");
+                InputStream in = getContentResolver().openInputStream(uri);
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                in.close();
+                byte[] all = bo.toByteArray();
+                if (all.length > 1 && all[0] == 'P' && all[1] == 'K') // a zip: Excel .xlsx
+                    js("window.onImportedXlsx(" + org.json.JSONObject.quote(android.util.Base64.encodeToString(all, android.util.Base64.NO_WRAP)) + ")");
+                else
+                    js("window.onImported(" + org.json.JSONObject.quote(new String(all, "UTF-8")) + ")");
             }
         } catch (Exception e) {
             pageToast("Xəta: " + e.getMessage());
@@ -687,6 +696,28 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 pageToast("Xəta: " + e.getMessage());
             }
+        }
+
+        /** «Günün xülasəsi» time ("HH:MM" or "" = off). */
+        @JavascriptInterface
+        public void setSummaryTime(String time) {
+            SummaryReceiver.setTime(MainActivity.this, time);
+            if (time != null && !time.isEmpty() && Build.VERSION.SDK_INT >= 33
+                    && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                internalNav = true;
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
+            }
+        }
+
+        @JavascriptInterface
+        public String summaryTime() {
+            return SummaryReceiver.prefs(MainActivity.this).getString("time", "");
+        }
+
+        /** Today's figures for the summary notification. */
+        @JavascriptInterface
+        public void setSummary(String date, String title, String text, String empty) {
+            SummaryReceiver.setData(MainActivity.this, date, title, text, empty);
         }
 
         /** Debts with a payment day; the daily reminder reads this list. */

@@ -24,24 +24,24 @@ Qayda: yalnız aşağıdakılar edilir, özündən əlavə yoxdur. Hər mərhəl
 - [x] 145 Cihazla qəbul olunan əşyalar (qab, şarj, SIM, yaddaş kartı)
 - [x] 146 Təhvildə «hər şey yoxlanıldı» təsdiqi
 
-## Mərhələ 3 — maliyyə, panel, menyu, dillər
-- [ ] 72 İşdə istifadə olunan hissənin qiyməti avtomatik xərcə düşsün
-- [ ] 74 Hissənin kimdən və neçəyə alındığı tarixçəsi
-- [ ] 75 Kassa: gün başı və gün sonu qalığı
-- [ ] 76 Ödəniş üsulu (nağd, kart, köçürmə) və hesabat
-- [ ] 78 Avans (ilkin ödəniş)
-- [ ] 83 Günün xülasəsi bildiriş kimi — saatı özü seçir və ya yazır
-- [ ] 99 Əsas ekran (panel): bu gün, həftə, borclar bir baxışda
-- [ ] 101 Məbləğ sahəsində kalkulyator (120+50 = 170)
-- [ ] 106 Dəyişikliklər jurnalı — Google hesabında (Drive sinxronunda) baza kimi saxlanılsın
-- [ ] 107 Yedək faylının parolla şifrələnməsi
-- [ ] 109 Köhnə dəftərdən / Excel-dən idxal
-- [ ] 221 Dillər: Azərbaycan, rus, türk, ingilis
-- [ ] 240 Aldığım borclar və kreditlər (faizi ilə qalıq)
-- [ ] 274 Aylıq «pul sağlamlığı» balı (0–100)
-- [ ] 278 Gizli bölmə: şəxsi xərclər yalnız PIN ilə görünür
-- [ ] Ümumidə xərc gəlirdən çox olanda nəticə QIRMIZI və MƏNFİ (−120 ₼)
-- [ ] Menyunun səliqəyə salınması: aşağıda Əsas · Müştərilər · (+) · Xərclər · Hesabat;
+## Mərhələ 3 — HAZIR (3.1.3 Rev. 03)
+- [x] 72 İşdə istifadə olunan hissənin qiyməti avtomatik xərcə düşsün
+- [x] 74 Hissənin kimdən və neçəyə alındığı tarixçəsi
+- [x] 75 Kassa: gün başı və gün sonu qalığı
+- [x] 76 Ödəniş üsulu (nağd, kart, köçürmə) və hesabat
+- [x] 78 Avans (ilkin ödəniş)
+- [x] 83 Günün xülasəsi bildiriş kimi — saatı özü seçir və ya yazır
+- [x] 99 Əsas ekran (panel): bu gün, həftə, borclar bir baxışda
+- [x] 101 Məbləğ sahəsində kalkulyator (120+50 = 170)
+- [x] 106 Dəyişikliklər jurnalı — Google hesabında (Drive sinxronunda) baza kimi saxlanılsın
+- [x] 107 Yedək faylının parolla şifrələnməsi
+- [x] 109 Köhnə dəftərdən / Excel-dən idxal
+- [x] 221 Dillər: Azərbaycan, rus, türk, ingilis
+- [x] 240 Aldığım borclar və kreditlər (faizi ilə qalıq)
+- [x] 274 Aylıq «pul sağlamlığı» balı (0–100)
+- [x] 278 Gizli bölmə: şəxsi xərclər yalnız PIN ilə görünür
+- [x] Ümumidə xərc gəlirdən çox olanda nəticə QIRMIZI və MƏNFİ (−120 ₼)
+- [x] Menyunun səliqəyə salınması: aşağıda Əsas · Müştərilər · (+) · Xərclər · Hesabat;
       Ayarlar yuxarı sağda ⚙️; Ayarlar bölmələrə: Hesab və sinxron, Təhlükəsizlik,
       Görünüş, Məlumat, Haqqında; vahid ikonlar və boşluqlar
 
