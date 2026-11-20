@@ -84,3 +84,10 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
       yalnız «Mənə borclu olanlar» bölməsində qalır — qaytarma günü, bildiriş, gecikmə, mesajlar əvvəlki kimi
 - [x] İkinci proqram «Hesabatım» (az.usta.hesabatim): Hesabat-ın yanında ayrıca qurulur, öz məlumatı,
       öz Google faylı (Hesabatim-sinxron.json), öz avtoyeniləməsi (Hesabatim-*.apk)
+
+## Mərhələ 9 — HAZIR (3.1.3 Rev. 09): hesablama ilk proqramdakı kimi (17.6)
+- [x] Ustaya yazılan iş yazıldığı günün gəliridir; müştərinin ödənişi yenidən gəlir sayılmır
+- [x] Gəlirim = yazılan iş + nağd işlər − hissə/xərc (ay üzrə ziyan da çıxılır); Xalis gəlir köhnədəki kimi
+- [x] Xərclərim köhnədəki kimi ayrıca; Qalıq = Gəlirim − Xərclərim
+- [x] Borc verdim və Borc aldım heç bir hesaba qarışmır — öz bölmələrində, qaytarma günü və bildirişlərlə
+- [x] Aylıq PDF hesabat da eyni hesablama ilə

@@ -150,6 +150,8 @@
     // 3.1.3 Rev. 07: every change goes to Google at once
     ['Hər dəyişiklik dərhal Google hesabınıza yazılır. Yeni telefonda eyni hesabı seçin', 'Каждое изменение сразу сохраняется в ваш аккаунт Google. На новом телефоне выберите тот же аккаунт', 'Her değişiklik anında Google hesabınıza yazılır. Yeni telefonda aynı hesabı seçin', 'Every change is saved to your Google account at once. On a new phone choose the same account'],
     ['Göndərilir...', 'Отправляется...', 'Gönderiliyor...', 'Sending...'],
+    ['Bu gün alınan ödəniş', 'Оплата, полученная сегодня', 'Bugün alınan ödeme', 'Payment received today'],
+    ['XƏRCLƏRİM', 'МОИ РАСХОДЫ', 'GİDERLERİM', 'MY EXPENSES'],
     ['Dəyişikliklər telefonda saxlanıb, internet gələn kimi göndəriləcək', 'Изменения сохранены в телефоне и отправятся, как только появится интернет', 'Değişiklikler telefonda kayıtlı, internet gelince gönderilecek', 'Changes are kept on the phone and will be sent as soon as the internet is back']
   ];
   const L = { ru: 1, tr: 2, en: 3 };
