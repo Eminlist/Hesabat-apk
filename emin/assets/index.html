@@ -305,7 +305,7 @@
 'use strict';
 // ---------- storage ----------
 const hasNative = typeof window.Android !== 'undefined';
-const APP_VERSION = '3.1.3 Rev. 08';
+const APP_VERSION = '3.1.3 Rev. 09';
 let db = { version: 1, people: [], tx: [], cats: [], loans: [], tpls: [], trash: [], orders: [], kassa: [], borrow: [], journal: [], subs: [], removed: {} };
 
 function load() {
@@ -402,7 +402,7 @@ function mergeDb(a, b) {
 function scheduleSync() {
   if (!sync.account) return;
   clearTimeout(sync.timer);
-  sync.timer = setTimeout(runSync, 1000);
+  sync.timer = setTimeout(runSync, 150);
 }
 function runSync() {
   if (!sync.account || !hasNative) return;
@@ -479,6 +479,8 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => (n < 10 ? '0' : '') + n;
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+// Rev. 09: a moment as a day on the phone's own clock (Baku), never UTC
+const localDay = ms => { const d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
 const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'İyun', 'İyul', 'Avqust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
 // ---------- languages ----------
 // Pages are written in Azerbaijani; after each render the text is swapped for the chosen language.
@@ -570,10 +572,11 @@ function calcBalance(pid) {
   return b;
 }
 function totals(filterMonth) {
-  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0, lend: 0, lback: 0, brw: 0, brep: 0 };
+  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, oth: 0, lend: 0, lback: 0, brw: 0, brep: 0, bexp: 0 };
   for (const t of db.tx) {
     if (filterMonth && monthKey(t.date) !== filterMonth) continue;
     if (t.type in r) r[t.type] += t.amount;
+    if (t.type === 'exp') r.bexp += t.amount; // Rev. 09: a business cost (warranty part) comes off the month too, as on the main screen and in the PDF
     if (t.type === 'inc' && t.other) r.oth += t.amount; // "Digər gəlir": already inside inc, kept apart only for showing
     if (t.type === 'adj' && t.wo) { if (!t.woKeep) r.debt += t.amount; continue; } // a written-off debt comes off the month it was cleared in (unless kept)
     if (t.type === 'adj') r.debt += t.amount; // a changed debt amount: lowering it comes off this month's income
@@ -611,7 +614,7 @@ const income = r => (r.pay || 0) + (r.inc || 0) - r.exp + debtFlow(r);
 // money received for debt work, less the spare parts bought for debt work in the same period
 const workNet = r => (r.pay || 0) - ((r.cost || 0) - (r.icost || 0));
 const incNet = r => (r.inc || 0) - (r.icost || 0);
-const gross = r => workNet(r) + incNet(r) - (r.loss || 0) + debtFlow(r);
+const gross = r => workNet(r) + incNet(r) - (r.loss || 0) - (r.bexp || 0) + debtFlow(r);
 // incNet split for showing: cash jobs and "Digər gəlir" (the total stays incNet)
 const cashNet = r => incNet(r) - (r.oth || 0);
 const hasCash = r => (r.inc || 0) - (r.oth || 0) !== 0;
@@ -647,7 +650,7 @@ function recentKey(p) { return cached('r' + p.id, () => calcRecentKey(p)); }
 function calcRecentKey(p) {
   let k = '';
   for (const t of txOf(p.id)) { const kk = t.date + '|' + String(t.created || 0).padStart(15, '0'); if (kk > k) k = kk; }
-  return k || new Date(p.created || 0).toISOString().slice(0, 10) + '|' + String(p.created || 0).padStart(15, '0');
+  return k || localDay(p.created || 0) + '|' + String(p.created || 0).padStart(15, '0');
 }
 function lastActivity(pid) { return cached('l' + pid, () => { let d = ''; for (const t of txOf(pid)) if (t.date > d) d = t.date; return d; }); }
 
@@ -1001,7 +1004,7 @@ function renderPeople() {
   const owing = list.filter(x => x.b > 0);
   // settled ustas from earlier months stay out of the list (search still finds them)
   const cur = today().slice(0, 7);
-  const recent = x => (x.d || new Date(x.p.created || 0).toISOString().slice(0, 10)).slice(0, 7) === cur;
+  const recent = x => (x.d || localDay(x.p.created || 0)).slice(0, 7) === cur;
   const lossOnly = id => { let l = false; for (const t of db.tx) if (t.pid === id) { if (t.type !== 'loss') return false; l = true; } return l; };
   // rows swiped out of "Bu gün yazılanlar" (this phone, today only); their money still counts
   const hid = todayHidden();
@@ -1427,12 +1430,22 @@ function catSecretHtml(s) {
 // ---------- kassa: cash at the start and end of the day ----------
 function kassaDay(d) {
   const k = db.kassa.find(x => x.date === d) || {};
-  let cin = 0, cout = 0;
-  for (const t of db.tx) if (t.date === d && (t.method || 'nagd') === 'nagd') {
-    if (t.type === 'pay' || t.type === 'inc' || t.type === 'lback' || t.type === 'brw') cin += t.amount;
-    if (t.type === 'pexp' || t.type === 'lend' || t.type === 'brep') cout += t.amount;
+  // Rev. 09: the day's start is the last counted day's end when it isn't typed in (cash and card each)
+  const prev = f => { let best = null; for (const x of db.kassa) if (x.date < d && x[f] != null && (!best || x.date > best.date)) best = x; return best ? best[f] : null; };
+  const open = k.open != null ? k.open : prev('close'), copen = k.copen != null ? k.copen : prev('cclose');
+  let cin = 0, cout = 0, kin = 0, kout = 0, parts = 0;
+  for (const t of db.tx) {
+    if (t.date !== d || t.corr) continue;
+    const card = (t.method || 'nagd') !== 'nagd';
+    if (t.type === 'pay' || t.type === 'inc') { if (card) kin += t.amount; else cin += t.amount; }
+    if (t.type === 'lback' || t.type === 'brw') cin += t.amount;
+    if (t.type === 'pexp' || t.type === 'exp') { if (card) kout += t.amount; else cout += t.amount; }
+    if (t.type === 'lend' || t.type === 'brep') cout += t.amount;
+    // spare parts are bought from the wholesalers in cash
+    if (t.cost) { cout += t.cost; parts += t.cost; }
   }
-  return { k, cin, cout, expect: (k.open || 0) + cin - cout };
+  return { k, cin, cout, kin, kout, parts, open, copen, openAuto: k.open == null && open != null, copenAuto: k.copen == null && copen != null,
+    expect: (open || 0) + cin - cout, cexpect: (copen || 0) + kin - kout };
 }
 
 // ---------- money I borrowed / credits ----------
@@ -1738,11 +1751,19 @@ function extraSheet(s) {
   }
   if (k === 'kassa') {
     const d = s.d || today(), x = kassaDay(d);
-    return `<h2>💵 Kassa</h2><label>Gün</label><input class="field" id="f_kdate" type="date" value="${d}">
-      <label>Gün başı nağd pul</label><input class="field num" id="f_kopen" inputmode="decimal" value="${x.k.open != null ? x.k.open / 100 : ''}" placeholder="0">
-      <div class="card" style="margin-top:12px"><div class="kv"><span>+ Nağd daxil olan</span><b class="num pay">${money(x.cin)}</b></div><div class="kv"><span>− Nağd xərc</span><b class="num exp">${money(x.cout)}</b></div><div class="kv total"><span>Kassada olmalıdır</span><b class="num">${netHtml(x.expect)}</b></div></div>
+    const diff = x.k.close != null ? x.k.close - x.expect : null, cdiff = x.k.cclose != null ? x.k.cclose - x.cexpect : null;
+    return `<h2>💵 Kassa</h2><label>Gün</label><input class="field" id="f_kdate" type="date" value="${d}" max="${today()}">
+      <div class="section-title">💵 ${tr('Nağd')}</div>
+      <label>Gün başı nağd pul${x.openAuto ? ' <span class="badge ok">' + tr('dünənki gün sonundan') + '</span>' : ''}</label><input class="field num" id="f_kopen" inputmode="decimal" value="${x.k.open != null ? x.k.open / 100 : ''}" placeholder="${x.open != null ? amountInput(x.open) || '0' : '0'}">
+      <div class="card" style="margin-top:12px"><div class="kv"><span>+ Nağd daxil olan</span><b class="num pay">${money(x.cin)}</b></div><div class="kv"><span>− Nağd xərc</span><b class="num exp">${money(x.cout)}</b></div>${x.parts ? `<div class="kv"><span style="padding-left:12px">${tr('o cümlədən hissə')}</span><b class="num exp">${money(x.parts)}</b></div>` : ''}<div class="kv total"><span>Kassada olmalıdır</span><b class="num">${netHtml(x.expect)}</b></div></div>
       <label>Gün sonu sayılan pul</label><input class="field num" id="f_kclose" inputmode="decimal" value="${x.k.close != null ? x.k.close / 100 : ''}" placeholder="0">
-      ${x.k.close != null ? `<p class="note">Fərq: <b class="${x.k.close - x.expect < 0 ? 'neg' : ''}">${money(x.k.close - x.expect)}</b></p>` : ''}
+      ${diff != null ? `<p class="note">Fərq: <b class="${diff < 0 ? 'neg' : ''}">${diff > 0 ? '+' : ''}${money(diff)}</b> ${diff < 0 ? tr('(əskik)') : diff > 0 ? tr('(artıq)') : '✓'}</p>` : ''}
+      <div class="section-title">💳 ${tr('Kart')}</div>
+      <label>${tr('Gün başı kartda')}${x.copenAuto ? ' <span class="badge ok">' + tr('dünənki gün sonundan') + '</span>' : ''}</label><input class="field num" id="f_kcopen" inputmode="decimal" value="${x.k.copen != null ? x.k.copen / 100 : ''}" placeholder="${x.copen != null ? amountInput(x.copen) || '0' : '0'}">
+      <div class="card" style="margin-top:12px"><div class="kv"><span>+ ${tr('Kartla daxil olan')}</span><b class="num pay">${money(x.kin)}</b></div><div class="kv"><span>− ${tr('Kartla xərc')}</span><b class="num exp">${money(x.kout)}</b></div><div class="kv total"><span>${tr('Kartda olmalıdır')}</span><b class="num">${netHtml(x.cexpect)}</b></div></div>
+      <label>${tr('Gün sonu kartda (balans)')}</label><input class="field num" id="f_kcclose" inputmode="decimal" value="${x.k.cclose != null ? x.k.cclose / 100 : ''}" placeholder="0">
+      ${cdiff != null ? `<p class="note">Fərq: <b class="${cdiff < 0 ? 'neg' : ''}">${cdiff > 0 ? '+' : ''}${money(cdiff)}</b> ${cdiff < 0 ? tr('(əskik)') : cdiff > 0 ? tr('(artıq)') : '✓'}</p>` : ''}
+      <div class="card"><div class="kv total"><span>${tr('Bu gün cəmi alınan')}</span><b class="num pay">${money(x.cin + x.kin)}</b></div><div class="kv"><span>💵 ${tr('Nağd')}</span><b class="num">${money(x.cin)}</b></div><div class="kv"><span>💳 ${tr('Kart')}</span><b class="num">${money(x.kin)}</b></div></div>
       <button class="btn payb" data-a="saveKassa">Yadda saxla</button>`;
   }
   if (k === 'borrow') {
@@ -1846,7 +1867,7 @@ function miniCard(action, icon, title, sub) {
 }
 // totals for 1 January – 31 December of a year
 function yearTotals(y) {
-  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0 };
+  const r = { debt: 0, pay: 0, exp: 0, inc: 0, cost: 0, icost: 0, loss: 0, bexp: 0 };
   for (let m = 1; m <= 12; m++) { const t = totals(y + '-' + pad(m)); for (const k in r) r[k] += t[k]; }
   return r;
 }
@@ -2476,6 +2497,7 @@ function renderSheetBase() {
         ${incLines(t)}
         ${t.cost ? `<div class="kv"><span>Hissə xərci</span><b class="num exp">−${money(t.cost)}</b></div>` : ''}
         ${t.loss ? `<div class="kv"><span>Ziyan</span><b class="num debt">−${money(t.loss)}</b></div>` : ''}
+        ${t.bexp ? `<div class="kv"><span>İş xərci</span><b class="num exp">−${money(t.bexp)}</b></div>` : ''}
         ${t.lend ? `<div class="kv"><span>Borc verdim</span><b class="num exp">−${money(t.lend)}</b></div>` : ''}
         ${t.lback ? `<div class="kv"><span>Verdiyim borcdan qaytarılan</span><b class="num pay">+${money(t.lback)}</b></div>` : ''}
         ${t.brw ? `<div class="kv"><span>Borc aldım</span><b class="num pay">+${money(t.brw)}</b></div>` : ''}
@@ -3443,7 +3465,16 @@ window.onImported = function (text) {
   let d;
   try { d = JSON.parse(text); } catch (e) { return alert('Fayl düzgün deyil'); }
   if (!d || !Array.isArray(d.people) || !Array.isArray(d.tx)) return alert('Bu fayl Hesabat faylı deyil');
-  if (!confirm(`Faylda ${d.people.length} müştəri və ${d.tx.length} əməliyyat var. Hazırkı məlumatlar əvəz olunsun?`)) return;
+  // Rev. 09: what is in the file next to what is on the phone, before anything is replaced
+  const last = l => (l || []).reduce((m, t) => t.date > m ? t.date : m, '');
+  const fl = last(d.tx), pl = last(db.tx);
+  const msg = tr('Faylda: {0} müştəri, {1} əməliyyat', { 0: d.people.length, 1: d.tx.length }) + (fl ? ' (' + tr('sonuncu') + ': ' + tr(fmtDate(fl)) + ')' : '')
+    + '\n' + tr('Telefonda: {0} müştəri, {1} əməliyyat', { 0: db.people.length, 1: db.tx.length }) + (pl ? ' (' + tr('sonuncu') + ': ' + tr(fmtDate(pl)) + ')' : '')
+    + (pl && fl && fl < pl ? '\n\n⚠️ ' + tr('Fayl telefondakından köhnədir!') : '') + (d.tx.length < db.tx.length ? '\n⚠️ ' + tr('Faylda {0} əməliyyat azdır', { 0: db.tx.length - d.tx.length }) : '')
+    + '\n\n' + tr('Hazırkı məlumatlar əvəz olunsun? (Telefondakı hal əvvəlcə ayrıca saxlanacaq)');
+  if (!confirm(msg)) return;
+  // the phone's data as it was, so the restore can be undone from Ayarlar
+  try { localStorage.setItem('preRestore', JSON.stringify({ at: Date.now(), data: JSON.stringify(db) })); } catch (e) { if (!confirm(tr('Hazırkı hal saxlanmadı (yer yoxdur). Yenə də bərpa olunsun?'))) return; }
   const before = db;
   db = Object.assign({ version: 1 }, d);
   if (!Array.isArray(db.trash)) db.trash = [];
@@ -3756,6 +3787,9 @@ Object.assign(actions, {
     if (!k) { k = { id, date: d }; db.kassa.push(k); }
     if (o) k.open = parseAmount(o); else delete k.open;
     if (c) k.close = parseAmount(c); else delete k.close;
+    const co = val('f_kcopen').trim(), cc = val('f_kcclose').trim();
+    if (co) k.copen = parseAmount(co); else delete k.copen;
+    if (cc) k.cclose = parseAmount(cc); else delete k.cclose;
     k.u = Date.now(); save(); state.sheet = { kind: 'kassa', d }; render(); toast('Yadda saxlandı');
   },
   openBorrow() { state.sheet = { kind: 'borrow' }; render(); },
@@ -4672,6 +4706,597 @@ actions.openWo = function () { state.sheet = { kind: 'woList' }; render(); };
 }
 { const ra = window.onAppResume; window.onAppResume = function () { ra(); setTimeout(monthMailAsk, 700); }; }
 setTimeout(monthMailAsk, 900);
+
+// ======================= 3.1.3 Rev. 09 (Emin Hesabat) =======================
+// checks before an entry is saved, closed months, reconciliation, receipts and analysis
+
+// ---- helpers ----
+const R9_SKIP = { lend: 1, lback: 1, brw: 1, brep: 1 };
+const r9sig = t => [t.type, t.amount, t.cost || 0, t.date, t.method || '', t.other ? 1 : 0, t.cash ? 1 : 0, t.wo ? 1 : 0, t.woKeep ? 1 : 0, t.corr ? 1 : 0].join('|');
+function r9map() { const m = new Map(); for (const t of db.tx) if (!R9_SKIP[t.type]) m.set(t.id, { sig: r9sig(t), t: Object.assign({}, t) }); return m; }
+const r9mStart = m => m + '-01';
+const r9label = t => {
+  const o = t.ord && db.orders.find(x => x.id === t.ord);
+  return o ? ordNo(o) + (o.model ? ' ' + o.model : '') : (t.note || tr(fmtDate(t.date)));
+};
+// money customers paid on top of all they owed (the customer's own money with me)
+const overpaid = () => db.people.reduce((s, p) => s + Math.max(0, -balanceOf(p.id)), 0);
+
+// ---- closed months: a month that is closed cannot be changed until it is opened (with the PIN) ----
+const mlocks = () => (db.mlock && db.mlock.v) || {};
+const isLocked = m => !!mlocks()[m];
+function setLock(m, on) {
+  const v = Object.assign({}, mlocks());
+  if (on) v[m] = Date.now(); else delete v[m];
+  db.mlock = { v, u: Date.now() };
+}
+{
+  const md = mergeDb;
+  mergeDb = function (a, b) {
+    const out = md(a, b);
+    if (b.mlock && (!a.mlock || (b.mlock.u || 0) > (a.mlock.u || 0))) out.mlock = b.mlock;
+    return out;
+  };
+}
+
+// ---- the guard: every save made by a tap is checked first; a refused save puts everything back ----
+let r9snap = null, r9prev = null, r9user = 0, r9reason = null;
+const r9stop = msg => { if (msg) alert(msg); const e = new Error('r9'); e.r9 = true; throw e; };
+function r9median(a) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; }
+function r9check() {
+  if (!r9user || !r9snap) return null;
+  const now = r9map(), added = [], changed = [], removed = [];
+  for (const [id, x] of now) { const o = r9snap.get(id); if (!o) added.push(x.t); else if (o.sig !== x.sig) changed.push({ o: o.t, n: x.t }); }
+  for (const [id, o] of r9snap) if (!now.has(id)) removed.push(o.t);
+  if (!added.length && !changed.length && !removed.length) return null;
+  const td = today();
+  // 1) nothing is written on a day that has not come yet
+  const fut = added.concat(changed.map(c => c.n)).find(t => t.date > td);
+  if (fut) r9stop(tr('Gələcək tarixə yazmaq olmaz') + ': ' + tr(fmtDate(fut.date)) + '\n' + tr('Bu günü və ya keçmiş günü seçin.'));
+  // 2) a closed month stays as it was
+  const months = new Set();
+  added.forEach(t => months.add(monthKey(t.date)));
+  changed.forEach(c => { months.add(monthKey(c.o.date)); months.add(monthKey(c.n.date)); });
+  removed.forEach(t => months.add(monthKey(t.date)));
+  const lk = [...months].filter(isLocked).sort();
+  if (lk.length) r9stop('🔒 ' + lk.map(m => monthName(MONTHS[+m.slice(5) - 1]) + ' ' + m.slice(0, 4)).join(', ') + ' ' + tr('ayı bağlanıb, dəyişmək olmaz.') + '\n' + tr('Açmaq üçün: Ayarlar → Ayı bağla.'));
+  const real = added.filter(t => !t.corr && !(t.type === 'adj' && t.wo));
+  // 3) the same entry written twice in a short time
+  for (const t of real) {
+    if (!['pay', 'debt', 'inc', 'pexp', 'exp'].includes(t.type) || t.addTo || t.forDebt) continue;
+    const same = db.tx.find(x => x !== t && r9snap.has(x.id) && x.type === t.type && (x.pid || null) === (t.pid || null) && x.amount === t.amount && x.date === t.date && Math.abs((t.created || Date.now()) - (x.created || 0)) < 10 * 60000);
+    if (same && !confirm('⚠️ ' + tr('Bu artıq yazılıb?') + '\n' + tr(txLabel(t)) + ' ' + money(t.amount) + (t.pid ? ' — ' + nameOf(t.pid) : '') + '\n' + tr('{0} dəqiqə əvvəl eyni məbləğ yazılıb.', { 0: Math.max(1, Math.round(((t.created || Date.now()) - (same.created || 0)) / 60000)) }) + '\n\n' + tr('Yenə də yazılsın?'))) r9stop();
+  }
+  // 4) an amount far bigger than usual (15000 instead of 1500)
+  for (const t of real) {
+    if (!['pay', 'debt', 'inc', 'pexp', 'exp'].includes(t.type)) continue;
+    const hist = db.tx.filter(x => x.type === t.type && r9snap.has(x.id) && x.amount > 0 && !x.corr).slice(-60).map(x => x.amount);
+    if (hist.length < 5) continue;
+    const med = r9median(hist);
+    if (t.amount >= 10000 && med > 0 && t.amount >= med * 10 && !confirm('⚠️ ' + money(t.amount) + ' — ' + tr('adi məbləğdən çox böyükdür') + ' (' + tr('adətən') + ' ' + money(med) + ').\n\n' + tr('Məbləğ düzgündür?'))) r9stop();
+  }
+  // 5) a changed or deleted amount needs its reason (kept in the journal)
+  const ch = changed.filter(c => c.o.amount !== c.n.amount || (c.o.cost || 0) !== (c.n.cost || 0) || c.o.date !== c.n.date || c.o.type !== c.n.type);
+  const corrAdd = added.filter(t => t.type === 'adj' && !t.wo);
+  const gone = removed.filter(t => !t.corr);
+  if (ch.length || gone.length || corrAdd.length) {
+    const lines = ch.slice(0, 3).map(c => '✏️ ' + tr(txLabel(c.n)) + ': ' + money(c.o.amount) + ' → ' + money(c.n.amount) + (c.o.date !== c.n.date ? ' · ' + tr(fmtDate(c.o.date)) + ' → ' + tr(fmtDate(c.n.date)) : '') + ((c.o.cost || 0) !== (c.n.cost || 0) ? ' · ' + tr('xərc') + ' ' + money(c.o.cost || 0) + ' → ' + money(c.n.cost || 0) : ''))
+      .concat(gone.slice(0, 3).map(t => '🗑 ' + tr(txLabel(t)) + ' ' + money(t.amount) + (t.pid ? ' — ' + nameOf(t.pid) : '')))
+      .concat(corrAdd.slice(0, 2).map(t => '✏️ ' + tr('Məbləğ düzəlişi') + ' ' + (t.amount > 0 ? '+' : '') + money(t.amount) + (t.pid ? ' — ' + nameOf(t.pid) : '')));
+    let why = null;
+    for (let i = 0; i < 2 && !why; i++) {
+      const a = prompt(lines.join('\n') + '\n\n' + tr('Səbəbi yazın (jurnalda saxlanılır):'), '');
+      if (a === null) r9stop();
+      why = String(a).trim();
+      if (!why) toast('Səbəb yazılmalıdır');
+    }
+    if (!why) r9stop();
+    return { lines, why };
+  }
+  return { added };
+}
+{
+  const sv = save;
+  save = function () {
+    let info = null;
+    try { info = r9check(); } catch (e) { if (e && e.r9 && r9prev) { db = JSON.parse(r9prev); } throw e; }
+    sv();
+    if (info && info.why) {
+      const at = Date.now();
+      for (const l of info.lines) db.journal.push({ id: uid(), at, t: l + ' — ' + tr('səbəb') + ': ' + info.why, u: at });
+      saveLocal(); scheduleSync();
+    }
+    r9snap = r9map(); r9prev = JSON.stringify(db);
+    // which debts a new payment closed, and what is left
+    if (r9user && info && info.added) {
+      const pays = info.added.filter(t => t.type === 'pay' && t.pid);
+      if (pays.length === 1) setTimeout(() => { try { const m = payCloses(pays[0]); if (m) toast(m); } catch (e) {} }, 900);
+    }
+  };
+}
+// every tap-action is checked; a refused one leaves the form open with what was typed
+setTimeout(() => {
+  for (const k of Object.keys(actions)) {
+    const f = actions[k];
+    if (typeof f !== 'function' || f.r9) continue;
+    const w = function (...a) { r9user++; try { return f.apply(this, a); } catch (e) { if (e && e.r9) return; throw e; } finally { r9user--; } };
+    w.r9 = true; actions[k] = w;
+  }
+}, 0);
+{ const sr = window.onSyncRemote; window.onSyncRemote = function (t) { let rs = null; try { const d = JSON.parse(t || 'null'); if (d && d.tx) rs = r9sum(d); } catch (e) {} if (rs) r9sync.remote = rs; sr(t); r9snap = r9map(); r9prev = JSON.stringify(db); r9sync.pending = r9sum(db); }; }
+{
+  const ld = load;
+  load = function () { const r = ld.apply(this, arguments); r9snap = r9map(); r9prev = JSON.stringify(db); return r; };
+}
+
+// ---- a payment: which debts it paid, as words ----
+function payInfo(pay) {
+  const tx = db.tx.filter(t => t.pid === pay.pid && !t.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
+  let bal = 0;
+  for (const t of tx) { if (t === pay || t.id === pay.id) break; bal += t.type === 'debt' || t.type === 'adj' ? t.amount : t.type === 'pay' ? -t.amount : 0; }
+  const al = payAlloc(tx), closed = [], part = [];
+  for (const [did, list] of Object.entries(al.by)) {
+    const d = tx.find(x => x.id === did); if (!d) continue;
+    let used = 0, mine = 0;
+    for (const x of list) { used += x.use; if (x.t.id === pay.id) { mine = x.use; break; } }
+    if (!mine) continue;
+    if (used >= d.amount) closed.push({ d, use: mine }); else part.push({ d, use: mine, left: d.amount - used });
+  }
+  return { before: bal, after: bal - pay.amount, closed, part };
+}
+function payCloses(pay) {
+  const x = payInfo(pay), out = [];
+  if (x.closed.length) out.push(tr('Bağlandı') + ': ' + x.closed.map(c => r9label(c.d)).join(', '));
+  if (x.part.length) out.push(x.part.map(c => r9label(c.d) + ' — ' + tr('qaldı') + ' ' + money(c.left)).join(', '));
+  out.push(x.after > 0 ? tr('Qalan borc') + ': ' + money(x.after) : x.after < 0 ? tr('Artıq ödəniş') + ': ' + money(-x.after) : tr('Hesab bağlandı'));
+  return out.join(' · ');
+}
+function payReceiptRows(pay) {
+  const x = payInfo(pay), rows = [[tr('Əvvəlki borc'), money(x.before)], [tr('Ödənilən'), '−' + money(pay.amount), true], [tr('Qalan borc'), money(Math.max(0, x.after)), true]];
+  if (x.after < 0) rows.push([tr('Artıq ödəniş'), money(-x.after)]);
+  if (x.closed.length || x.part.length) rows.push([tr('Bu ödəniş ilə'), '', true]);
+  x.closed.forEach(c => rows.push(['✓ ' + r9label(c.d), tr('bağlandı')]));
+  x.part.forEach(c => rows.push(['… ' + r9label(c.d), tr('qaldı') + ' ' + money(c.left)]));
+  return rows;
+}
+const payWhen = t => tr(fmtDate(t.date)) + (t.time ? ', ' + t.time : t.created ? ', ' + hmOf(t.created) : '');
+
+// ---- a customer's month: start, work, payments, end (üzləşmə aktı) ----
+function reconOf(pid, m) {
+  const tx = db.tx.filter(t => t.pid === pid && !t.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
+  const eff = t => t.type === 'debt' || t.type === 'adj' ? t.amount : t.type === 'pay' ? -t.amount : 0;
+  let start = 0; const work = [], pays = [], wo = [];
+  for (const t of tx) {
+    const k = monthKey(t.date);
+    if (k < m) start += eff(t);
+    else if (k === m) { if (t.type === 'pay') pays.push(t); else if (t.type === 'adj' && t.wo) wo.push(t); else if (t.type === 'debt' || t.type === 'adj') work.push(t); }
+  }
+  const sw = work.reduce((s, t) => s + t.amount, 0), sp = pays.reduce((s, t) => s + t.amount, 0), sx = wo.reduce((s, t) => s + t.amount, 0);
+  return { start, work, pays, wo, sw, sp, sx, end: start + sw - sp + sx };
+}
+function reconLines(p, m) {
+  const r = reconOf(p.id, m), L = [];
+  L.push([tr('Ay başı borc') + ' (' + tr(fmtDate(r9mStart(m))) + ')', money(r.start), true]);
+  if (r.work.length) { L.push([tr('Yazılan işlər'), '', true]); r.work.forEach(t => L.push([tr(fmtDate(t.date)) + ' — ' + (t.type === 'adj' ? tr('Məbləğ düzəlişi') : r9label(t)), (t.amount > 0 ? '+' : '') + money(t.amount)])); L.push([tr('Cəmi iş'), '+' + money(r.sw), true]); }
+  if (r.pays.length) { L.push([tr('Ödənişlər'), '', true]); r.pays.forEach(t => L.push([tr(fmtDate(t.date)) + ' — ' + tr((t.method || 'nagd') === 'nagd' ? 'Nağd' : 'Kart'), '−' + money(t.amount)])); L.push([tr('Cəmi ödəniş'), '−' + money(r.sp), true]); }
+  if (r.wo.length) L.push([tr('Silinən borc'), money(r.sx), true]);
+  L.push([tr('Ay sonu borc'), money(r.end), true]);
+  return { r, L };
+}
+const ymLabel = m => monthName(MONTHS[+m.slice(5) - 1]) + ' ' + m.slice(0, 4);
+const r9step = (m, n) => { const d = new Date(+m.slice(0, 4), +m.slice(5) - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+
+// ---- the whole customers' debt over a month: start + new − paid − written off = end ----
+function nisyeMove(m) {
+  let start = 0, nw = 0, pd = 0, wo = 0;
+  const endBy = new Map();
+  for (const t of db.tx) {
+    if (!t.pid || t.corr) continue;
+    const e = t.type === 'debt' || t.type === 'adj' ? t.amount : t.type === 'pay' ? -t.amount : 0;
+    if (!e) continue;
+    const k = monthKey(t.date);
+    if (k <= m) endBy.set(t.pid, (endBy.get(t.pid) || 0) + e);
+    if (k < m) start += e;
+    else if (k === m) { if (t.type === 'pay') pd += t.amount; else if (t.type === 'adj' && t.wo) wo += t.amount; else nw += t.amount; }
+  }
+  // the end counted a second way: customer by customer
+  let owe = 0, over = 0, goneBal = 0;
+  const live = new Set(db.people.map(p => p.id));
+  for (const [pid, b] of endBy) { if (!live.has(pid)) goneBal += b; else if (b > 0) owe += b; else over += -b; }
+  const end = start + nw - pd + wo, check = owe - over + goneBal;
+  return { start, nw, pd, wo, end, owe, over, goneBal, ok: end === check, diff: end - check };
+}
+
+// ---- jobs of a month: price, parts, profit ----
+function jobsOf(m) {
+  const jobs = new Map();
+  for (const t of db.tx) {
+    if (monthKey(t.date) !== m || t.corr) continue;
+    if (t.type === 'debt' && t.pid) { const key = t.addTo || t.id, j = jobs.get(key) || { a: 0, c: 0 }; j.a += t.amount; j.c += t.cost || 0; jobs.set(key, j); }
+    if (t.type === 'inc' && !t.other) jobs.set(t.id, { a: t.amount, c: t.cost || 0 });
+  }
+  const list = [...jobs.values()].filter(j => j.a > 0);
+  const a = list.reduce((s, j) => s + j.a, 0), c = list.reduce((s, j) => s + j.c, 0);
+  return { n: list.length, a, c, p: a - c, avg: list.length ? Math.round((a - c) / list.length) : 0, mg: a ? Math.round((a - c) / a * 100) : 0 };
+}
+
+// ---- unpaid debts by age ----
+const AGES = [[0, 7, '0–7 gün', '#16A34A'], [8, 30, '8–30 gün', '#D97706'], [31, 60, '31–60 gün', '#EA580C'], [61, 1e9, '60+ gün', '#DC2626']];
+function agingOf() {
+  const b = AGES.map(() => ({ sum: 0, n: 0, people: new Map() })), td = today();
+  for (const p of db.people) for (const d of debtState(p.id).debts) {
+    if (d.left <= 0) continue;
+    const days = daysBetween(d.t.date, td), i = AGES.findIndex(a => days >= a[0] && days <= a[1]);
+    const x = b[i < 0 ? 0 : i]; x.sum += d.left; x.n++; x.people.set(p.id, (x.people.get(p.id) || 0) + d.left);
+  }
+  return b;
+}
+
+// ---- the cash box over a month: what was short or over ----
+function kassaDiffs(m) {
+  const out = [];
+  for (const k of db.kassa) {
+    if (monthKey(k.date) !== m || (k.close == null && k.cclose == null)) continue;
+    const x = kassaDay(k.date);
+    out.push({ d: k.date, cash: k.close != null ? k.close - x.expect : 0, card: k.cclose != null ? k.cclose - x.cexpect : 0 });
+  }
+  return out.sort((a, b) => b.d.localeCompare(a.d));
+}
+
+// ---- jobs typed often: one tap fills them (besides the hand-made templates) ----
+function freqJobs() {
+  const lim = addDays(today(), -120), by = new Map(), tp = new Set(db.tpls.map(t => norm(t.note)));
+  const skip = new Set(['nağd iş', 'əvvəlki borc', 'borc', 'ödəniş', 'nagd is'].map(norm));
+  for (const t of db.tx) {
+    if (!((t.type === 'debt' && t.pid && !t.addTo) || (t.type === 'inc' && !t.other)) || t.corr || t.date < lim || !t.note || t.amount <= 0) continue;
+    const k = norm(t.note); if (skip.has(k) || tp.has(k)) continue;
+    const x = by.get(k) || { note: t.note, n: 0, last: null }; x.n++;
+    if (!x.last || (t.created || 0) > (x.last.created || 0)) x.last = t;
+    by.set(k, x);
+  }
+  return [...by.values()].filter(x => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 8).map(x => ({ note: x.last.note, amount: x.last.amount, cost: x.last.cost || 0, n: x.n }));
+}
+function freqBox() {
+  const f = freqJobs(); state.freq = f;
+  if (!f.length) return '';
+  return `<div class="tplbox"><div class="note"><b>🔁 ${tr('Tez-tez yazılanlar')}</b></div><div class="chips">${f.map((x, i) => `<button class="chip" data-a="useFreq" data-v="${i}">${esc(x.note)} · ${money(x.amount)}</button>`).join('')}</div></div>`;
+}
+{ const tc = tplChips; tplChips = function () { return tc() + freqBox(); }; }
+
+// ---- the sync: what the phone has next to what was last written to Google ----
+const r9sync = { remote: null, pending: null, ok: null };
+try { r9sync.ok = JSON.parse(localStorage.getItem('r9ok') || 'null'); } catch (e) {}
+function r9sum(d) {
+  let s = 0;
+  for (const t of d.tx || []) s += (t.amount || 0) + (t.cost || 0);
+  return { n: (d.tx || []).length, p: (d.people || []).length, s };
+}
+{
+  const ss = window.onSyncStatus;
+  window.onSyncStatus = function (st, msg) {
+    if (st === 'ok' && r9sync.pending) { r9sync.ok = Object.assign({ at: Date.now() }, r9sync.pending); try { localStorage.setItem('r9ok', JSON.stringify(r9sync.ok)); } catch (e) {} }
+    ss(st, msg);
+  };
+}
+{
+  const sh = syncSheet;
+  syncSheet = function () {
+    const h = sh();
+    if (!sync.account) return h;
+    const me = r9sum(db), g = r9sync.ok, same = g && g.n === me.n && g.p === me.p && g.s === me.s;
+    const box = `<div class="card"><b>🔎 ${tr('Yoxlama')}</b>
+      <div class="kv"><span>📱 ${tr('Telefonda')}</span><b class="num">${me.p} ${tr('müştəri')} · ${me.n} ${tr('əməliyyat')}</b></div>
+      <div class="kv"><span>☁️ ${tr('Google-da')}</span><b class="num">${g ? g.p + ' ' + tr('müştəri') + ' · ' + g.n + ' ' + tr('əməliyyat') : '—'}</b></div>
+      <div class="kv total"><span>${same ? '✅ ' + tr('Eynidir') : '⏳ ' + tr('Hələ göndərilməyib')}</span><b class="num">${g ? money(g.s) : ''}</b></div></div>`;
+    const at = h.indexOf('<button class="btn danger" data-a="syncUnlink">');
+    return at >= 0 ? h.slice(0, at) + box + h.slice(at) : h + box;
+  };
+}
+
+// ---- the day's summary notification: cash and card each ----
+pushSummary = function () {
+  if (!hasNative || !Android.setSummary) return;
+  const td = today(), d = byDay(db.tx.filter(t => t.date === td))[0] || { pay: 0, debt: 0, exp: 0, inc: 0 };
+  const D = flow(db.tx.filter(t => t.date === td), t => t.date === td), recv = D.got, out = D.spent, k = kassaDay(td);
+  const text = tr('Alınan') + ': ' + money(recv) + ' (💵 ' + money(k.cin - db.tx.reduce((s, t) => s + (t.date === td && (t.type === 'lback' || t.type === 'brw') ? t.amount : 0), 0)) + ' · 💳 ' + money(k.kin) + ')'
+    + ' · ' + tr('Xərc') + ': ' + money(out) + ' · ' + tr('Qalıq') + ': ' + money(recv - out) + (d.debt ? ' · ' + tr('Yeni borc') + ': ' + money(d.debt) : '');
+  Android.setSummary(td, tr('Günün xülasəsi'), text, tr('Bu gün heç nə yazılmayıb'));
+};
+
+// ---- a report day: cash and card received ----
+{
+  const rd = renderDay;
+  renderDay = function () {
+    const h = rd(), d = state.day;
+    let cash = 0, card = 0;
+    for (const t of db.tx) if (t.date === d && (t.type === 'pay' || t.type === 'inc')) { if ((t.method || 'nagd') === 'nagd') cash += t.amount; else card += t.amount; }
+    const k = kassaDay(d);
+    const box = `<div class="card"><div class="kv"><span>💵 ${tr('Nağd alınan')}</span><b class="num pay">${money(cash)}</b></div><div class="kv"><span>💳 ${tr('Kartla alınan')}</span><b class="num pay">${money(card)}</b></div>
+      ${k.open != null ? `<div class="kv"><span>${tr('Kassada olmalıdır')}</span><b class="num">${netHtml(k.expect)}</b></div>` : ''}${k.copen != null ? `<div class="kv"><span>${tr('Kartda olmalıdır')}</span><b class="num">${netHtml(k.cexpect)}</b></div>` : ''}
+      <button class="btn ghost" data-a="openKassaDay" data-v="${d}" style="margin:8px 0 0">💵 ${tr('Kassa')} — ${tr(fmtDate(d))}</button></div>`;
+    const at = h.indexOf('<div class="list">');
+    return at >= 0 ? h.slice(0, at) + box + h.slice(at) : h + box;
+  };
+}
+
+// ---- the report: new tiles ----
+{
+  const re = reportExtras;
+  reportExtras = function () {
+    const m = state.month, h = re(), nm = nisyeMove(m), jb = jobsOf(m), ag = agingOf(), kd = kassaDiffs(m), kt = kd.reduce((s, x) => s + x.cash + x.card, 0), ov = overpaid();
+    const add = tile('openNisye', '', 'Nisyə hərəkəti', (nm.ok ? '✓ ' : '⚠ ') + money(nm.end), '', nm.ok ? '#0F766E' : '#DC2626')
+      + tile('openJobs', '', 'Sifariş qazancı', jb.n ? money(jb.avg) + ' · ' + jb.mg + '%' : '—', '', '#2563EB')
+      + tile('openAging', '', 'Borcların yaşı', ag[3].sum ? '60+: ' + money(ag[3].sum) : money(ag.reduce((s, x) => s + x.sum, 0)), '', ag[3].sum ? '#DC2626' : '#D97706')
+      + tile('openWhere', '', 'Pulum harada', money(r9where().total), '', '#0D9488')
+      + tile('openKdiff', '', 'Kassa fərqi (ay)', kd.length ? (kt > 0 ? '+' : '') + money(kt) : '—', '', kt < 0 ? '#DC2626' : '#64748B')
+      + (ov ? tile('openOver', '', 'Artıq ödənişlər', money(ov), '', '#7C3AED') : '')
+      + tile('openLocks', '', isLocked(m) ? '🔒 Ay bağlıdır' : 'Ayı bağla', ymLabel(m), '', isLocked(m) ? '#0F766E' : '#94A3B8');
+    const at = h.lastIndexOf('</div>');
+    return at >= 0 ? h.slice(0, at) + add + h.slice(at) : h + add;
+  };
+}
+// all my money at one glance (not mixed into income): cash, card, owed to me, what I owe
+function r9where() {
+  const k = kassaDay(today()), hasK = db.kassa.length > 0;
+  const lent = db.loans.reduce((s, l) => s + loanLeft(l), 0), mine = borrowLeft(), owe = outstanding(), ov = overpaid();
+  const cash = hasK ? k.expect : 0, card = hasK && k.copen != null ? k.cexpect : 0;
+  return { hasK, cash, card, owe, lent, mine, ov, total: cash + card + owe + lent - mine - ov };
+}
+
+// ---- the new sheets ----
+{
+  const es = extraSheet;
+  extraSheet = function (s) {
+    const k = s.kind, kv = (l, v, c) => `<div class="kv"><span>${l}</span><b class="num ${c || ''}">${v}</b></div>`;
+    if (k === 'nisye') {
+      const m = state.month, x = nisyeMove(m);
+      return `<h2>📒 ${tr('Nisyə hərəkəti')}</h2><p class="note" style="margin-top:-8px">${ymLabel(m)}</p><div class="card">
+        ${kv(tr('Ay başı nisyə'), money(x.start))}${kv('+ ' + tr('Yeni yazılan borc'), money(x.nw), 'debt')}${kv('− ' + tr('Ödənilən'), money(x.pd), 'pay')}${x.wo ? kv('− ' + tr('Silinən borc'), money(-x.wo), 'neg') : ''}
+        <div class="kv total"><span>${tr('Ay sonu nisyə')}</span><b class="num">${money(x.end)}</b></div></div>
+        <div class="card"><b>${tr('Müştəri-müştəri yoxlama')}</b>${kv(tr('Borclular'), money(x.owe), 'debt')}${x.over ? kv('− ' + tr('Artıq ödənişlər'), money(x.over)) : ''}${x.goneBal ? kv(tr('Silinmiş müştərilər'), money(x.goneBal)) : ''}
+        <div class="kv total"><span>${x.ok ? '✅ ' + tr('Tutur') : '⚠️ ' + tr('Fərq var')}</span><b class="num ${x.ok ? '' : 'neg'}">${x.ok ? money(x.owe - x.over + x.goneBal) : money(x.diff)}</b></div></div>
+        <p class="note">${tr('Ay başı nisyə + yeni borc − ödənilən − silinən = ay sonu nisyə. Hər müştərinin qalığı ayrıca toplanıb eyni rəqəm çıxmalıdır.')}</p>`;
+    }
+    if (k === 'jobs') {
+      const m = state.month, j = jobsOf(m), pm = jobsOf(r9step(m, -1));
+      return `<h2>🧮 ${tr('Sifariş qazancı')}</h2><p class="note" style="margin-top:-8px">${ymLabel(m)}</p><div class="card">
+        ${kv(tr('İş sayı'), String(j.n))}${kv(tr('İşlərin qiyməti'), money(j.a))}${kv('− ' + tr('Hissə xərci'), money(j.c), 'exp')}
+        <div class="kv total"><span>${tr('Qazanc')}</span><b class="num">${netHtml(j.p)}</b></div>
+        ${kv(tr('Orta qazanc (1 iş)'), money(j.avg), 'pay')}${kv(tr('Marja'), j.mg + '%')}</div>
+        ${pm.n ? `<div class="card"><b>${ymLabel(r9step(m, -1))}</b>${kv(tr('Orta qazanc (1 iş)'), money(pm.avg))}${kv(tr('Marja'), pm.mg + '%')}</div>` : ''}
+        <p class="note">${tr('Yazılan iş (borc və ya nağd) − o işin hissəsi. Marja = qazanc ÷ qiymət.')}</p>`;
+    }
+    if (k === 'aging') {
+      const b = agingOf();
+      return `<h2>⏳ ${tr('Borcların yaşı')}</h2><p class="note" style="margin-top:-8px">${tr('Ödənilməmiş borc, yazıldığı gündən bu günə qədər')}</p>`
+        + b.map((x, i) => `<div class="card"><div class="kv total"><span style="color:${AGES[i][3]}">● ${tr(AGES[i][2])} · ${x.n}</span><b class="num">${money(x.sum)}</b></div>
+          ${[...x.people.entries()].sort((a, c) => c[1] - a[1]).map(([pid, v]) => `<div class="kv" data-a="open" data-v="${pid}" style="cursor:pointer"><span>${esc(nameOf(pid))} ›</span><b class="num debt">${money(v)}</b></div>`).join('')}</div>`).join('')
+        + `<div class="card"><div class="kv total"><span>${tr('Cəmi')}</span><b class="num debt">${money(b.reduce((s, x) => s + x.sum, 0))}</b></div></div>`;
+    }
+    if (k === 'where') {
+      const w = r9where();
+      return `<h2>🧭 ${tr('Pulum harada')}</h2><p class="note" style="margin-top:-8px">${tr('Bu günə — gəlir hesabatına qarışmır')}</p><div class="card">
+        ${w.hasK ? kv('💵 ' + tr('Kassada (nağd)'), netHtml(w.cash)) : kv('💵 ' + tr('Kassada (nağd)'), '—')}
+        ${w.card || (w.hasK && kassaDay(today()).copen != null) ? kv('💳 ' + tr('Kartda'), netHtml(w.card)) : kv('💳 ' + tr('Kartda'), '—')}
+        ${kv('👥 ' + tr('Ustalarda nisyə'), money(w.owe), 'debt')}${w.lent ? kv('🤝 ' + tr('Mənə borclu olanlar'), money(w.lent)) : ''}
+        ${w.mine ? kv('🏦 ' + tr('Mənim borclarım'), '−' + money(w.mine), 'exp') : ''}${w.ov ? kv('↩️ ' + tr('Artıq ödənişlər (müştərinin pulu)'), '−' + money(w.ov), 'exp') : ''}
+        <div class="kv total"><span>${tr('Cəmi vəziyyət')}</span><b class="num">${netHtml(w.total)}</b></div></div>
+        ${w.hasK ? '' : `<p class="note">${tr('Kassa və kart üçün: Hesabat → Kassa — gün başı pulu bir dəfə yazın, sonra özü keçir.')}</p>`}
+        <button class="btn ghost" data-a="openKassa">💵 ${tr('Kassa')}</button>`;
+    }
+    if (k === 'kdiff') {
+      const m = state.month, l = kassaDiffs(m), t = l.reduce((s, x) => s + x.cash + x.card, 0);
+      return `<h2>💵 ${tr('Kassa fərqi')}</h2><p class="note" style="margin-top:-8px">${ymLabel(m)} · ${tr('sayılan − olmalı olan')}</p>`
+        + (l.length ? '<div class="list">' + l.map(x => `<button class="row" data-a="openKassaDay" data-v="${x.d}"><div class="grow"><div class="t">${tr(fmtDate(x.d))}</div><div class="s">💵 ${(x.cash > 0 ? '+' : '') + money(x.cash)} · 💳 ${(x.card > 0 ? '+' : '') + money(x.card)}</div></div><div class="amt num ${x.cash + x.card < 0 ? 'debt' : 'pay'}">${(x.cash + x.card > 0 ? '+' : '') + money(x.cash + x.card)}</div></button>`).join('') + '</div>'
+          + `<div class="card"><div class="kv total"><span>${t < 0 ? tr('Ay ərzində əskik') : t > 0 ? tr('Ay ərzində artıq') : tr('Fərq yoxdur')}</span><b class="num ${t < 0 ? 'neg' : ''}">${(t > 0 ? '+' : '') + money(t)}</b></div></div>`
+          : `<div class="empty" style="padding:16px">${tr('Bu ay gün sonu pul sayılmayıb')}</div>`);
+    }
+    if (k === 'over') {
+      const l = db.people.map(p => ({ p, b: balanceOf(p.id) })).filter(x => x.b < 0).sort((a, c) => a.b - c.b);
+      return `<h2>↩️ ${tr('Artıq ödənişlər')}</h2><p class="note" style="margin-top:-8px">${tr('Borcundan çox ödəyənlər — bu pul onlarındır (növbəti işdən çıxılır)')}</p>`
+        + (l.length ? '<div class="list">' + l.map(x => `<button class="row" data-a="open" data-v="${x.p.id}"><div class="grow"><div class="t">${esc(x.p.name)}</div></div><div class="amt num pay">${money(-x.b)}</div></button>`).join('') + '</div>' : '<div class="empty">Yoxdur</div>')
+        + `<div class="card"><div class="kv total"><span>${tr('Cəmi')}</span><b class="num">${money(overpaid())}</b></div></div>`;
+    }
+    if (k === 'locks') {
+      const cm = today().slice(0, 7), ms = [];
+      for (let i = 1; i <= 12; i++) ms.push(r9step(cm, -i));
+      return `<h2>🔒 ${tr('Ayı bağla')}</h2><p class="note" style="margin-top:-8px">${tr('Bağlanan ayda heç nə yazılmır, düzəldilmir, silinmir — hesabat və göndərilən PDF eyni qalır. Açmaq üçün PIN istənir.')}</p>
+        <div class="list">${ms.map(m => { const on = isLocked(m); return `<div class="row"><div class="grow"><div class="t">${on ? '🔒 ' : ''}${ymLabel(m)}</div><div class="s">${tr('Qalıq')}: ${money(gross(totals(m)) - mineTotal(m))}</div></div><button class="chip" data-a="${on ? 'unlockMonth' : 'lockMonth'}" data-v="${m}" style="${on ? '' : chipOn}">${on ? tr('Aç') : tr('Bağla')}</button></div>`; }).join('')}</div>`;
+    }
+    if (k === 'drill') {
+      const m = state.month, key = s.key, L = r9drill(m, key);
+      return `<h2>🔎 ${tr(L.title)}</h2><p class="note" style="margin-top:-8px">${ymLabel(m)} · ${L.list.length} ${tr('əməliyyat')}</p>`
+        + (L.list.length ? '<div class="list">' + L.list.map(recentRow).join('') + '</div>' : '<div class="empty" style="padding:16px">Yoxdur</div>')
+        + `<div class="card"><div class="kv total"><span>${tr('Cəmi')}</span><b class="num">${money(L.sum)}</b></div>${L.note ? `<p class="note" style="margin:6px 0 0">${tr(L.note)}</p>` : ''}</div>
+        <button class="btn ghost" data-a="openMonth">← ${tr('Ayın hesabı')}</button>`;
+    }
+    if (k === 'recon') {
+      const p = db.people.find(x => x.id === s.id); if (!p) return '<div class="empty">—</div>';
+      const m = s.m || today().slice(0, 7), { L } = reconLines(p, m);
+      return `<h2>📑 ${tr('Üzləşmə aktı')}</h2><p class="note" style="margin-top:-8px">${esc(p.name)}</p>
+        <div class="monthbar"><button class="iconbtn" data-a="reconStep" data-v="-1">‹</button><b>${ymLabel(m)}</b><button class="iconbtn" data-a="reconStep" data-v="1">›</button></div>
+        <div class="card">${L.map(r => r[1] === '' ? `<div style="font-weight:800;margin:8px 0 2px">${esc(r[0])}</div>` : `<div class="kv${r[2] ? ' total' : ''}"><span>${esc(r[0])}</span><b class="num">${esc(r[1])}</b></div>`).join('')}</div>
+        <div class="two">${hasNative && Android.sharePdf ? '<button class="btn ghost" style="margin:0" data-a="reconPdf">📄 PDF</button>' : ''}${p.phone ? `<a class="btn ghost" style="margin:0;text-decoration:none;color:inherit" href="https://wa.me/${waNum(p.phone)}?text=${encodeURIComponent(reconText(p, m))}">${WA_ICON}WhatsApp</a>` : ''}</div>`;
+    }
+    if (k === 'payRcpt') {
+      const p = db.people.find(x => x.id === s.id); if (!p) return '<div class="empty">—</div>';
+      const pays = db.tx.filter(t => t.pid === p.id && t.type === 'pay').sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 20);
+      return `<h2>🧾 ${tr('Ödəniş qəbzi')}</h2><p class="note" style="margin-top:-8px">${esc(p.name)} · ${tr('qəbzi göndəriləcək ödənişi seçin')}</p>`
+        + (pays.length ? '<div class="list">' + pays.map(t => { const x = payInfo(t); return `<div class="row"><div class="grow"><div class="t">${money(t.amount)} · ${payWhen(t)}</div><div class="s">${money(x.before)} → <b>${money(Math.max(0, x.after))}</b>${x.closed.length ? ' · ✓ ' + esc(x.closed.map(c => r9label(c.d)).join(', ')) : ''}</div></div>
+          ${hasNative && Android.sharePdf ? `<button class="chip" data-a="payRcptPdf" data-v="${t.id}">PDF</button>` : ''}${p.phone ? `<a class="chip" style="text-decoration:none" href="https://wa.me/${waNum(p.phone)}?text=${encodeURIComponent(payText(p, t))}">WhatsApp</a>` : ''}</div>`; }).join('') + '</div>' : '<div class="empty">Ödəniş yoxdur</div>');
+    }
+    return es(s);
+  };
+}
+function reconText(p, m) {
+  const { L } = reconLines(p, m);
+  return tr('Salam!') + '\n' + tr('Üzləşmə aktı') + ' — ' + ymLabel(m) + '\n' + p.name + '\n\n' + L.map(r => r[1] === '' ? '\n' + r[0] + ':' : (r[2] ? '*' + r[0] + ': ' + r[1] + '*' : '• ' + r[0] + ': ' + r[1])).join('\n') + '\n\n' + tr('Təşəkkürlər.');
+}
+function payText(p, t) {
+  return tr('Salam!') + '\n' + tr('Ödəniş qəbzi') + ' — ' + payWhen(t) + '\n' + p.name + '\n\n' + payReceiptRows(t).map(r => r[1] === '' ? '\n' + r[0] + ':' : (r[2] ? '*' + r[0] + ': ' + r[1] + '*' : '• ' + r[0] + ': ' + r[1])).join('\n') + '\n\n' + tr('Təşəkkürlər.');
+}
+// the entries behind one figure of "Ayın hesabı"
+function r9drill(m, key) {
+  const inM = t => monthKey(t.date) === m;
+  let list = [], sum = 0, title = '', note = '';
+  if (key === 'pay') { title = 'Borcdan alınan'; list = db.tx.filter(t => inM(t) && t.type === 'pay'); sum = list.reduce((s, t) => s + t.amount, 0); }
+  if (key === 'cash') { title = 'Nağd işlər'; list = db.tx.filter(t => inM(t) && t.type === 'inc' && !t.other); sum = list.reduce((s, t) => s + t.amount - (t.cost || 0), 0); note = 'Hissə xərci çıxılmaqla'; }
+  if (key === 'oth') { title = 'Digər gəlirlər'; list = db.tx.filter(t => inM(t) && t.type === 'inc' && t.other); sum = list.reduce((s, t) => s + t.amount, 0); }
+  if (key === 'cost') { title = 'Hissə xərci'; list = db.tx.filter(t => inM(t) && t.cost); sum = list.reduce((s, t) => s + t.cost, 0); note = 'Siyahıda işin məbləği görünür; cəmi yalnız hissələrin qiymətidir'; }
+  if (key === 'loss') { title = 'Ziyan'; list = db.tx.filter(t => inM(t) && t.type === 'loss'); sum = list.reduce((s, t) => s + t.amount, 0); }
+  if (key === 'bexp') { title = 'İş xərci'; list = db.tx.filter(t => inM(t) && t.type === 'exp'); sum = list.reduce((s, t) => s + t.amount, 0); }
+  if (key === 'mine') { title = 'Xərclərim'; list = db.tx.filter(t => inM(t) && t.type === 'pexp'); sum = list.reduce((s, t) => s + t.amount, 0); }
+  if (key === 'debt') { title = 'Bu ay yazılan borc (gəlir deyil)'; list = db.tx.filter(t => inM(t) && (t.type === 'debt' || (t.type === 'adj' && !(t.wo && t.woKeep)))); sum = list.reduce((s, t) => s + t.amount, 0); }
+  list.sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+  return { list, sum, title, note };
+}
+{
+  const rs = renderSheet;
+  renderSheet = function () {
+    let h = rs();
+    const s = state.sheet;
+    if (!s) return h;
+    // no day after today can be picked for an entry
+    h = h.replace(/id="(f_date|f_lbdate|f_bpdate|f_spdate|f_bstart)" type="date"/g, `id="$1" type="date" max="${today()}"`);
+    if (s.kind === 'month') {
+      const map = [['Borcdan alınan', 'pay'], ['Nağd işlər', 'cash'], ['Digər gəlirlər', 'oth'], ['Hissə xərci', 'cost'], ['Ziyan', 'loss'], ['İş xərci', 'bexp'], ['Xərclərim', 'mine'], ['Bu ay yazılan borc (gəlir deyil)', 'debt']];
+      for (const [l, kk] of map) h = h.replace(`<div class="kv"><span>${l}</span>`, `<div class="kv" data-a="drill" data-v="${kk}" style="cursor:pointer"><span>${l} ›</span>`);
+      const ov = overpaid();
+      if (ov) h = h.replace('<div class="kv"><span>Müştərilərin qalan borcu</span>', `<div class="kv" data-a="openOver" style="cursor:pointer"><span>↩️ ${tr('Artıq ödənişlər')} ›</span><b class="num">${money(ov)}</b></div><div class="kv"><span>Müştərilərin qalan borcu</span>`);
+      if (isLocked(state.month)) h = h.replace('<h2>📋 Ayın hesabı</h2>', `<h2>📋 Ayın hesabı <span class="badge ok">🔒 ${tr('bağlıdır')}</span></h2>`);
+    }
+    if (s.kind === 'person' && !s.id && ['', 'cash'].includes(s.mode || '')) {
+      const fb = freqBox();
+      if (fb) h = h.replace(/(<input class="field" id="f_note"[^>]*>)/, '$1' + fb);
+    }
+    return h;
+  };
+}
+// the customer's page: reconciliation and payment receipts
+{
+  const rp = renderPerson;
+  renderPerson = function () {
+    const h = rp(), p = db.people.find(x => x.id === state.person);
+    if (!p) return h;
+    const hasPay = db.tx.some(t => t.pid === p.id && t.type === 'pay');
+    const row = `<div class="two" style="margin-top:10px"><button class="btn ghost" style="margin:0" data-a="openRecon">📑 ${tr('Üzləşmə aktı')}</button>${hasPay ? `<button class="btn ghost" style="margin:0" data-a="openPayRcpt">🧾 ${tr('Ödəniş qəbzi')}</button>` : ''}</div>`;
+    const key = 'data-a="shareAccount">📤 Paylaş / çap et</button></div>';
+    return h.includes(key) ? h.replace(key, key + row) : h;
+  };
+}
+// settings: closed months and undoing a restore
+{
+  const rsp = renderSettingsPage;
+  renderSettingsPage = function () {
+    const h = rsp(), n = Object.keys(mlocks()).length;
+    let pre = null; try { pre = JSON.parse(localStorage.getItem('preRestore') || 'null'); } catch (e) {}
+    const grp = `<div class="slabel">${tr('Hesab nəzarəti')}</div><div class="sgroup">
+        ${srow('openLocks', 'lock', '#0F766E', 'Ayı bağla', n ? tr('{0} ay bağlıdır', { 0: n }) : 'Heç biri')}
+        ${pre ? srow('undoRestore', 'restore', '#B45309', 'Bərpadan əvvəlki hala qaytar', tr(fmtDate(localDay(pre.at))) + ', ' + hmOf(pre.at)) : ''}
+      </div>
+      <div class="slabel">Məlumat</div>`;
+    return h.replace('<div class="slabel">Məlumat</div>', grp);
+  };
+}
+// the PIN opens a closed month
+{
+  const pd = pinDone;
+  pinDone = function () {
+    const P = state.pin;
+    if (P && P.mode === 'verify' && P.next && String(P.next).startsWith('month:')) {
+      const code = P.entered; P.entered = ''; P.err = '';
+      if (!Android.checkPin(code)) { P.err = 'Səhv PIN kod'; return render(); }
+      const m = P.next.slice(6); state.pin = null;
+      setLock(m, false); r9user++; try { save(); } finally { r9user--; }
+      render(); return toast(tr('{0} açıldı', { 0: ymLabel(m) }));
+    }
+    return pd();
+  };
+}
+// swipe a customer to the right: paid everything
+{
+  let sx = 0, sy = 0, el = null, mode = null, dx = 0, bg = null;
+  app.addEventListener('touchstart', e => {
+    const r = e.target.closest('[data-hold^="person:"],[data-hold^="wo:"]');
+    el = null; mode = null; dx = 0;
+    if (!r || r.closest('[data-today]') || (state.sheet && !r.dataset.hold.startsWith('wo:'))) return;
+    const pid = r.dataset.hold.split(':')[1];
+    if (!(balanceOf(pid) > 0)) return;
+    el = r; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  app.addEventListener('touchmove', e => {
+    if (!el) return;
+    const x = e.touches[0].clientX - sx, y = e.touches[0].clientY - sy;
+    if (!mode && (Math.abs(x) > 10 || Math.abs(y) > 10)) mode = x > 0 && Math.abs(x) > Math.abs(y) ? 'r' : 'n';
+    if (mode !== 'r') return;
+    dx = Math.max(0, x);
+    if (!bg) {
+      bg = document.createElement('div'); bg.className = 'swipe-bg';
+      bg.style.cssText = 'background:var(--pay);justify-content:flex-start;padding-left:20px;padding-right:0';
+      bg.innerHTML = '<span>✅ ' + esc(tr('Tam ödədi')) + '</span>';
+      el.parentNode.insertBefore(bg, el); bg.style.top = el.offsetTop + 'px'; bg.style.height = el.offsetHeight + 'px';
+    }
+    el.style.transition = 'none'; el.style.transform = `translateX(${dx}px)`;
+  }, { passive: true });
+  const end = () => {
+    const r = el, b = bg; el = null; bg = null;
+    if (!r || mode !== 'r') return;
+    held = true; setTimeout(() => { held = false; }, 400);
+    r.style.transition = 'transform .2s ease'; r.style.transform = '';
+    setTimeout(() => b && b.remove(), 200);
+    if (dx > r.offsetWidth * 0.35) {
+      const pid = r.dataset.hold.split(':')[1];
+      setTimeout(() => { const keep = state.person; state.person = pid; try { actions.payAll(); } finally { if (state.person === pid) state.person = keep; render(); } }, 220);
+    }
+  };
+  app.addEventListener('touchend', end);
+  app.addEventListener('touchcancel', end);
+}
+
+Object.assign(actions, {
+  useFreq(v) {
+    const t = (state.freq || [])[+v]; if (!t) return;
+    const a = document.getElementById('f_amount'); if (a) a.value = amountInput(t.amount);
+    const c = document.getElementById('f_cost'); if (c) c.value = amountInput(t.cost);
+    const n = document.getElementById('f_note'); if (n) n.value = t.note;
+    const pr = document.getElementById('f_profit'); if (pr) pr.textContent = t.cost ? tr('Qazanc') + ': ' + money(t.amount - t.cost) : '';
+  },
+  openNisye() { state.sheet = { kind: 'nisye' }; render(); },
+  openJobs() { state.sheet = { kind: 'jobs' }; render(); },
+  openAging() { state.sheet = { kind: 'aging' }; render(); },
+  openWhere() { state.sheet = { kind: 'where' }; render(); },
+  openKdiff() { state.sheet = { kind: 'kdiff' }; render(); },
+  openOver() { state.sheet = { kind: 'over' }; render(); },
+  openLocks() { state.sheet = { kind: 'locks' }; render(); },
+  openKassaDay(v) { state.sheet = { kind: 'kassa', d: v || today() }; render(); },
+  drill(v) { state.sheet = { kind: 'drill', key: v }; render(); },
+  lockMonth(v) {
+    if (!confirm(tr('{0} bağlansın? Bu ayda heç nə yazılmayacaq, düzəldilməyəcək və silinməyəcək.', { 0: ymLabel(v) }))) return;
+    setLock(v, true); save(); render(); toast(tr('{0} bağlandı', { 0: ymLabel(v) }));
+  },
+  unlockMonth(v) {
+    if (hasNative && Android.pinSet && Android.pinSet()) { state.pin = { mode: 'verify', next: 'month:' + v, len: Android.pinLength(), entered: '', err: '' }; return render(); }
+    if (!confirm(tr('{0} açılsın?', { 0: ymLabel(v) }) + '\n' + tr('(PIN qoysanız, ayı açmaq üçün PIN istənəcək)'))) return;
+    setLock(v, false); save(); render(); toast(tr('{0} açıldı', { 0: ymLabel(v) }));
+  },
+  undoRestore() {
+    let pre = null; try { pre = JSON.parse(localStorage.getItem('preRestore') || 'null'); } catch (e) {}
+    if (!pre || !pre.data) return toast('Tapılmadı');
+    importPlain(pre.data);
+  },
+  openRecon() { state.sheet = { kind: 'recon', id: state.person, m: today().slice(0, 7) }; render(); },
+  reconStep(v) { const s = state.sheet; if (!s) return; const n = r9step(s.m, +v); if (n > today().slice(0, 7)) return; s.m = n; render(); },
+  reconPdf() {
+    const s = state.sheet, p = s && db.people.find(x => x.id === s.id); if (!p) return;
+    const { L } = reconLines(p, s.m);
+    Android.sharePdf(JSON.stringify({ file: 'Uzlesme-' + s.m + '.pdf', title: tr('Üzləşmə aktı'), sub: p.name + ' · ' + ymLabel(s.m), rows: L, foot: 'Hesabat · ' + tr(fmtDate(today())) }));
+  },
+  openPayRcpt() { state.sheet = { kind: 'payRcpt', id: state.person }; render(); },
+  payRcptPdf(v) {
+    const t = db.tx.find(x => x.id === v), p = t && db.people.find(x => x.id === t.pid); if (!p) return;
+    Android.sharePdf(JSON.stringify({ file: 'Odenis-qebzi.pdf', title: tr('Ödəniş qəbzi'), sub: p.name + ' · ' + payWhen(t), rows: payReceiptRows(t), foot: 'Hesabat' }));
+  }
+});
 
 load();
 syncLoanTx();

@@ -237,6 +237,44 @@ public class MainActivity extends Activity {
                         .show();
                 return true;
             }
+
+            // Rev. 09: a text question (the reason of a change), answered in the app's own dialog
+            @Override
+            public boolean onJsPrompt(WebView view, String url, String message, String def, final android.webkit.JsPromptResult result) {
+                final android.widget.EditText in = new android.widget.EditText(MainActivity.this);
+                in.setSingleLine(true);
+                if (def != null) in.setText(def);
+                android.widget.FrameLayout box = new android.widget.FrameLayout(MainActivity.this);
+                int pd = (int) (20 * getResources().getDisplayMetrics().density);
+                box.setPadding(pd, pd / 2, pd, 0);
+                box.addView(in);
+                final android.app.AlertDialog dlg = new android.app.AlertDialog.Builder(MainActivity.this)
+                        .setMessage(message)
+                        .setView(box)
+                        .setPositiveButton(android.R.string.ok, new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(android.content.DialogInterface d, int w) {
+                                result.confirm(in.getText().toString());
+                            }
+                        })
+                        .setNegativeButton(android.R.string.cancel, new android.content.DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(android.content.DialogInterface d, int w) {
+                                result.cancel();
+                            }
+                        })
+                        .setOnCancelListener(new android.content.DialogInterface.OnCancelListener() {
+                            @Override
+                            public void onCancel(android.content.DialogInterface d) {
+                                result.cancel();
+                            }
+                        })
+                        .create();
+                dlg.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+                dlg.show();
+                in.requestFocus();
+                return true;
+            }
         });
         web.addJavascriptInterface(new Bridge(), "Android");
         launchTarget = getIntent().getStringExtra("go");
