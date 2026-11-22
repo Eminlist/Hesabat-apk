@@ -1,6 +1,6 @@
 // Hesabat 4.0 — sadə versiya. Hesablamalar calc.js-dədir (HC).
 'use strict';
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.0.1';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.HC;
 const pad = C.pad;
@@ -177,7 +177,7 @@ function applyTheme() {
 applyTheme();
 
 // ---------- bölmələri söndürmək (yalnız bu telefonda) ----------
-const MODS = [['borclar', 'Borclar (verdiyim / aldığım)'], ['kassa', 'Kassa üzləşməsi'], ['kart', 'Nağd / Kart seçimi']];
+const MODS = [['borclar', 'Borclar (verdiyim / aldığım)'], ['kassa', 'Kassa (cibimdəki və kartdakı pul)'], ['kart', 'Nağd / Kart seçimi']];
 let mods = { borclar: true, kassa: true, kart: true };
 try { Object.assign(mods, JSON.parse(localStorage.getItem('mods') || '{}')); } catch (e) {}
 const saveMods = () => { try { localStorage.setItem('mods', JSON.stringify(mods)); } catch (e) {} };
@@ -235,7 +235,7 @@ function pageHead(title, extra) {
 
 // ---------- ANA EKRAN ----------
 function renderHome() {
-  const td = today(), m = td.slice(0, 7), M = C.monthFlow(db, m), D = C.dayFlow(db, td);
+  const td = today(), m = td.slice(0, 7), M = C.monthFlow(db, m), D = C.dayFlow(db, td), K = C.kassaNow(db);
   const nis = C.nisyeTotal(db), lateU = db.people.map(p => ({ p, o: C.overdue(db, p.id, td) })).filter(x => x.o.sum > 0);
   const lateL = C.parties(db, 'lend').filter(g => g.left > 0 && g.due && g.due < td);
   const lateB = C.parties(db, 'borrow').filter(g => g.left > 0 && g.due && g.due < td);
@@ -254,12 +254,11 @@ function renderHome() {
     ${mods.borclar && lateL.length ? `<button class="odban" data-a="openSide" data-v="lend"><span>⚠ Verdiyim borc gecikir: ${esc(lateL.map(g => g.name).join(', '))}</span></button>` : ''}
     ${mods.borclar && lateB.length ? `<button class="odban soon" data-a="openSide" data-v="borrow"><span>⏰ Qaytarmalı olduğum borc gecikir: ${esc(lateB.map(g => g.name).join(', '))}</span></button>` : ''}
     <div class="hm3">
-      <button class="tile" data-a="openDay" data-v="${td}"><small>Bu günün kassası</small>
-        <b class="num ${netCls(D.nagdIn - D.nagdOut)}">${signed(D.nagdIn - D.nagdOut)}</b><span>💵 Nağd</span>
-        ${mods.kart ? `<b class="num ${netCls(D.kartIn - D.kartOut)}" style="font-size:16px;margin-top:4px">${signed(D.kartIn - D.kartOut)}</b><span>💳 Kart</span>` : ''}</button>
+      ${mods.kassa ? `<button class="tile" data-a="kassa"><small>Kassa</small>
+        <b class="num ${K.nagd < 0 ? 'neg' : ''}">${money(K.nagd)}</b><span>💵 Cibimdəki pul</span>
+        ${mods.kart ? `<b class="num ${K.kart < 0 ? 'neg' : ''}" style="font-size:16px;margin-top:4px">${money(K.kart)}</b><span>💳 Kartdakı pul</span>` : ''}</button>` : `<button class="tile" data-a="openDay" data-v="${td}"><small>Bu gün</small><b class="num ${netCls(D.qaliq)}">${signed(D.qaliq)}</b><span>+${money(D.gelir)} · −${money(D.cixis)}</span></button>`}
       <button class="tile" data-a="tab" data-v="people"><small>Ustalardakı nisyə</small><b class="num debt">${money(nis)}</b><span>${db.people.filter(p => C.nisye(db, p.id) > 0).length} usta</span></button>
     </div>
-    ${mods.kassa ? `<button class="btn ghost" data-a="kassa" style="margin:0 0 4px">🧮 Axşam kassanı say</button>` : ''}
     <div class="sec"><b>Son əməliyyatlar</b><button data-a="openAll">Hamısı</button></div>
     ${recent.length ? `<div class="list">${recent.map(t => txRow(t, true)).join('')}</div>` : '<div class="empty">Hələ heç nə yazılmayıb.<br>Aşağıdakı «+» düyməsi ilə başlayın.</div>'}
   </main>`;
@@ -369,13 +368,11 @@ function renderReport() {
   </main>`;
 }
 function renderDay(pg) {
-  const d = pg.d, F = C.dayFlow(db, d), K = C.kassaDay(db, d);
+  const d = pg.d, F = C.dayFlow(db, d);
   const tx = sortTx(db.tx.filter(t => t.date === d && visibleTx(t)));
   return `<div class="page">${pageHead(fmtDate(d))}
   <main style="padding-top:6px;padding-bottom:40px">
     ${reportCard(F)}
-    ${mods.kassa ? `<div class="card">${kv('💵 Kassada olmalıdır (nağd)', money(K.expect))}${K.k.close != null ? kv('Sayılan', money(K.k.close)) + kv('Fərq', signed(K.k.close - K.expect), K.k.close - K.expect === 0 ? 'pay' : 'neg') : ''}
-      <button class="btn ghost" data-a="kassa" data-v="${d}">🧮 Kassanı say</button></div>` : ''}
     <div class="section-title">Əməliyyatlar</div>
     ${tx.length ? `<div class="list">${tx.map(t => txRow(t, false)).join('')}</div>` : '<div class="empty">Bu gün heç nə yazılmayıb</div>'}
   </main></div>`;
@@ -423,6 +420,7 @@ function renderSettings() {
     <div class="slabel">Digər</div>
     <div class="sgroup">
       ${srow('openTrash', null, '🗑', '#8B8D98', 'Zibil qutusu', `<em>${db.trash.length || ''}</em>`)}
+      ${srow('resetAll', null, '⟲', '#E5484D', 'Hər şeyi sil — yalnız borclar qalsın', '')}
       ${srow('openPrivacy', null, '🛡', '#30A46C', 'Məxfilik siyasəti', '')}
       ${srow('noop', null, 'ℹ', '#0090FF', 'Versiya', `<em>${APP_VERSION}</em>`)}
     </div>
@@ -543,13 +541,13 @@ function renderSheet(s) {
       ${saveBtn('savePerson')}${p ? '<button class="btn danger" data-a="delPerson">Ustanı sil</button>' : ''}`;
     }
     case 'kassa': {
-      const d = s.d || today(), K = C.kassaDay(db, d);
-      return `<h2>🧮 Kassa — ${fmtDate(d)}</h2>
-      <div class="card">${kv('Gün başı nağd', K.open != null ? money(K.open) : '—')}${kv('+ Nağd daxil olan', '+' + money(K.f.nagdIn), 'pay')}${kv('− Nağd çıxan', (K.f.nagdOut ? '−' : '') + money(K.f.nagdOut), 'exp')}<div class="kv total"><span>Kassada olmalıdır</span><b class="num">${money(K.expect)}</b></div></div>
-      <label>Gün başı nağd (boş qalsa, dünənki sayılan götürülür)</label><input class="field num" id="f_open" inputmode="decimal" value="${K.k.open != null ? amountInput(K.k.open) || '0' : ''}" placeholder="${K.open != null ? amountInput(K.open) || '0' : '0'}" autocomplete="off">
-      <label>Cibimdəki real nağd pul</label><input class="field big num" id="f_close" inputmode="decimal" value="${K.k.close != null ? amountInput(K.k.close) || '0' : ''}" placeholder="sayın və yazın" autocomplete="off">
-      ${K.k.close != null ? (K.k.close === K.expect ? '<div class="ok-box">✓ Kassa düzdür</div>' : `<div class="bad-box">Fərq: ${signed(K.k.close - K.expect)}</div>`) : ''}
-      ${saveBtn('saveKassa', 'Yoxla və yadda saxla')}`;
+      const K = C.kassaNow(db);
+      return `<h2>💰 Kassa</h2>
+      <div class="card">${kv('💵 Cibimdəki pul', money(K.nagd), K.nagd < 0 ? 'neg' : '')}${mods.kart ? kv('💳 Kartdakı pul', money(K.kart), K.kart < 0 ? 'neg' : '') : ''}
+        <div class="note">Hər yazdığınız gəlir və xərc buraya özü əlavə olunur / çıxılır.</div></div>
+      <label>Cibimdəki pul (indi)</label><input class="field big num" id="f_nagd" inputmode="decimal" value="${amountInput(K.nagd) || (K.set ? '0' : '')}" placeholder="0" autocomplete="off">
+      ${mods.kart ? `<label>Kartdakı pul (indi)</label><input class="field big num" id="f_kart" inputmode="decimal" value="${amountInput(K.kart) || (K.set ? '0' : '')}" placeholder="0" autocomplete="off">` : ''}
+      ${saveBtn('saveKassa')}`;
     }
     case 'tx': { // nisyə düzəlişi, ziyan və digər köhnə növlər: yalnız baxmaq və silmək
       const t = db.tx.find(x => x.id === s.id);
@@ -830,15 +828,14 @@ const actions = {
     state.sheet = null; state.pages = state.pages.filter(x => !(x.kind === 'person' && x.id === p.id));
     save(); render(); toast('Silindi');
   },
-  kassa(v) { openSheet({ kind: 'kassa', d: v || today() }); },
+  kassa() { openSheet({ kind: 'kassa' }); },
   saveKassa() {
-    const d = state.sheet.d, id = 'k' + d;
-    let k = db.kassa.find(x => x.id === id || x.date === d);
-    if (!k) { k = { id, date: d }; db.kassa.push(k); }
-    const o = parseAmount(val('f_open'), true), c = parseAmount(val('f_close'), true);
-    if (o != null) k.open = o; else delete k.open;
-    if (c != null) k.close = c; else delete k.close;
-    k.u = Date.now(); save(); openSheet({ kind: 'kassa', d });
+    const n = parseAmount(val('f_nagd'), true), k2 = mods.kart ? parseAmount(val('f_kart'), true) : null, cur0 = C.kassaNow(db);
+    let k = db.kassa.find(x => x.id === 'kassa');
+    if (!k) { k = { id: 'kassa' }; db.kassa.push(k); }
+    const now = Date.now();
+    Object.assign(k, { nagd: n != null ? n : 0, kart: k2 != null ? k2 : cur0.kart, at: now, u: now });
+    save(); closeSheet(); toast('Kassa yazıldı');
   },
 
   // ayarlar
@@ -883,6 +880,20 @@ const actions = {
     }
     db.trash = db.trash.filter(x => !back.includes(x));
     save(); render(); toast('Qaytarıldı');
+  },
+  // ustalar, nisyə, gəlir, xərc, kassa və s. silinir; yalnız «Borc verdim / Borc aldım» qalır
+  resetAll() {
+    if (!confirm('Ustalar, nisyə, bütün gəlir və xərclər, kassa silinəcək. Yalnız «Borc verdim» və «Borc aldım» qalacaq. Davam edək?')) return;
+    if (!confirm('Əminsiniz? Bu geri qaytarılmır (Google-dakı surət də yenilənəcək).')) return;
+    const now = Date.now(), keep = t => ['lend', 'lback', 'brw', 'brep'].includes(t.type);
+    for (const k of LISTS) {
+      if (k === 'loans' || k === 'borrow') continue;
+      const list = k === 'tx' ? db.tx.filter(t => !keep(t)) : db[k];
+      list.forEach(r => { if (r && r.id) db.removed[r.id] = now; });
+      db[k] = k === 'tx' ? db.tx.filter(keep) : [];
+    }
+    state.pages = []; state.tab = 'home'; state.month = today().slice(0, 7);
+    save(); render(); toast('Silindi. Yalnız borclar qaldı');
   },
   emptyTrash() {
     if (!confirm('Zibil qutusu həmişəlik boşaldılsın?')) return;

@@ -100,4 +100,16 @@ test('Silinmiş borcun gizli düzəlişi (corr) hesaba düşmür', () => {
   assert.strictEqual(f.parts, 0); assert.strictEqual(f.newDebt, 0);
 });
 
+test('Kassa: cibimdəki və kartdakı pul', () => {
+  const db = empty();
+  db.tx.push({ id: 'old', type: 'inc', amount: 99900, date: '2026-11-01', created: 50 });
+  db.kassa.push({ id: 'kassa', nagd: 20000, kart: 50000, at: 100 });
+  db.tx.push({ id: '1', type: 'inc', amount: 3000, date: '2026-11-22', created: 101 });
+  db.tx.push({ id: '2', type: 'pexp', amount: 1000, method: 'kart', date: '2026-11-22', created: 102 });
+  db.tx.push({ id: '3', type: 'debt', amount: 5000, cost: 500, date: '2026-11-22', created: 103 });
+  const k = C.kassaNow(db);
+  assert.strictEqual(k.nagd, 20000 + 3000 - 500);
+  assert.strictEqual(k.kart, 50000 - 1000);
+});
+
 console.log(n + ' yoxlama keçdi');

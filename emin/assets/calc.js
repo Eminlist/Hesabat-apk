@@ -159,6 +159,15 @@
     return { k, open, copen, f, expect: (open || 0) + f.nagdIn - f.nagdOut, cexpect: (copen || 0) + f.kartIn - f.kartOut };
   }
 
+  // ---------- kassa: cibimdəki pul və kartdakı pul ----------
+  // Sonuncu dəfə yazılan məbləğ + ondan sonra yazılan bütün əməliyyatlar
+  function kassaNow(db) {
+    const k = db.kassa.find(x => x.id === 'kassa') || null;
+    const at = k ? k.at || 0 : 0;
+    const f = flow(db.tx.filter(t => (t.created || 0) > at));
+    return { set: !!k, at, nagd: (k ? k.nagd || 0 : 0) + f.nagdIn - f.nagdOut, kart: (k ? k.kart || 0 : 0) + f.kartIn - f.kartOut };
+  }
+
   G.HC = { pad, isCard, flow, dayFlow, monthFlow, nisye, nisyeTotal, debtState, overdue, daysBetween, loanLeft, syncLoanTx,
-    borrowDate, borrowCalc, syncBorrowTx, norm, parties, payBack, kassaDay };
+    borrowDate, borrowCalc, syncBorrowTx, norm, parties, payBack, kassaDay, kassaNow };
 })(typeof window !== 'undefined' ? window : globalThis);
