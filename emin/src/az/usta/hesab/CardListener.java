@@ -36,21 +36,68 @@ public class CardListener extends NotificationListenerService {
             "^[^\\p{L}\\p{N}]*([^:\\n]{2,40}?)\\s*:\\s*([+\\-−])\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|€|EUR|\\$|USD|₽|RUB|£|GBP|₺|TRY)?\\s*(?:\\(\\s*[+\\-−]?\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|€|EUR|\\$|USD|₽|RUB|£|GBP|₺|TRY)\\s*\\))?");
     private static final Pattern CARD = Pattern.compile("Kart\\s*:?\\s*\\*+\\s*([0-9]{4})");
 
+    /** Is this the ABB bank app? The exact package name is not guessed any more. */
+    static boolean isBank(String pkg) {
+        if (pkg == null) return false;
+        String p = pkg.toLowerCase();
+        if (p.equals("az.usta.hesab")) return false;
+        return p.equals(ABB) || p.contains("abb") || p.contains("iba") || p.contains("ibar") || p.contains("mobilbank") || p.contains("mobilebank");
+    }
+
+    @Override
+    public void onListenerConnected() {
+        // notifications already sitting in the panel are read too
+        try {
+            StatusBarNotification[] all = getActiveNotifications();
+            if (all != null) for (StatusBarNotification s : all) onNotificationPosted(s);
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         try {
-            if (sbn == null || !ABB.equals(sbn.getPackageName())) return;
+            if (sbn == null) return;
             Notification n = sbn.getNotification();
             if (n == null) return;
             Bundle x = n.extras;
             String title = str(x, Notification.EXTRA_TITLE);
             String body = str(x, Notification.EXTRA_BIG_TEXT);
             if (body.isEmpty()) body = str(x, Notification.EXTRA_TEXT);
-            JSONObject op = parse(title, body, sbn.getPostTime());
+            if (body.isEmpty()) {
+                CharSequence[] lines = x == null ? null : x.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+                if (lines != null) { StringBuilder b = new StringBuilder(); for (CharSequence l : lines) b.append(l).append('\n'); body = b.toString().trim(); }
+            }
+            if (body.isEmpty() && n.tickerText != null) body = n.tickerText.toString().trim();
+            String pkg = sbn.getPackageName();
+            boolean bank = isBank(pkg);
+            boolean money = MONEY.matcher(title + " " + body).find();
+            if (!bank && !money) return;
+            JSONObject op = bank ? parse(title, body, sbn.getPostTime()) : null;
+            log(this, pkg, title, body, sbn.getPostTime(), op != null);
             if (op == null) return;
             add(this, op);
         } catch (Throwable ignored) {
         }
+    }
+
+    private static final Pattern MONEY = Pattern.compile("[0-9]\\s*(₼|AZN|azn|man\\.?)");
+
+    /** The last bank-like notifications, exactly as they came — shown in Ayarlar so the format can be checked. */
+    static synchronized void log(Context ctx, String pkg, String title, String body, long when, boolean ok) {
+        try {
+            SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            JSONArray a = new JSONArray(p.getString("log", "[]"));
+            JSONArray keep = new JSONArray();
+            for (int i = Math.max(0, a.length() - 19); i < a.length(); i++) keep.put(a.get(i));
+            keep.put(new JSONObject().put("pkg", pkg).put("title", title).put("body", body).put("at", when).put("ok", ok));
+            p.edit().putString("log", keep.toString()).commit();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static String log(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("log", "[]");
     }
 
     private static String str(Bundle b, String k) {
@@ -70,7 +117,7 @@ public class CardListener extends NotificationListenerService {
             head = nl < 0 ? all : all.substring(0, nl);
             rest = nl < 0 ? "" : all.substring(nl + 1);
             m = HEAD.matcher(head);
-            if (!m.find()) return null;
+            if (!m.find()) return loose(title, body, when);
         }
         String word = m.group(1).trim();
         String lw = word.toLowerCase();
@@ -112,10 +159,66 @@ public class CardListener extends NotificationListenerService {
         return o;
     }
 
+    // "Mədaxil 50.00 AZN", "Ödəniş 12,40 AZN BRAVO", "Hesabınıza 100 ₼ daxil oldu" …
+    private static final Pattern AMT = Pattern.compile("([+\\-−])?\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|azn|man\\.?)");
+    private static final Pattern IN_W = Pattern.compile("(?i)(mədaxil|medaxil|daxil ol|mədaxil|alındı|alindi|qəbul|qebul|köçürmə alın|geri qaytar|refund|cashback|keşbek|kesbek|credit|зачисл|поступ|пополн)");
+    private static final Pattern OUT_W = Pattern.compile("(?i)(məxaric|mexaric|ödəniş|odenis|alış|alis|çıxarış|cixaris|silindi|tutuldu|nağdlaşdır|nagdlasdir|köçürmə|kocurme|debit|purchase|payment|списан|оплат|покупк|снят)");
+
+    /** Any other wording: the manat amount and the words say which way the money went. */
+    static JSONObject loose(String title, String body, long when) throws Exception {
+        String all = (title + "\n" + body).trim();
+        String low = all.toLowerCase();
+        if (low.contains("uğursuz") || low.contains("ugursuz") || low.contains("ləğv") || low.contains("imtina") || low.contains("rədd") || low.contains("otp") || low.contains("şifrə") || low.contains("kod:")) return null;
+        Matcher a = AMT.matcher(all);
+        if (!a.find()) return null;
+        // the balance line is not the operation amount
+        int bal = low.indexOf("balans");
+        if (bal >= 0 && a.start() > bal) return null;
+        String sign = a.group(1);
+        boolean in;
+        if (sign != null) in = "+".equals(sign);
+        else if (IN_W.matcher(all).find()) in = true;
+        else if (OUT_W.matcher(all).find()) in = false;
+        else return null;
+        long azn = cents(a.group(2));
+        if (azn <= 0) return null;
+        String card = "", place = "";
+        Matcher c = CARD.matcher(all);
+        if (c.find()) card = c.group(1);
+        else { Matcher c2 = Pattern.compile("\\*+\\s*([0-9]{4})").matcher(all); if (c2.find()) card = c2.group(1); }
+        for (String line : body.split("\n")) {
+            String l = line.trim();
+            if (l.isEmpty() || l.toLowerCase().startsWith("kart") || l.toLowerCase().startsWith("balans") || AMT.matcher(l).find()) continue;
+            place = l;
+            break;
+        }
+        String word = title.isEmpty() ? (in ? "Mədaxil" : "Məxaric") : title;
+        return make(in, word, azn, a.group(2).replace(" ", "") + "₼", card, place, title, body, when);
+    }
+
+    private static JSONObject make(boolean in, String word, long azn, String orig, String card, String place, String title, String body, long when) throws Exception {
+        Calendar k = Calendar.getInstance();
+        k.setTimeInMillis(when);
+        JSONObject o = new JSONObject();
+        o.put("bank", "ABB");
+        o.put("dir", in ? "in" : "out");
+        o.put("word", word);
+        o.put("amount", azn);
+        o.put("orig", orig);
+        o.put("card", card);
+        o.put("place", place);
+        o.put("date", String.format(java.util.Locale.US, "%04d-%02d-%02d", k.get(Calendar.YEAR), k.get(Calendar.MONTH) + 1, k.get(Calendar.DAY_OF_MONTH)));
+        o.put("time", String.format(java.util.Locale.US, "%02d:%02d", k.get(Calendar.HOUR_OF_DAY), k.get(Calendar.MINUTE)));
+        o.put("at", when);
+        o.put("key", "abb:" + Integer.toHexString((title + "|" + body).hashCode()) + ":" + (when / 60000));
+        o.put("sig", "abb:" + Integer.toHexString((title + "|" + body).hashCode()));
+        return o;
+    }
+
     private static String cur(String s) {
         if (s == null) return "";
         switch (s) {
-            case "₼": case "AZN": return "AZN";
+            case "₼": case "AZN": case "azn": case "man": case "man.": return "AZN";
             case "€": case "EUR": return "EUR";
             case "$": case "USD": return "USD";
             case "₽": case "RUB": return "RUB";

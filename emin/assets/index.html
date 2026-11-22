@@ -5313,7 +5313,7 @@ window.onCardTx = function () {
     const note = o.place && !/^abb mobile$/i.test(o.place) ? o.place : o.word;
     const base = { id: uid(), pid: null, amount: o.amount, date: o.date, time: o.time, note, method: 'kart', bank: o.bank, card: o.card || '', ck: o.key, auto: true, created: o.at || Date.now(), u: Date.now() };
     if (o.dir === 'in') db.tx.push(Object.assign(base, { type: 'inc', other: true }));
-    else if ((CARD_OUT[o.bank] || []).includes(o.card)) db.tx.push(Object.assign(base, { type: 'pexp', cid: resolveCid(guessCat(note) || 'new:Kart') }));
+    else if (!o.card || (CARD_OUT[o.bank] || []).includes(o.card)) db.tx.push(Object.assign(base, { type: 'pexp', cid: resolveCid(guessCat(note) || 'new:Kart') }));
     else continue;
     n++;
   }
@@ -5322,6 +5322,16 @@ window.onCardTx = function () {
   if (!state.pin) render();
   toast(tr('💳 Kartdan {0} əməliyyat yazıldı', { 0: n }));
 };
+function cardLogHtml() {
+  let a = [];
+  try { a = JSON.parse((Android.cardLog && Android.cardLog()) || '[]'); } catch (e) {}
+  const rows = a.slice(-10).reverse().map(x => {
+    const d = new Date(x.at || 0), t = String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    return `<div style="border-top:1px solid #e5e7eb;padding:6px 0;font-size:12px;line-height:1.35"><b class="${x.ok ? 'pay' : 'debt'}">${x.ok ? '✓ ' + tr('yazıldı') : '✗ ' + tr('yazılmadı')}</b> · ${esc(t)} · <span style="opacity:.7">${esc(x.pkg || '')}</span><br>${esc(x.title || '')}<br><span style="opacity:.8">${esc(x.body || '').replace(/\n/g, '<br>')}</span></div>`;
+  }).join('');
+  return `<div class="slabel" style="margin-top:12px">${tr('Son bank bildirişləri (yoxlama)')}</div>
+    <div style="max-height:260px;overflow:auto">${rows || `<p class="note">${tr('Hələ bank bildirişi gəlməyib. Kartla bir əməliyyat edin, sonra buranı yenidən açın.')}</p>`}</div>`;
+}
 Object.assign(actions, {
   openCardRead() { state.sheet = { kind: 'cardRead' }; render(); },
   cardAccessGo() { Android.openCardAccess(); },
@@ -5349,6 +5359,7 @@ Object.assign(actions, {
       <div class="kv"><span>${tr('Bildirişlərə giriş')}</span><b class="${on ? 'pay' : 'debt'}">${tr(on ? 'Açıqdır' : 'Sönülüdür')}</b></div>
       ${on ? '' : `<p class="note">${tr('Açılan siyahıda «Hesabat» tapıb yandırın. Yandırmaq olmursa (məhdud ayar), aşağıdakı «Proqram məlumatı» düyməsini basın → sağ yuxarıda ⋮ → «Məhdud ayarlara icazə ver», sonra yenidən yandırın.')}</p>`}
       <button class="btn primary" data-a="cardAccessGo">${tr(on ? 'Bildirişlərə giriş ayarı' : 'İcazə ver')}</button>
+      ${on ? cardLogHtml() : ''}
       ${on ? '' : `<button class="btn ghost" data-a="cardAppInfo">${tr('Proqram məlumatı')}</button>`}
       <button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>`;
   };

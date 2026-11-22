@@ -356,6 +356,12 @@ public class MainActivity extends Activity {
             return;
         }
         js("window.onAppResume && window.onAppResume()");
+        // after an update Android sometimes leaves the notification reader disconnected: connect it again
+        try {
+            if (Build.VERSION.SDK_INT >= 24 && CardListener.allowed(this))
+                android.service.notification.NotificationListenerService.requestRebind(new android.content.ComponentName(this, CardListener.class));
+        } catch (Throwable ignored) {
+        }
         js("window.onCardTx && window.onCardTx()");
     }
 
@@ -641,6 +647,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String takeCards() {
             return CardListener.take(MainActivity.this);
+        }
+
+        /** The last bank-like notifications as they came (for checking). */
+        @JavascriptInterface
+        public String cardLog() {
+            return CardListener.log(MainActivity.this);
         }
 
         @JavascriptInterface
