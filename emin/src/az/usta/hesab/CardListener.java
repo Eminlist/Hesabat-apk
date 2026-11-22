@@ -33,7 +33,7 @@ public class CardListener extends NotificationListenerService {
 
     // "Ödəniş: -0.60₼", "Köçürmə: +1.88€ (+3.47₼)", "Uğursuz ödəniş: -23.60$ (-40.57₼)"
     private static final Pattern HEAD = Pattern.compile(
-            "^\\W*([^:\\n]{2,40}?)\\s*:\\s*([+\\-−])\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|€|EUR|\\$|USD|₽|RUB|£|GBP|₺|TRY)?\\s*(?:\\(\\s*[+\\-−]?\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|€|EUR|\\$|USD|₽|RUB|£|GBP|₺|TRY)\\s*\\))?", Pattern.UNICODE_CHARACTER_CLASS);
+            "^[^\\p{L}\\p{N}]*([^:\\n]{2,40}?)\\s*:\\s*([+\\-−])\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|€|EUR|\\$|USD|₽|RUB|£|GBP|₺|TRY)?\\s*(?:\\(\\s*[+\\-−]?\\s*([0-9][0-9 ]*(?:[.,][0-9]{1,2})?)\\s*(₼|AZN|€|EUR|\\$|USD|₽|RUB|£|GBP|₺|TRY)\\s*\\))?");
     private static final Pattern CARD = Pattern.compile("Kart\\s*:?\\s*\\*+\\s*([0-9]{4})");
 
     @Override

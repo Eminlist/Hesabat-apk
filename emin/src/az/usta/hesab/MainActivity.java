@@ -141,7 +141,10 @@ public class MainActivity extends Activity {
         }
 
         gsync = new GoogleSync(this);
-        CardListener.live = new java.lang.ref.WeakReference<>(this);
+        try {
+            CardListener.live = new java.lang.ref.WeakReference<>(this);
+        } catch (Throwable ignored) {
+        }
         web = new WebView(this);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
