@@ -141,6 +141,7 @@ public class MainActivity extends Activity {
         }
 
         gsync = new GoogleSync(this);
+        CardListener.live = new java.lang.ref.WeakReference<>(this);
         web = new WebView(this);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -297,8 +298,14 @@ public class MainActivity extends Activity {
         updater = new Updater(this);
     }
 
+    /** A new card operation came from the bank's notification: the page writes it in now. */
+    void cardsArrived() {
+        js("window.onCardTx && window.onCardTx()");
+    }
+
     @Override
     protected void onDestroy() {
+        if (CardListener.live != null && CardListener.live.get() == this) CardListener.live = null;
         try {
             unregisterReceiver(screenOff);
         } catch (Exception ignored) {
@@ -346,6 +353,7 @@ public class MainActivity extends Activity {
             return;
         }
         js("window.onAppResume && window.onAppResume()");
+        js("window.onCardTx && window.onCardTx()");
     }
 
     @Override
@@ -626,6 +634,51 @@ public class MainActivity extends Activity {
     }
 
     private class Bridge {
+        /** Card operations read from the bank's notifications, waiting to be written in. */
+        @JavascriptInterface
+        public String takeCards() {
+            return CardListener.take(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public boolean cardAccess() {
+            return CardListener.allowed(MainActivity.this);
+        }
+
+        /** Android's page where Hesabat is allowed to read notifications. */
+        @JavascriptInterface
+        public void openCardAccess() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    internalNav = true;
+                    try {
+                        startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+                    } catch (Exception e) {
+                        try {
+                            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            });
+        }
+
+        /** App info page: on Android 13+ "Allow restricted settings" is in its ⋮ menu (an APK not from Play). */
+        @JavascriptInterface
+        public void openAppInfo() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    internalNav = true;
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
+        }
+
         @JavascriptInterface
         public String load() {
             // fall back to the previous copy when the main file is missing or cut short (e.g. power lost while saving)

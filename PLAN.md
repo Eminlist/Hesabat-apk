@@ -119,3 +119,9 @@ Qeyd: proqram Eminin şəxsi qeydidir — aylıq gəlir və xərci bilmək üç�
 - [x] Zibil qutusu 30 gün saxlayır
 - [x] Ayarlar → Gizlilik: Ekran şəklinə qadağa; Silkələyəndə rəqəmləri gizlət
 - [x] Ayarlar → Aylıq hesabat Gmail-ə (Excel / PDF): ayın 1-də bildiriş, Gmail hazır açılır
+
+## Emin Hesabat 3.1.3 Rev. 10 — HAZIR
+- [x] Kart əməliyyatları ABB Mobile bildirişindən avtomatik yazılır: karta gələn hər pul — gəlir (Kart), **4590 kartından çıxan hər pul — xərc (Kart); uğursuz ödənişlər yazılmır
+- [x] Hər yazıda «Kart · ABB **4590» (hansı bank və kart) görünür
+- [x] Ayarlar → Kart əməliyyatları: bildirişlərə giriş icazəsi
+- [ ] Kapital Bank (Birbank) — sonra
