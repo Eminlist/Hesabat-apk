@@ -2599,6 +2599,7 @@ function renderSheetBase() {
       const t = db.tx.find(x => x.id === s.id);
       h += `<h2>${txLabel(t)} ${money(t.amount)}</h2><p class="note" style="margin-top:-6px">${fmtDate(t.date)}${t.note ? ' · ' + esc(t.note) : ''}</p>
         <button class="btn ghost" data-a="menuEdit">✎ Düzəlt</button>
+        ${t.type === 'inc' && t.bank ? `<button class="btn ghost" data-a="cardWhoOpen" data-v="${t.id}">👤 Ustadan gəlib — seç</button>` : ''}
         ${t.type === 'loss' && t.pid ? '<button class="btn ghost" data-a="lossUnname">🗑 Adı sil (ziyan qalır)</button>' : ''}
         <button class="btn danger" data-a="menuDelete">🗑 Sil</button>`;
     }
@@ -5323,25 +5324,31 @@ window.onCardTx = function () {
   try { list = JSON.parse(Android.takeCards() || '[]'); } catch (e) { return; }
   let n = 0;
   for (const o of list) {
-    if (!o || !(o.amount > 0) || db.tx.some(t => t.ck === o.key)) continue;
-    const note = o.place && !/^abb mobile$/i.test(o.place) ? o.place : o.word;
-    const base = { id: uid(), pid: null, amount: o.amount, date: o.date, time: o.time, note, method: 'kart', bank: o.bank, card: o.card || '', ck: o.key, auto: true, created: o.at || Date.now(), u: Date.now() };
-    if (o.dir === 'in') db.tx.push(Object.assign(base, { type: 'inc', other: true }));
-    else if (!o.card || (CARD_OUT[o.bank] || []).includes(o.card)) db.tx.push(Object.assign(base, { type: 'pexp', cid: resolveCid(guessCat(note) || 'new:Kart') }));
-    else continue;
-    n++;
+    try {
+      if (!o || !(o.amount > 0) || db.tx.some(t => t.ck === o.key)) continue;
+      const note = o.place && !/^abb( mobile)?$/i.test(o.place) ? o.place : o.word;
+      const base = { id: uid(), pid: null, amount: o.amount, date: o.date, time: o.time, note, method: 'kart', bank: o.bank, card: o.card || '', ck: o.key, auto: true, created: o.at || Date.now(), u: Date.now() };
+      if (o.dir === 'in') db.tx.push(Object.assign(base, { type: 'inc', other: true }));
+      else if (!o.card || (CARD_OUT[o.bank] || []).includes(o.card)) {
+        let cid = null; try { cid = resolveCid(guessCat(note) || 'new:Kart'); } catch (e) { cid = resolveCid('new:Kart'); }
+        db.tx.push(Object.assign(base, { type: 'pexp', cid }));
+      }
+      else continue;
+      n++;
+    } catch (e) {}
   }
   if (!n) return;
   save();
   if (!state.pin) render();
   toast(tr('💳 Kartdan {0} əməliyyat yazıldı', { 0: n }));
+  setTimeout(askCardWho, 400);
 };
 function cardLogHtml() {
   let a = [];
   try { a = JSON.parse((Android.cardLog && Android.cardLog()) || '[]'); } catch (e) {}
   const rows = a.slice(-10).reverse().map(x => {
     const d = new Date(x.at || 0), t = String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    return `<div style="border-top:1px solid #e5e7eb;padding:6px 0;font-size:12px;line-height:1.35"><b class="${x.ok ? 'pay' : 'debt'}">${x.ok ? '✓ ' + tr('yazıldı') : '✗ ' + tr('yazılmadı')}</b> · ${esc(t)} · <span style="opacity:.7">${esc(x.pkg || '')}</span><br>${esc(x.title || '')}<br><span style="opacity:.8">${esc(x.body || '').replace(/\n/g, '<br>')}</span></div>`;
+    return `<div style="border-top:1px solid #e5e7eb;padding:6px 0;font-size:12px;line-height:1.35"><b class="${x.ok ? 'pay' : 'debt'}">${x.ok ? '✓ ' + tr('yazıldı') : '✗ ' + tr('yazılmadı')}</b>${x.why ? ' — ' + esc(x.why) : ''} · ${esc(t)} · <span style="opacity:.7">${esc(x.pkg || '')}</span><br>${esc(x.title || '')}<br><span style="opacity:.8">${esc(x.body || '').replace(/\n/g, '<br>')}</span></div>`;
   }).join('');
   return `<div class="slabel" style="margin-top:12px">${tr('Son bank bildirişləri (yoxlama)')}</div>
     <div style="max-height:260px;overflow:auto">${rows || `<p class="note">${tr('Hələ bank bildirişi gəlməyib. Kartla bir əməliyyat edin, sonra buranı yenidən açın.')}</p>`}</div>`;
@@ -5477,6 +5484,83 @@ render();
 updateShortcuts();
 setTimeout(overdueNotice, 400);
 setTimeout(() => window.onCardTx && window.onCardTx(), 600);
+// ---- Rev. 15: money coming to the card — «Kimdən?»: chosen usta's nisyə goes down (the money stays income) ----
+try { if (!localStorage.getItem('cardWhoFrom')) localStorage.setItem('cardWhoFrom', String(Date.now() - 864e5)); } catch (e) {}
+const cardWhoFrom = () => { try { return +localStorage.getItem('cardWhoFrom') || 0; } catch (e) { return 0; } };
+const cardWhoWaiting = () => db.tx.filter(t => t.type === 'inc' && t.bank && t.auto && !t.who && (t.created || 0) >= cardWhoFrom() && !isLocked(monthKey(t.date)))
+  .sort((a, b) => (a.created || 0) - (b.created || 0));
+function askCardWho() {
+  if (state.sheet || state.pin) return;
+  const t = cardWhoWaiting()[0];
+  if (!t) return;
+  state.sheet = { kind: 'cardWho', id: t.id, q: '' }; render();
+}
+{ const ra = window.onAppResume; window.onAppResume = function () { ra(); setTimeout(askCardWho, 900); }; }
+Object.assign(actions, {
+  cardWhoOpen(id) { state.sheet = { kind: 'cardWho', id, q: '' }; render(); },
+  cardWhoPick(pid) {
+    const s = state.sheet, t = s && db.tx.find(x => x.id === s.id);
+    if (!t || t.type !== 'inc') { state.sheet = null; return render(); }
+    if (isLocked(monthKey(t.date))) { state.sheet = null; render(); return alert('🔒 ' + tr('ayı bağlanıb, dəyişmək olmaz.')); }
+    const p = db.people.find(x => x.id === pid); if (!p) return;
+    t.type = 'pay'; t.pid = p.id; delete t.other; t.who = p.id; t.u = Date.now();
+    if (!t.time) t.time = hmOf(t.created || Date.now());
+    save(); state.sheet = null; render();
+    toast(tr('{name}: kartla ödəniş yazıldı', { name: p.name }));
+    setTimeout(askCardWho, 400);
+  },
+  cardWhoNone() {
+    const s = state.sheet, t = s && db.tx.find(x => x.id === s.id);
+    if (t) { t.who = '-'; t.u = Date.now(); save(); }
+    state.sheet = null; render(); setTimeout(askCardWho, 400);
+  },
+  cardWhoLater() {
+    // asked again the next time the app is opened
+    state.sheet = null; render();
+  }
+});
+{
+  const rs = renderSheet;
+  renderSheet = function () {
+    const s = state.sheet;
+    if (!s || s.kind !== 'cardWho') return rs.apply(this, arguments);
+    const t = db.tx.find(x => x.id === s.id);
+    if (!t) { state.sheet = null; return ''; }
+    const q = norm(s.q || '');
+    const all = db.people.filter(p => !q || norm(p.name).includes(q) || phoneMatch(p.phone, s.q));
+    const owe = all.filter(p => balanceOf(p.id) > 0).sort((a, b) => balanceOf(b.id) - balanceOf(a.id));
+    const rest = q ? all.filter(p => balanceOf(p.id) <= 0) : [];
+    const row = p => `<button class="row" data-a="cardWhoPick" data-v="${p.id}"><div class="avatar">${esc(initials(p.name))}</div><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${balanceOf(p.id) > 0 ? tr('Nisyə') + ': ' + money(balanceOf(p.id)) : tr('nisyəsi yoxdur')}</div></div></button>`;
+    return `<div class="shade" data-a="closeShade"><div class="sheet">
+      <h2>💳 ${tr('Karta pul gəldi')}: <span class="pay">+${money(t.amount)}</span></h2>
+      <p class="note" style="margin-top:-6px">${esc(cardTag(t))} · ${esc(fmtDate(t.date))}${t.time ? ', ' + esc(t.time) : ''}${t.note ? ' · ' + esc(t.note) : ''}</p>
+      <label>${tr('Kimdən gəldi?')}</label>
+      <input class="field" id="dq" value="${esc(s.q || '')}" placeholder="${tr('Usta axtar: ad və ya telefon')}">
+      <div class="list" style="max-height:300px;overflow:auto;margin-top:8px">${owe.concat(rest).map(row).join('') || `<div class="empty" style="padding:14px">${tr('Nisyəsi olan usta yoxdur')}</div>`}</div>
+      <p class="note" style="margin-top:8px">${tr('Ustanı seçsəniz, bu pul onun nisyəsindən çıxılır. Gəlir dəyişmir — yenə bu günün gəliridir.')}</p>
+      <button class="btn ghost" data-a="cardWhoNone">${tr('Ustadan deyil — digər gəlir qalsın')}</button>
+      <button class="btn ghost" data-a="cardWhoLater">${tr('Sonra')}</button></div></div>`;
+  };
+}
+
+// ---- Rev. 15: «Bu günün nisyəsi» on the main screen: what today's work left owed (not income) ----
+function todayNisye() {
+  const td = today(), pids = new Set(db.tx.filter(t => t.type === 'debt' && t.pid && t.date === td && !t.corr).map(t => t.pid));
+  let sum = 0;
+  for (const pid of pids) for (const d of debtState(pid).debts) if (d.t.type === 'debt' && d.t.date === td) sum += Math.max(0, d.left);
+  return sum;
+}
+{
+  const rh = renderHeader;
+  renderHeader = function () {
+    const h = rh.apply(this, arguments);
+    if (state.tab !== 'home' || state.person || state.cat || state.loans || state.borrows || state.subs || state.settings || state.trash) return h;
+    const n = todayNisye();
+    const cell = `<button data-a="openToday" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:12px;padding:10px 14px;border:0;border-radius:14px;background:rgba(255,255,255,.08);color:inherit;font:inherit;cursor:pointer"><small style="opacity:.85">${tr('Bu günün nisyəsi')}</small><b class="num">${state.hideInc ? '• • • •' : money(n)}</b></button>`;
+    const i = h.lastIndexOf('</header>');
+    return i < 0 ? h : h.slice(0, i) + cell + h.slice(i);
+  };
+}
 if (hasNative && Android.takeLaunchTarget) window.onLaunchTarget(Android.takeLaunchTarget());
 runSync();
 </script>
