@@ -44,6 +44,13 @@ public class CardListener extends NotificationListenerService {
         return p.equals(ABB) || p.contains("abb") || p.contains("iba") || p.contains("ibar") || p.contains("mobilbank") || p.contains("mobilebank");
     }
 
+    /** An SMS (or any app's notification) whose sender/title is the bank. */
+    static boolean fromBankSender(String title) {
+        if (title == null) return false;
+        String t = title.trim().toLowerCase();
+        return t.equals("abb") || t.startsWith("abb ") || t.startsWith("abb-") || t.startsWith("abb:") || t.contains("abb bank") || t.contains("abb mobile") || t.equals("iba") || t.equals("ibar");
+    }
+
     @Override
     public void onListenerConnected() {
         // notifications already sitting in the panel are read too
@@ -70,7 +77,8 @@ public class CardListener extends NotificationListenerService {
             }
             if (body.isEmpty() && n.tickerText != null) body = n.tickerText.toString().trim();
             String pkg = sbn.getPackageName();
-            boolean bank = isBank(pkg);
+            // ABB also sends the same operation by SMS: the message app shows it with the sender «ABB» as title
+            boolean bank = isBank(pkg) || fromBankSender(title);
             boolean money = MONEY.matcher(title + " " + body).find();
             if (!bank && !money) return;
             JSONObject op = bank ? parse(title, body, sbn.getPostTime()) : null;
@@ -109,6 +117,12 @@ public class CardListener extends NotificationListenerService {
     /** One bank notification → an operation, or null when it isn't a card operation (or it failed). */
     static JSONObject parse(String title, String body, long when) throws Exception {
         String head = title, rest = body;
+        if (fromBankSender(title) && !body.isEmpty()) {
+            // SMS: the title is only the sender, the operation is the first line of the text
+            int nl = body.indexOf('\n');
+            head = nl < 0 ? body : body.substring(0, nl);
+            rest = nl < 0 ? "" : body.substring(nl + 1);
+        }
         Matcher m = HEAD.matcher(head);
         if (!m.find()) {
             // some phones give the whole text in one line
@@ -192,7 +206,7 @@ public class CardListener extends NotificationListenerService {
             place = l;
             break;
         }
-        String word = title.isEmpty() ? (in ? "Mədaxil" : "Məxaric") : title;
+        String word = title.isEmpty() || fromBankSender(title) ? (in ? "Mədaxil" : "Məxaric") : title;
         return make(in, word, azn, a.group(2).replace(" ", "") + "₼", card, place, title, body, when);
     }
 
