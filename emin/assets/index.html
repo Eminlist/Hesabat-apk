@@ -1795,7 +1795,7 @@ function extraSheet(s) {
       <div class="kv total"><span>Qalıq</span><b class="num ${c.left ? 'debt' : 'pay'}">${money(c.left)}</b></div></div>
       <label>Ödəniş yaz (${cur()})</label><div style="display:flex;gap:8px"><input class="field num" id="f_bpay" inputmode="decimal" value="${c.pmt && c.left ? Math.min(c.pmt, c.left) / 100 : ''}" placeholder="0" style="flex:1;min-width:0"><input class="field" id="f_bpdate" type="date" value="${today()}" style="flex:1;min-width:0"></div>
       <button class="btn payb" data-a="payBorrow">Ödəniş yaz</button>
-      ${(l.pays || []).length ? '<div class="section-title">Ödənişlər</div><div class="list">' + l.pays.slice().reverse().map(x => `<div class="row"><div class="grow"><div class="t">${fmtDate(x.d)}</div></div><div class="amt num pay">${money(x.amount)}</div></div>`).join('') + '</div>' : ''}
+      ${(l.pays || []).length ? '<div class="section-title">Ödənişlər</div><div class="list">' + l.pays.slice().reverse().map(x => `<div class="row"><div class="grow" data-a="editBP" data-v="${esc(x.id || '')}" style="cursor:pointer"><div class="t">${fmtDate(x.d)}${x.t ? ' · ' + esc(x.t) : ''}</div><div class="s">✏️ ${tr('düzəlt')}</div></div><div class="amt num pay">${money(x.amount)}</div></div>`).join('') + '</div>' : ''}
       <div class="two" style="margin-top:10px"><button class="btn ghost" style="margin:0" data-a="editBorrow" data-v="${l.id}">✎ Dəyiş</button><button class="btn danger" style="margin:0" data-a="delBorrow">Sil</button></div>`;
   }
   if (k === 'health') {
@@ -4083,7 +4083,7 @@ function borrowSheet(s) {
       <div class="kv"><span>Qaytarmışam</span><b class="num exp">−${money(c.paid)}</b></div><div class="kv total"><span>Qalıb</span><b class="num ${c.left ? 'exp' : 'pay'}">${money(c.left)}</b></div></div>
     ${c.left > 0 ? `<label>Qaytardım (${cur()})</label><div style="display:flex;gap:8px"><input class="field num" id="f_bpay" inputmode="decimal" value="${amountInput(c.left)}" placeholder="0" style="flex:1;min-width:0"><input class="field" id="f_bpdate" type="date" value="${today()}" style="flex:1;min-width:0"></div>
       <button class="btn expb" data-a="payBorrowMine">− Qaytardım</button>` : ''}
-    ${(l.pays || []).length ? '<div class="section-title">Qaytardıqlarım</div><div class="list">' + l.pays.slice().reverse().map(x => `<div class="row"><div class="grow"><div class="t">${fmtDate(x.d)}</div></div><div class="amt num exp">−${money(x.amount)}</div><button class="del" data-a="delBorrowPay" data-v="${esc(x.id || '')}" title="Sil">✕</button></div>`).join('') + '</div>' : ''}
+    ${(l.pays || []).length ? '<div class="section-title">Qaytardıqlarım</div><div class="list">' + l.pays.slice().reverse().map(x => `<div class="row"><div class="grow" data-a="editBP" data-v="${esc(x.id || '')}" style="cursor:pointer"><div class="t">${fmtDate(x.d)}${x.t ? ' · ' + esc(x.t) : ''}</div><div class="s">✏️ ${tr('düzəlt')}</div></div><div class="amt num exp">−${money(x.amount)}</div><button class="del" data-a="delBorrowPay" data-v="${esc(x.id || '')}" title="Sil">✕</button></div>`).join('') + '</div>' : ''}
     <div class="section-title">Məlumat</div>`;
   h += `<label>Kimdən</label><input class="field" id="f_bname" value="${esc(l.name)}" placeholder="məs. Rəşad"${s.id ? '' : ' data-autofocus'}>
     <label>Telefon (istəyə bağlı)</label><div style="display:flex;gap:8px"><input class="field" id="f_phone" type="tel" value="${esc(l.phone || '')}" placeholder="050 000 00 00" style="flex:1;min-width:0">
@@ -4391,7 +4391,7 @@ actions.mergeInto = function (dst) {
 // ---- money given back to me: each return with its own day and hour ----
 function loanBackRows(l) {
   const list = db.tx.filter(t => t.type === 'lback' && t.lid === l.id).sort((a, b) => (a.date + (a.time || hmOf(a.created || 0))).localeCompare(b.date + (b.time || hmOf(b.created || 0))));
-  return list.length ? '<div class="list" style="margin-top:6px">' + list.map(t => `<div class="row"><div class="grow"><div class="t pay">✓ ${tr('Qaytardı')}</div><div class="s">🕒 ${stamp(t.time ? t : Object.assign({}, t, { time: hmOf(t.created || Date.now()) }))}</div></div><div class="amt num pay">+${money(t.amount)}</div></div>`).join('') + '</div>' : `<p class="note" style="margin:4px 0 0">${tr('Hələ qaytarmayıb')}</p>`;
+  return list.length ? '<div class="list" style="margin-top:6px">' + list.map(t => `<button class="row" data-a="editLB" data-v="${t.id}"><div class="grow"><div class="t pay">✓ ${tr('Qaytardı')}</div><div class="s">🕒 ${stamp(t.time ? t : Object.assign({}, t, { time: hmOf(t.created || Date.now()) }))} · ✏️ ${tr('düzəlt')}</div></div><div class="amt num pay">+${money(t.amount)}</div></button>`).join('') + '</div>' : `<p class="note" style="margin:4px 0 0">${tr('Hələ qaytarmayıb')}</p>`;
 }
 actions.loanPart = function () {
   const l = db.loans.find(x => x.id === state.sheet.id);
@@ -5362,6 +5362,90 @@ Object.assign(actions, {
       ${on ? cardLogHtml() : ''}
       ${on ? '' : `<button class="btn ghost" data-a="cardAppInfo">${tr('Proqram məlumatı')}</button>`}
       <button class="btn ghost" data-a="closeSheet">Bağla</button></div></div>`;
+  };
+}
+
+// ---- Rev. 13: a money return written wrong (amount, day, hour) can be corrected ----
+function retGuard(oldD, newD) {
+  if (newD > today()) { toast(tr('Gələcək tarixə yazmaq olmaz')); return false; }
+  const lk = [monthKey(oldD), monthKey(newD)].filter(isLocked);
+  if (lk.length) { alert('🔒 ' + tr('ayı bağlanıb, dəyişmək olmaz.') + '\n' + tr('Açmaq üçün: Ayarlar → Ayı bağla.')); return false; }
+  return true;
+}
+function retJournal(text) {
+  try { if (Array.isArray(db.journal)) db.journal.push({ id: uid(), at: Date.now(), t: text, u: Date.now() }); } catch (e) {}
+}
+Object.assign(actions, {
+  editLB(v) {
+    const t = db.tx.find(x => x.id === v && x.type === 'lback'); if (!t) return;
+    state.sheet = { kind: 'lbEdit', id: v, lid: t.lid }; render();
+  },
+  backToLoan() { const s = state.sheet; state.sheet = { kind: 'loan', id: s.lid }; render(); },
+  saveLB() {
+    const s = state.sheet, t = db.tx.find(x => x.id === s.id), l = t && db.loans.find(x => x.id === t.lid);
+    if (!t || !l) return;
+    const a = parseAmount(val('f_ea')), d = val('f_ed') || t.date, tm = val('f_et') || t.time || '';
+    if (!a) return toast('Məbləğ yazın');
+    if (!retGuard(t.date, d)) return;
+    const others = db.tx.filter(x => x.type === 'lback' && x.lid === l.id && x.id !== t.id).reduce((q, x) => q + x.amount, 0);
+    if (others + a > l.amount && !confirm(tr('Qaytarılan pul verdiyiniz borcdan ({0}) çox olur. Yazılsın?', { 0: money(l.amount) }))) return;
+    retJournal('✏️ ' + l.name + ' — ' + tr('qaytardı') + ': ' + money(t.amount) + ' → ' + money(a) + (t.date !== d || (t.time || '') !== tm ? ' · ' + fmtDate(t.date) + ' ' + (t.time || '') + ' → ' + fmtDate(d) + ' ' + tm : ''));
+    Object.assign(t, { amount: a, date: d, time: tm, u: Date.now() });
+    l.back = others + a; l.u = Date.now();
+    save(); state.sheet = { kind: 'loan', id: l.id }; render(); toast(tr('Düzəldildi'));
+  },
+  delLB() {
+    const s = state.sheet, t = db.tx.find(x => x.id === s.id), l = t && db.loans.find(x => x.id === t.lid);
+    if (!t || !l) return;
+    if (!retGuard(t.date, t.date)) return;
+    if (!confirm(tr('Bu qaytarma silinsin?'))) return;
+    retJournal('🗑 ' + l.name + ' — ' + tr('qaytardı') + ' ' + money(t.amount) + ' · ' + fmtDate(t.date));
+    db.tx = db.tx.filter(x => x !== t); db.removed[t.id] = Date.now();
+    l.back = db.tx.filter(x => x.type === 'lback' && x.lid === l.id).reduce((q, x) => q + x.amount, 0); l.u = Date.now();
+    save(); state.sheet = { kind: 'loan', id: l.id }; render(); toast(tr('Silindi'));
+  },
+  editBP(v) {
+    const l = db.borrow.find(x => x.id === state.sheet.id); if (!l || !v) return;
+    state.sheet = { kind: 'bpEdit', id: l.id, pay: v }; render();
+  },
+  backToBorrow() { const s = state.sheet; state.sheet = { kind: 'brw', id: s.id }; render(); },
+  saveBP() {
+    const s = state.sheet, l = db.borrow.find(x => x.id === s.id), x = l && (l.pays || []).find(p => p.id === s.pay);
+    if (!x) return;
+    const a = parseAmount(val('f_ea')), d = val('f_ed') || x.d, tm = val('f_et') || '';
+    if (!a) return toast('Məbləğ yazın');
+    if (!retGuard(x.d, d)) return;
+    retJournal('✏️ ' + l.name + ' — ' + tr('Borcumu qaytardım') + ': ' + money(x.amount) + ' → ' + money(a) + (x.d !== d ? ' · ' + fmtDate(x.d) + ' → ' + fmtDate(d) : ''));
+    x.amount = a; x.d = d; if (tm) x.t = tm; else delete x.t; l.u = Date.now();
+    save(); state.sheet = { kind: 'brw', id: l.id }; render(); toast(tr('Düzəldildi'));
+  }
+});
+{
+  const rs = renderSheet;
+  renderSheet = function () {
+    const s = state.sheet;
+    if (s && s.kind === 'lbEdit') {
+      const t = db.tx.find(x => x.id === s.id), l = t && db.loans.find(x => x.id === t.lid);
+      if (!t || !l) return '';
+      return `<div class="shade"><div class="sheet">
+        <h2>✏️ ${tr('Qaytarılanı düzəlt')} — ${esc(l.name)}</h2>
+        <label>${tr('Qaytardığı məbləğ')} (${cur()})</label><input class="field num" id="f_ea" inputmode="decimal" value="${amountInput(t.amount)}">
+        <label>${tr('Nə vaxt qaytardı')}</label><div class="two"><input class="field" id="f_ed" type="date" max="${today()}" value="${esc(t.date)}"><input class="field" id="f_et" type="time" value="${esc(t.time || hmOf(t.created || Date.now()))}"></div>
+        <button class="btn primary" data-a="saveLB">${tr('Yadda saxla')}</button>
+        <button class="btn danger" data-a="delLB">${tr('Sil')}</button>
+        <button class="btn ghost" data-a="backToLoan">${tr('Geri')}</button></div></div>`;
+    }
+    if (s && s.kind === 'bpEdit') {
+      const l = db.borrow.find(x => x.id === s.id), x = l && (l.pays || []).find(p => p.id === s.pay);
+      if (!x) return '';
+      return `<div class="shade"><div class="sheet">
+        <h2>✏️ ${tr('Qaytardığımı düzəlt')} — ${esc(l.name)}</h2>
+        <label>${tr('Qaytardığım məbləğ')} (${cur()})</label><input class="field num" id="f_ea" inputmode="decimal" value="${amountInput(x.amount)}">
+        <label>${tr('Nə vaxt qaytardım')}</label><div class="two"><input class="field" id="f_ed" type="date" max="${today()}" value="${esc(x.d)}"><input class="field" id="f_et" type="time" value="${esc(x.t || '')}"></div>
+        <button class="btn primary" data-a="saveBP">${tr('Yadda saxla')}</button>
+        <button class="btn ghost" data-a="backToBorrow">${tr('Geri')}</button></div></div>`;
+    }
+    return rs.apply(this, arguments);
   };
 }
 
