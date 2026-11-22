@@ -1,7 +1,8 @@
 // Hesabat — bütün hesablamalar (telefon və GitHub testləri eyni faylı işlədir)
 // Məbləğlər qəpiklə (tam ədəd). Gəlir və xərc pulun cibə girdiyi / çıxdığı gün yazılır.
-//   Gəlir  (+): nağd iş, nisyə ödənişi, digər gəlir, verdiyim borcun qaytarılması, aldığım borc
-//   Xərc   (−): hissə, xərc, ziyan, verdiyim borc, aldığım borcun qaytarılması
+//   Gəlir  (+): nağd iş, nisyə ödənişi, digər gəlir, aldığım borc
+//   Xərc   (−): hissə, xərc, ziyan, aldığım borcun qaytarılması
+//   Verdiyim borc və onun qaytarılması ümumi hesaba (gəlir, xərc, qalıq, kassa) QATILMIR
 //   Nisyə: ustanın borcu — ödənənə qədər gəlir deyil
 (function (G) {
   'use strict';
@@ -19,19 +20,19 @@
       switch (t.type) {
         case 'pay': r.pays += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
         case 'inc': if (t.other) r.other += a; else r.work += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
-        case 'lback': r.lback += a; r.nagdIn += a; break;
+        case 'lback': r.lback += a; break; // hesaba qatılmır
         case 'brw': r.brw += a; r.nagdIn += a; break;
         case 'pexp': case 'exp': r.xerc += a; isCard(t) ? r.kartOut += a : r.nagdOut += a; break;
         case 'loss': r.loss += a; break;
-        case 'lend': r.lend += a; r.nagdOut += a; break;
+        case 'lend': r.lend += a; break; // hesaba qatılmır
         case 'brep': r.brep += a; r.nagdOut += a; break;
         case 'debt': r.newDebt += a; break;
       }
       // hissələr topdançıdan nağd alınır
       if (t.cost) { r.parts += t.cost; r.nagdOut += t.cost; }
     }
-    r.gelir = r.work + r.pays + r.other + r.lback + r.brw;
-    r.cixis = r.parts + r.xerc + r.loss + r.lend + r.brep;
+    r.gelir = r.work + r.pays + r.other + r.brw;
+    r.cixis = r.parts + r.xerc + r.loss + r.brep;
     r.qaliq = r.gelir - r.cixis;
     return r;
   }
@@ -97,13 +98,13 @@
     now = now || Date.now();
     const want = new Map();
     for (const l of db.borrow) {
-      want.set('B' + l.id, { type: 'brw', bid: l.id, amount: l.amount, date: borrowDate(l), note: l.name });
-      for (const x of l.pays || []) want.set('BP' + (x.id || l.id + x.d + x.amount), { type: 'brep', bid: l.id, amount: x.amount, date: x.d, note: l.name });
+      want.set('B' + l.id, { type: 'brw', bid: l.id, amount: l.amount, date: borrowDate(l), time: l.time || '', note: l.name });
+      for (const x of l.pays || []) want.set('BP' + (x.id || l.id + x.d + x.amount), { type: 'brep', bid: l.id, amount: x.amount, date: x.d, time: x.t || '', note: l.name });
     }
     for (const [id, f] of want) {
       const t = db.tx.find(x => x.id === id);
       if (!t) db.tx.push(Object.assign({ id, created: now, u: now }, f));
-      else if (t.amount !== f.amount || t.date !== f.date || t.note !== f.note) Object.assign(t, f, { u: now });
+      else if (t.amount !== f.amount || t.date !== f.date || (t.time || '') !== f.time || t.note !== f.note) Object.assign(t, f, { u: now });
     }
     const gone = db.tx.filter(t => (t.type === 'brw' || t.type === 'brep') && !want.has(t.id));
     if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
@@ -129,7 +130,8 @@
     return [...m.values()];
   }
   // geri qaytarılan məbləğ ən köhnə açıq borcdan başlayaraq bağlanır
-  function payBack(db, side, key, amount, date, now, mkId) {
+  function payBack(db, side, key, amount, date, now, mkId, time) {
+    time = time || '';
     now = now || Date.now();
     const recs = (side === 'lend' ? db.loans : db.borrow).filter(l => norm(l.name) === key)
       .sort((a, b) => ((side === 'lend' ? a.date : borrowDate(a)) || '').localeCompare((side === 'lend' ? b.date : borrowDate(b)) || '') || (a.created || 0) - (b.created || 0));
@@ -141,9 +143,9 @@
       const use = Math.min(left, rest); rest -= use;
       if (side === 'lend') {
         l.back = (l.back || 0) + use; l.u = now;
-        db.tx.push({ id: mkId(), type: 'lback', lid: l.id, amount: use, date, note: l.name, created: now, u: now });
+        db.tx.push({ id: mkId(), type: 'lback', lid: l.id, amount: use, date, time, note: l.name, created: now, u: now });
       } else {
-        l.pays = (l.pays || []).concat({ id: mkId(), d: date, amount: use }); l.u = now;
+        l.pays = (l.pays || []).concat({ id: mkId(), d: date, t: time, amount: use }); l.u = now;
       }
     }
     if (side === 'borrow') syncBorrowTx(db, now);

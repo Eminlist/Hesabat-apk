@@ -42,19 +42,41 @@ test('Eyni adamdan iki dəfə borc: qaytarma ən köhnədən bağlanır', () => 
   assert.strictEqual(C.monthFlow(db, M).qaliq, 50000 - 35000);
 });
 
-test('Borc verdim: verəndə −, qaytarılanda +', () => {
+test('Borc verdim: ümumi hesaba (gəlir, xərc, qalıq, kassa) QATILMIR', () => {
   const db = empty();
-  db.loans.push({ id: 'l', name: 'C', amount: 20000, date: '2026-11-03', back: 0 });
-  C.syncLoanTx(db);
+  db.tx.push({ id: 'i', type: 'inc', amount: 10000, date: '2026-11-02', created: 200 });
+  db.kassa.push({ id: 'kassa', nagd: 30000, kart: 0, at: 100 });
+  db.loans.push({ id: 'l', name: 'C', amount: 20000, date: '2026-11-03', due: '2026-11-25', back: 0 });
+  C.syncLoanTx(db, 300);
   let f = C.monthFlow(db, M);
-  assert.strictEqual(f.cixis, 20000); assert.strictEqual(f.qaliq, -20000);
-  C.payBack(db, 'lend', C.norm('C'), 5000, '2026-11-15', 1, mk);
+  assert.strictEqual(f.gelir, 10000); assert.strictEqual(f.cixis, 0); assert.strictEqual(f.qaliq, 10000);
+  assert.strictEqual(f.nagdOut, 0);
+  C.payBack(db, 'lend', C.norm('C'), 5000, '2026-11-15', 400, mk, '14:35');
   f = C.monthFlow(db, M);
-  assert.strictEqual(f.gelir, 5000); assert.strictEqual(f.qaliq, -15000);
+  assert.strictEqual(f.gelir, 10000); assert.strictEqual(f.cixis, 0); assert.strictEqual(f.qaliq, 10000);
+  assert.strictEqual(C.dayFlow(db, '2026-11-15').qaliq, 0);
+  assert.strictEqual(C.kassaNow(db).nagd, 30000 + 10000);
+  // qaytarmanın günü, saatı və məbləği saxlanır
+  const b = db.tx.find(t => t.type === 'lback');
+  assert.strictEqual(b.date, '2026-11-15'); assert.strictEqual(b.time, '14:35'); assert.strictEqual(b.amount, 5000);
   assert.strictEqual(C.parties(db, 'lend')[0].left, 15000);
+  assert.strictEqual(C.parties(db, 'lend')[0].due, '2026-11-25');
   // artıq ödəniş qəbul olunmur: yalnız qalan 150 bağlanır
-  assert.strictEqual(C.payBack(db, 'lend', C.norm('C'), 99999, '2026-11-16', 1, mk), 15000);
+  assert.strictEqual(C.payBack(db, 'lend', C.norm('C'), 99999, '2026-11-16', 500, mk, '09:00'), 15000);
   assert.strictEqual(C.parties(db, 'lend')[0].left, 0);
+  assert.strictEqual(C.parties(db, 'lend')[0].due, null);
+  assert.strictEqual(C.monthFlow(db, M).qaliq, 10000);
+});
+
+test('Aldığım borcun qaytarılmasında saat saxlanır', () => {
+  const db = empty();
+  db.borrow.push({ id: 'a', name: 'A', amount: 50000, date: '2026-11-01', pays: [] });
+  C.syncBorrowTx(db);
+  C.payBack(db, 'borrow', C.norm('A'), 10000, '2026-11-12', 1, mk, '18:20');
+  const t = db.tx.find(x => x.type === 'brep');
+  assert.strictEqual(t.date, '2026-11-12'); assert.strictEqual(t.time, '18:20'); assert.strictEqual(t.amount, 10000);
+  db.borrow[0].pays[0].t = '19:00'; C.syncBorrowTx(db);
+  assert.strictEqual(db.tx.find(x => x.type === 'brep').time, '19:00');
 });
 
 test('Nisyə gəlir deyil, ödəniləndə gəlirdir; hissə xərcdir', () => {

@@ -211,11 +211,14 @@ const txTitle = t => ({
 }[t.type] || t.type);
 // əməliyyatın pul işarəsi: + cibə girdi, − çıxdı, 0 nisyə (gəlir deyil)
 function txSign(t) {
-  if (['pay', 'inc', 'lback', 'brw'].includes(t.type)) return 1;
-  if (['pexp', 'exp', 'loss', 'lend', 'brep'].includes(t.type)) return -1;
+  if (['pay', 'inc', 'brw'].includes(t.type)) return 1;
+  if (['pexp', 'exp', 'loss', 'brep'].includes(t.type)) return -1;
   return 0;
 }
 const visibleTx = t => !t.corr && !(t.type === 'pexp' && (db.cats.find(c => c.id === t.cid) || {}).secret);
+// verdiyim borc və onun qaytarılması ümumi hesaba aid deyil: yalnız «Borclar» bölməsində görünür
+const isLoanTx = t => t.type === 'lend' || t.type === 'lback';
+const accTx = t => visibleTx(t) && !isLoanTx(t);
 function txRow(t, showDate) {
   const s = txSign(t), who = t.pid ? pname(t.pid) : (['lend', 'lback', 'brw', 'brep'].includes(t.type) ? t.note : '');
   const note = ['lend', 'lback', 'brw', 'brep'].includes(t.type) ? '' : t.note || '';
@@ -239,7 +242,7 @@ function renderHome() {
   const nis = C.nisyeTotal(db), lateU = db.people.map(p => ({ p, o: C.overdue(db, p.id, td) })).filter(x => x.o.sum > 0);
   const lateL = C.parties(db, 'lend').filter(g => g.left > 0 && g.due && g.due < td);
   const lateB = C.parties(db, 'borrow').filter(g => g.left > 0 && g.due && g.due < td);
-  const recent = sortTx(db.tx.filter(visibleTx)).slice(0, 8);
+  const recent = sortTx(db.tx.filter(accTx)).slice(0, 8);
   return `<div class="topbar"><h1><span class="sub">${fmtDate(td)}</span>Hesabat</h1><button class="tbtn" data-a="openSettings">${I.gear}</button></div>
   <header>
     <div class="hbal"><small>${MONTHS[+m.slice(5) - 1]} — xalis qazanc</small><b class="num${M.qaliq < 0 ? ' neg-hero' : ''}">${money(M.qaliq)}</b></div>
@@ -310,7 +313,7 @@ function renderDebts() {
   <main style="padding-top:6px">
     <div class="seg"><button class="${side === 'lend' ? 'on' : ''}" data-a="side" data-v="lend">Verdiyim</button><button class="${side === 'borrow' ? 'on' : ''}" data-a="side" data-v="borrow">Aldığım</button></div>
     <div class="card" style="margin-top:12px">${kv(side === 'lend' ? 'Mənə qaytarılmalıdır' : 'Mən qaytarmalıyam', money(sum), side === 'lend' ? 'debt' : 'exp')}
-      <div class="note">${side === 'lend' ? 'Verəndə hesabımdan çıxır (−), qaytarılanda gəlirə düşür (+).' : 'Alanda gəlirə düşür (+), qaytaranda hesabımdan çıxır (−).'}</div></div>
+      <div class="note">${side === 'lend' ? 'Ümumi hesaba (gəlir, xərc, qalıq, kassa) qatılmır. Qaytarma gününə 3 gün qalmış hər gün xatırladılır.' : 'Alanda gəlirə düşür (+), qaytaranda hesabımdan çıxır (−).'}</div></div>
     ${open.length ? `<div class="list">${open.map(row).join('')}</div>` : '<div class="empty">Açıq borc yoxdur</div>'}
     ${done.length ? `<div class="section-title">Bağlanmış</div><div class="list">${done.map(row).join('')}</div>` : ''}
   </main>`;
@@ -319,19 +322,35 @@ function renderParty(pg) {
   const g = C.parties(db, pg.side).find(x => x.key === pg.key);
   if (!g) { state.pages.pop(); return ''; }
   const lend = pg.side === 'lend', ids = new Set(g.recs.map(l => l.id));
-  const tx = sortTx(db.tx.filter(t => lend ? (t.type === 'lend' || t.type === 'lback') && ids.has(t.lid) : (t.type === 'brw' || t.type === 'brep') && ids.has(t.bid)));
+  const mine = t => lend ? ids.has(t.lid) : ids.has(t.bid);
+  const given = sortTx(db.tx.filter(t => t.type === (lend ? 'lend' : 'brw') && mine(t)));
+  const backs = sortTx(db.tx.filter(t => t.type === (lend ? 'lback' : 'brep') && mine(t)));
+  const td = today();
+  const dueTxt = g.left > 0 && g.due ? (g.due < td ? `<span style="color:#FFD6D6">⏰ ${C.daysBetween(g.due, td)} gün gecikir (${fmtDate(g.due)})</span>`
+    : g.due === td ? '📅 Bu gün qaytarma günüdür' : `📅 Qaytarma günü: ${fmtDate(g.due)} · ${C.daysBetween(td, g.due)} gün qalıb`) : g.left > 0 ? 'Qaytarma günü yazılmayıb' : 'Bağlanıb ✓';
+  const giveRow = t => `<button class="row" data-a="openTx" data-v="${t.id}"><div class="grow"><div class="t">${lend ? '🤝 Verdim' : '📥 Aldım'}</div><div class="s">📅 ${fmtDate(t.date)}${t.time ? ' · 🕒 ' + esc(t.time) : ''}</div></div><div class="amt num ${lend ? 'debt' : 'exp'}">${money(t.amount)}</div></button>`;
+  const backRow = t => `<button class="row" data-a="openTx" data-v="${t.id}"><div class="grow"><div class="t pay">✓ ${lend ? 'Qaytardı' : 'Qaytardım'}</div><div class="s">📅 ${fmtDate(t.date)} · 🕒 ${esc(backTime(t) || '—')} · ✏️ düzəlt</div></div><div class="amt num pay">${money(t.amount)}</div></button>`;
   return `<div class="page">${pageHead(g.name)}
   <div class="hero" style="margin:10px 16px"><div class="bal"><small>${lend ? 'Mənə qaytarmalıdır' : 'Mən qaytarmalıyam'}</small><b class="num">${money(g.left)}</b></div>
-    <div style="position:relative;text-align:center;font-size:13px;margin-top:6px">Cəmi: ${money(g.total)} · Qaytarılıb: ${money(g.back)}${g.left > 0 && g.due ? ' · 📅 ' + fmtDate(g.due) : ''}</div></div>
+    <div style="position:relative;text-align:center;font-size:13px;margin-top:6px">Cəmi: ${money(g.total)} · Qaytarılıb: ${money(g.back)}</div>
+    <div style="position:relative;text-align:center;font-size:14px;margin-top:4px;font-weight:600">${dueTxt}</div></div>
   <main style="padding-bottom:40px">
     <div class="two">
       <button class="btn ${lend ? 'debtb' : 'expb'}" data-a="newRec" data-v="${pg.side}|${esc(g.key)}">${lend ? 'Yenə verdim' : 'Yenə aldım'}</button>
       <button class="btn payb" data-a="newBack" data-v="${pg.side}|${esc(g.key)}" ${g.left > 0 ? '' : 'disabled style="opacity:.45"'}>${lend ? 'Qaytarıldı' : 'Qaytardım'}</button>
     </div>
     ${g.phone ? `<div class="two" style="margin-top:10px"><a class="btn ghost" style="margin:0;text-decoration:none" href="tel:${esc(g.phone.replace(/[^\d+]/g, ''))}">📞 Zəng</a><a class="btn ghost" style="margin:0;text-decoration:none" href="https://wa.me/${waNum(g.phone)}">💬 WhatsApp</a></div>` : ''}
-    <div class="section-title">Tarixçə</div>
-    <div class="list">${tx.map(t => txRow(t, true)).join('')}</div>
+    <div class="section-title">${lend ? 'Qaytarmalar' : 'Ödənişlərim'} — gün, saat, məbləğ</div>
+    ${backs.length ? `<div class="list">${backs.map(backRow).join('')}</div>` : '<div class="empty">Hələ qaytarılmayıb</div>'}
+    <div class="section-title">${lend ? 'Verdiyim' : 'Aldığım'}</div>
+    <div class="list">${given.map(giveRow).join('')}</div>
   </main></div>`;
+}
+// qaytarmanın saatı (köhnə yazılarda saat yoxdursa, yazıldığı an)
+function backTime(t) {
+  if (t.time) return t.time;
+  if (t.type === 'lback' && t.created > 1e12 && !String(t.id).startsWith('LB')) { const d = new Date(t.created); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  return '';
 }
 
 // ---------- HESABAT ----------
@@ -341,14 +360,12 @@ function reportCard(F) {
     ${F.work ? kv('Nağd işlər', '+' + money(F.work), 'pay') : ''}
     ${F.pays ? kv('Nisyə ödənişləri', '+' + money(F.pays), 'pay') : ''}
     ${F.other ? kv('Digər gəlir', '+' + money(F.other), 'pay') : ''}
-    ${F.lback ? kv('Verdiyim borcun qaytarılması', '+' + money(F.lback), 'pay') : ''}
     ${F.brw ? kv('Aldığım borc', '+' + money(F.brw), 'pay') : ''}
     <div class="kv total"><span>Cəmi gəlir</span><b class="num pay">+${money(F.gelir)}</b></div>
     <div class="section-title">Xərc (−)</div>
     ${F.parts ? kv('Hissələr', '−' + money(F.parts), 'exp') : ''}
     ${F.xerc ? kv('Xərclər', '−' + money(F.xerc), 'exp') : ''}
     ${F.loss ? kv('Ziyan', '−' + money(F.loss), 'exp') : ''}
-    ${F.lend ? kv('Verdiyim borc', '−' + money(F.lend), 'exp') : ''}
     ${F.brep ? kv('Qaytardığım borc', '−' + money(F.brep), 'exp') : ''}
     <div class="kv total"><span>Cəmi xərc</span><b class="num exp">${F.cixis ? '−' : ''}${money(F.cixis)}</b></div>
     <div class="kv total" style="font-size:20px;border-top:2px solid var(--line);margin-top:6px;padding-top:12px"><span>Qalıq</span><b class="num ${netCls(F.qaliq)}">${money(F.qaliq)}</b></div>
@@ -358,7 +375,7 @@ function reportCard(F) {
 }
 function renderReport() {
   const m = state.month, F = C.monthFlow(db, m);
-  const days = [...new Set(db.tx.filter(t => (t.date || '').slice(0, 7) === m && !t.corr).map(t => t.date))].sort().reverse();
+  const days = [...new Set(db.tx.filter(t => (t.date || '').slice(0, 7) === m && !t.corr && !isLoanTx(t)).map(t => t.date))].sort().reverse();
   return `<div class="topbar"><h1>Hesabat</h1></div>
   <main style="padding-top:6px">
     <div class="mbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${mLabel(m)}</b><button class="iconbtn" data-a="month" data-v="1" ${m >= today().slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
@@ -369,7 +386,7 @@ function renderReport() {
 }
 function renderDay(pg) {
   const d = pg.d, F = C.dayFlow(db, d);
-  const tx = sortTx(db.tx.filter(t => t.date === d && visibleTx(t)));
+  const tx = sortTx(db.tx.filter(t => t.date === d && accTx(t)));
   return `<div class="page">${pageHead(fmtDate(d))}
   <main style="padding-top:6px;padding-bottom:40px">
     ${reportCard(F)}
@@ -378,7 +395,7 @@ function renderDay(pg) {
   </main></div>`;
 }
 function renderAll() {
-  const m = state.month, tx = sortTx(db.tx.filter(t => (t.date || '').slice(0, 7) === m && visibleTx(t)));
+  const m = state.month, tx = sortTx(db.tx.filter(t => (t.date || '').slice(0, 7) === m && accTx(t)));
   return `<div class="page">${pageHead('Bütün əməliyyatlar')}
   <main style="padding-top:6px;padding-bottom:40px">
     <div class="mbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${mLabel(m)}</b><button class="iconbtn" data-a="month" data-v="1" ${m >= today().slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
@@ -554,10 +571,12 @@ function renderSheet(s) {
       return `<h2>${esc(txTitle(t))}</h2><div class="card">${kv('Məbləğ', money(t.amount))}${t.cost ? kv('Hissə', money(t.cost)) : ''}${kv('Tarix', fmtDate(t.date) + (t.time ? ', ' + t.time : ''))}${t.pid ? kv('Usta', esc(pname(t.pid))) : ''}${t.note ? kv('Qeyd', esc(t.note)) : ''}</div>
       <button class="btn danger" data-a="delTx">Sil</button>`;
     }
-    case 'backrow': { // qaytarma qeydini silmək
+    case 'backrow': { // qaytarmanı düzəltmək: məbləğ, gün, saat; ya da silmək
       const t = db.tx.find(x => x.id === s.id);
-      return `<h2>${esc(txTitle(t))}</h2><div class="card">${kv('Kim', esc(t.note))}${kv('Məbləğ', money(t.amount))}${kv('Tarix', fmtDate(t.date))}</div>
-      <button class="btn danger" data-a="delBackRow">Sil</button>`;
+      return `<h2>${t.type === 'lback' ? '↩️ Qaytarma' : '📤 Qaytardığım'} — ${esc(t.note)}</h2>
+      ${fAmount(amountInput(t.amount))}
+      <div class="two"><div><label>Tarix</label><input class="field" id="f_date" type="date" value="${t.date || today()}" max="${today()}"></div><div><label>Saat</label><input class="field" id="f_time" type="time" value="${esc(backTime(t))}"></div></div>
+      ${saveBtn('saveBackRow')}<button class="btn danger" data-a="delBackRow">Sil</button>`;
     }
     case 'currency': return `<h2>Valyuta</h2><div class="sgroup">${CURRENCIES.map(([c, n]) => `<button class="srow" data-a="setCur" data-v="${c}"><span class="si" style="background:#0E9384">${c}</span><span class="st"><span>${n}</span>${c === cur() ? '<em>✓</em>' : ''}</span></button>`).join('')}</div>`;
   }
@@ -789,8 +808,36 @@ const actions = {
     if (!amount) return toast('Məbləği yazın');
     const g = C.parties(db, s.side).find(x => x.key === key);
     if (amount > g.left && !confirm(`Qalan borc ${money(g.left)}-dır. Yalnız ${money(g.left)} yazılsın?`)) return;
-    const done = C.payBack(db, s.side, key, amount, val('f_date') || today(), Date.now(), uid);
+    const d = val('f_date') || today();
+    if (d > today()) return toast('Gələcək tarix olmaz');
+    const done = C.payBack(db, s.side, key, amount, d, Date.now(), uid, val('f_time') || nowHm());
     save(); closeSheet(); toast(money(done) + ' yazıldı');
+  },
+  saveBackRow() {
+    const t = db.tx.find(x => x.id === state.sheet.id);
+    if (!t) return closeSheet();
+    const amount = parseAmount(val('f_amount')), d = val('f_date') || t.date, tm = val('f_time');
+    if (!amount) return toast('Məbləği yazın');
+    if (d > today()) return toast('Gələcək tarix olmaz');
+    const now = Date.now();
+    if (t.type === 'lback') {
+      const l = db.loans.find(x => x.id === t.lid);
+      if (l) {
+        const max = (l.amount || 0) - ((l.back || 0) - t.amount);
+        if (amount > max) return toast('Borcdan artıq ola bilməz: ən çoxu ' + money(max));
+        l.back = (l.back || 0) - t.amount + amount; l.u = now;
+      }
+      Object.assign(t, { amount, date: d, time: tm, u: now });
+    } else {
+      const l = db.borrow.find(x => x.id === t.bid);
+      const x = l && (l.pays || []).find(x => 'BP' + (x.id || l.id + x.d + x.amount) === t.id);
+      if (!x) return closeSheet();
+      const c = C.borrowCalc(l), max = c.left + x.amount;
+      if (amount > max) return toast('Borcdan artıq ola bilməz: ən çoxu ' + money(max));
+      if (!x.id) { db.removed[t.id] = now; db.tx = db.tx.filter(y => y !== t); x.id = uid(); }
+      Object.assign(x, { amount, d, t: tm }); l.u = now;
+    }
+    save(); closeSheet(); toast('Düzəldildi');
   },
   delBackRow() {
     const t = db.tx.find(x => x.id === state.sheet.id);
