@@ -141,10 +141,6 @@ public class MainActivity extends Activity {
         }
 
         gsync = new GoogleSync(this);
-        try {
-            CardListener.live = new java.lang.ref.WeakReference<>(this);
-        } catch (Throwable ignored) {
-        }
         web = new WebView(this);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -302,13 +298,8 @@ public class MainActivity extends Activity {
     }
 
     /** A new card operation came from the bank's notification: the page writes it in now. */
-    void cardsArrived() {
-        js("window.onCardTx && window.onCardTx()");
-    }
-
     @Override
     protected void onDestroy() {
-        if (CardListener.live != null && CardListener.live.get() == this) CardListener.live = null;
         try {
             unregisterReceiver(screenOff);
         } catch (Exception ignored) {
@@ -356,13 +347,6 @@ public class MainActivity extends Activity {
             return;
         }
         js("window.onAppResume && window.onAppResume()");
-        // after an update Android sometimes leaves the notification reader disconnected: connect it again
-        try {
-            if (Build.VERSION.SDK_INT >= 24 && CardListener.allowed(this))
-                android.service.notification.NotificationListenerService.requestRebind(new android.content.ComponentName(this, CardListener.class));
-        } catch (Throwable ignored) {
-        }
-        js("window.onCardTx && window.onCardTx()");
     }
 
     @Override
@@ -643,42 +627,6 @@ public class MainActivity extends Activity {
     }
 
     private class Bridge {
-        /** Card operations read from the bank's notifications, waiting to be written in. */
-        @JavascriptInterface
-        public String takeCards() {
-            return CardListener.take(MainActivity.this);
-        }
-
-        /** The last bank-like notifications as they came (for checking). */
-        @JavascriptInterface
-        public String cardLog() {
-            return CardListener.log(MainActivity.this);
-        }
-
-        @JavascriptInterface
-        public boolean cardAccess() {
-            return CardListener.allowed(MainActivity.this);
-        }
-
-        /** Android's page where Hesabat is allowed to read notifications. */
-        @JavascriptInterface
-        public void openCardAccess() {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    internalNav = true;
-                    try {
-                        startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
-                    } catch (Exception e) {
-                        try {
-                            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }
-            });
-        }
-
         /** App info page: on Android 13+ "Allow restricted settings" is in its ⋮ menu (an APK not from Play). */
         @JavascriptInterface
         public void openAppInfo() {

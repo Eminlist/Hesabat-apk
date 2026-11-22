@@ -15,6 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # hesablamalar yoxlanır: biri səhv çıxsa, APK yığılmır və buraxılmır
+      - name: Hesablamaları yoxla
+        run: node emin/tests/calc.test.js
+
       - name: Alətləri qur
         run: |
           # paket serveri bəzən ilişir: hər cəhd 4 dəqiqə ilə məhdud, 3 dəfə yoxlanır
