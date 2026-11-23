@@ -1,6 +1,6 @@
 // Hesabat 3.1.3 Rev. 000 — sadə versiya. Hesablamalar calc.js-dədir (HC).
 'use strict';
-const APP_VERSION = '3.1.3 Rev. 001';
+const APP_VERSION = '3.1.3 Rev. 002';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.HC;
 const pad = C.pad;
@@ -664,23 +664,26 @@ function renderSheet(s) {
     case 'job': {
       const t = s.id && db.tx.find(x => x.id === s.id), paid = t ? t.type === 'inc' : s.paid !== false;
       return `<h2>${t ? 'İşi düzəlt' : '🔧 İş yaz'}</h2>
-      <label>Müştəri</label><div style="display:flex;gap:8px"><input class="field" id="f_who" list="dl_people" value="${esc(t ? pname(t.pid) : s.pid ? pname(s.pid) : '')}" placeholder="adı yazın (nağd işdə boş qala bilər)" autocomplete="off"><button class="btn ghost" data-a="contact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇</button></div><input type="hidden" id="f_phone" value="">
-      ${nameList('dl_people', db.people.map(p => p.name))}
+      <label>Müştəri</label><div style="display:flex;gap:8px"><input class="field" id="f_who" value="${esc(t ? pname(t.pid) : s.pid ? pname(s.pid) : '')}" placeholder="adı yazın (nağd işdə boş qala bilər)" autocomplete="off"><button class="btn ghost" data-a="contact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇</button></div><input type="hidden" id="f_phone" value="">
+      <div class="whophone" id="f_phone_show">${(() => { const p = t ? person(t.pid) : s.pid ? person(s.pid) : null; return p && p.phone ? '📞 ' + esc(p.phone) : ''; })()}</div>
+      <div class="whosug" id="whosug"></div>
       <label>Görülən iş</label><input class="field" id="f_note" value="${esc(t ? t.note || '' : '')}" placeholder="məs. iPhone 11 ekran" autocomplete="off">
       ${fAmount(t ? amountInput(t.amount) : '', 'İşin dəyəri')}
       <label>Hissə xərci (istəyə bağlı)</label><input class="field num" id="f_cost" inputmode="decimal" placeholder="0" value="${esc(t ? amountInput(t.cost) : '')}" autocomplete="off">
       <label>Ödəniş</label><div class="seg" data-group="paid"><button class="pay ${paid ? 'on' : ''}" data-a="pick" data-v="paid|1">Ödədi</button><button class="debt ${paid ? '' : 'on'}" data-a="pick" data-v="paid|0">Nisyə</button></div>
       <div data-show="paid|1" class="${paid ? '' : 'hidden'}">${fMethod(mOf(t))}</div>
-      <div data-show="paid|0" class="${paid ? 'hidden' : ''}"><label>Ödəniş günü (istəyə bağlı — 3 gün qabaqdan xatırladılır)</label><input class="field" id="f_due" type="date" value="${t && t.due || ''}"></div>
+      <div data-show="paid|0" class="${paid ? 'hidden' : ''}"><label>Ödəniş günü (istəyə bağlı — 3 gün qabaqdan xatırladılır)</label>
+        <div class="chips" data-group="due"><button class="chip" data-a="dueSet" data-v="3">3 gün</button><button class="chip" data-a="dueSet" data-v="10">10 gün</button><button class="chip" data-a="dueSet" data-v="m1">1 ay</button><button class="chip" data-a="dueSet" data-v="hand">✍️ Əl ilə</button></div>
+        <input class="field" id="f_due" type="date" value="${t && t.due || ''}" style="margin-top:8px"></div>
       ${fDate(t)}
       ${saveBtn('saveJob')}${t ? '<button class="btn danger" data-a="delTx">Sil</button>' : ''}`;
     }
     case 'pay': {
-      const t = s.id && db.tx.find(x => x.id === s.id), withDebt = db.people.filter(p => C.nisye(db, p.id) > 0);
+      const t = s.id && db.tx.find(x => x.id === s.id);
       const pid = t ? t.pid : s.pid;
       return `<h2>${t ? 'Ödənişi düzəlt' : '💰 Nisyə ödənişi'}</h2>
-      <label>Müştəri</label><input class="field" id="f_who" list="dl_people" value="${esc(pid ? pname(pid) : '')}" placeholder="kim ödədi?" autocomplete="off">
-      ${nameList('dl_people', withDebt.map(p => p.name).concat(pid ? [pname(pid)] : []))}
+      <label>Müştəri</label><input class="field" id="f_who" value="${esc(pid ? pname(pid) : '')}" placeholder="kim ödədi? (ad yazdıqca təklif olunur)" autocomplete="off">
+      <div class="whosug" id="whosug"></div>
       ${pid ? `<div class="note" style="margin-top:6px">Nisyə qalığı: <b>${money(C.nisye(db, pid))}</b></div>` : ''}
       ${fAmount(t ? amountInput(t.amount) : '')}${fMethod(mOf(t))}${fDate(t)}
       ${saveBtn('savePay')}${t ? '<button class="btn danger" data-a="delTx">Sil</button>' : ''}`;
@@ -818,6 +821,7 @@ function render() {
   state.lastPage = pg;
   if (pg && pg.kind === 'all') filterAll();
   if (state.sheet && (state.sheet.kind === 'exp')) catSuggest();
+  if (state.sheet && state.sheet.kind === 'pay' && !val('f_who')) whoSuggest();
 }
 function openSheet(s) { state.sheet = s; render(); }
 function closeSheet() { state.sheet = null; render(); }
@@ -833,9 +837,24 @@ window.onBack = function () {
 window.onLaunchTarget = function (t) { if (state.pin) return; state.sheet = null; state.pages = []; state.tab = t === 'people' ? 'people' : 'home'; render(); };
 window.onContactPicked = function (name, phone) {
   const n = document.getElementById('f_name') || document.getElementById('f_who'), ph = document.getElementById('f_phone');
-  if (ph) ph.value = String(phone || '').trim();
-  if (n && !n.value.trim() && String(name || '').trim()) n.value = String(name).trim();
+  phone = String(phone || '').trim(); name = String(name || '').trim();
+  if (ph) ph.value = phone;
+  const show = document.getElementById('f_phone_show');
+  if (show) { if (n && name) n.value = name; show.textContent = phone ? '📞 ' + phone : ''; const b = document.getElementById('whosug'); if (b) b.innerHTML = ''; return; }
+  if (n && !n.value.trim() && name) n.value = name;
 };
+// müştəri təklifləri: ad (və ya nömrə) yazdıqca, adın altında nömrəsi
+function whoSuggest() {
+  const box = document.getElementById('whosug'), inp = document.getElementById('f_who'), s = state.sheet;
+  if (!box || !inp || !s) return;
+  const q = fold(inp.value), qd = inp.value.replace(/\D/g, '');
+  if (!q && s.kind !== 'pay') { box.innerHTML = ''; return; }
+  const list = db.people.map(p => ({ p, b: C.nisye(db, p.id) }))
+    .filter(x => (s.kind !== 'pay' || x.b > 0 || !q) && fold(x.p.name) !== q && (!q || fold(x.p.name).includes(q) || (qd.length > 1 && String(x.p.phone || '').replace(/\D/g, '').includes(qd))))
+    .filter(x => s.kind !== 'pay' || x.b > 0)
+    .sort((a, b) => (q ? fold(b.p.name).startsWith(q) - fold(a.p.name).startsWith(q) : 0) || b.b - a.b || a.p.name.localeCompare(b.p.name, 'az')).slice(0, 8);
+  box.innerHTML = list.map(x => `<button class="whorow" data-a="whoPick" data-v="${x.p.id}"><span class="avatar" style="width:36px;height:36px;font-size:13px">${esc(initials(x.p.name))}</span><span class="grow"><b>${esc(x.p.name)}</b><small>${x.p.phone ? '📞 ' + esc(x.p.phone) : 'nömrə yoxdur'}</small></span>${x.b > 0 ? `<em class="num debt">${money(x.b)}</em>` : ''}</button>`).join('');
+}
 
 // ---------- əməliyyatlar ----------
 function findPersonByName(name, create) {
@@ -852,8 +871,8 @@ function trashTx(t) {
   db.tx = db.tx.filter(x => x !== t);
 }
 function txBase(t) {
-  const d = val('f_date') || today(), tm = val('f_time');
-  return Object.assign(t, { date: d, time: tm || undefined, u: Date.now() });
+  const d = val('f_date') || today(), tm = val('f_time') || nowHm(); // saat yazılmazsa, avtomatik indiki saat
+  return Object.assign(t, { date: d, time: tm, u: Date.now() });
 }
 const actions = {
   noop() {},
@@ -967,7 +986,7 @@ const actions = {
     if (!name) return toast(lend ? 'Kimə verdiyinizi yazın' : 'Kimdən aldığınızı yazın');
     if (!amount) return toast('Məbləği yazın');
     let r = s.id && list.find(x => x.id === s.id);
-    if (!r) { r = lend ? { id: uid(), back: 0, created: Date.now() } : { id: uid(), pays: [], created: Date.now() }; list.push(r); }
+    if (!r) { r = lend ? { id: uid(), back: 0, created: Date.now(), time: nowHm() } : { id: uid(), pays: [], created: Date.now(), time: nowHm() }; list.push(r); }
     // eyni adamın başqa qeydləri də eyni adla qalsın
     Object.assign(r, { name, phone: val('f_phone').trim(), amount, note: val('f_note').trim(), u: Date.now() });
     if (lend) { r.date = val('f_date') || today(); if ((r.back || 0) > amount) r.back = amount; }
@@ -1077,6 +1096,20 @@ const actions = {
   summary() { openSheet({ kind: 'summary' }); },
   saveSummary() { const tm = val('f_stime'); if (!/^\d{1,2}:\d{2}$/.test(tm)) return toast('Saatı seçin'); if (hasNative && Android.setSummaryTime) Android.setSummaryTime(tm); pushNative(); closeSheet(); toast('Hər gün ' + tm + '-da bildiriş gələcək'); },
   offSummary() { if (hasNative && Android.setSummaryTime) Android.setSummaryTime(''); closeSheet(); toast('Söndürüldü'); },
+  whoPick(v) {
+    const p = person(v), i = document.getElementById('f_who'); if (!p || !i) return;
+    i.value = p.name;
+    const sh = document.getElementById('f_phone_show'); if (sh) sh.textContent = p.phone ? '📞 ' + p.phone : '';
+    const b = document.getElementById('whosug'); if (b) b.innerHTML = '';
+    if (state.sheet && state.sheet.kind === 'pay') { const a = document.getElementById('f_amount'); if (a && !a.value) a.value = amountInput(C.nisye(db, p.id)); }
+  },
+  dueSet(v, e, el) {
+    el.closest('[data-group]').querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el));
+    const f = document.getElementById('f_due'), base = val('f_date') || today();
+    if (v === 'hand') { f.focus(); if (f.showPicker) try { f.showPicker(); } catch (x) {} return; }
+    if (v === 'm1') { const x = new Date(base + 'T12:00:00'); const day = x.getDate(); x.setDate(1); x.setMonth(x.getMonth() + 1); x.setDate(Math.min(day, new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate())); f.value = x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); }
+    else f.value = addDays(base, +v);
+  },
   catPick(v) { const i = document.getElementById('f_cat'); if (i) { i.value = v; catSuggest(); } },
   flt(v, e, el) { el.closest('[data-group]').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)); filterAll(); },
   setCur(v) { db.cur = { v, u: Date.now() }; save(); closeSheet(); },
@@ -1170,6 +1203,7 @@ app.addEventListener('click', e => {
 const fold = s => C.norm(s).replace(/ə/g, 'e').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u');
 app.addEventListener('input', e => {
   if (e.target.id === 'f_cat') return catSuggest();
+  if (e.target.id === 'f_who' && document.getElementById('whosug')) { const sh = document.getElementById('f_phone_show'), ph = document.getElementById('f_phone'); if (sh) sh.textContent = ''; if (ph) ph.value = ''; return whoSuggest(); }
   if (e.target.id === 'tq') return filterAll();
   if (e.target.id !== 'q') return;
   const q = fold(e.target.value), qd = e.target.value.replace(/\D/g, '');
