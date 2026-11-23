@@ -21,11 +21,11 @@
         case 'pay': r.pays += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
         case 'inc': if (t.other) r.other += a; else r.work += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
         case 'lback': r.lback += a; break; // hesaba qatılmır
-        case 'brw': r.brw += a; r.nagdIn += a; break;
+        case 'brw': r.brw += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
         case 'pexp': case 'exp': r.xerc += a; isCard(t) ? r.kartOut += a : r.nagdOut += a; break;
         case 'loss': r.loss += a; break;
         case 'lend': r.lend += a; break; // hesaba qatılmır
-        case 'brep': r.brep += a; r.nagdOut += a; break;
+        case 'brep': r.brep += a; isCard(t) ? r.kartOut += a : r.nagdOut += a; break;
         case 'debt': r.newDebt += a; break;
       }
       // hissələr topdançıdan nağd alınır
@@ -38,6 +38,11 @@
   }
   const dayFlow = (db, d) => flow(db.tx.filter(t => t.date === d));
   const monthFlow = (db, m) => flow(db.tx.filter(t => (t.date || '').slice(0, 7) === m));
+  // əvvəlki günlərdən qalan pul: d tarixindən əvvəlki bütün gəlir − xərc
+  const carry = (db, d) => flow(db.tx.filter(t => (t.date || '') < d)).qaliq;
+  // günün (və ya ayın) qalığı = əvvəldən qalan + bu dövrün gəliri − xərci
+  function dayBalance(db, d) { const c = carry(db, d), f = dayFlow(db, d); return { carry: c, f, qaliq: c + f.qaliq }; }
+  function monthBalance(db, m) { const c = carry(db, m + '-01'), f = monthFlow(db, m); return { carry: c, f, qaliq: c + f.qaliq }; }
 
   // ---------- nisyə (ustaların borcu) ----------
   function nisye(db, pid) {
@@ -98,13 +103,13 @@
     now = now || Date.now();
     const want = new Map();
     for (const l of db.borrow) {
-      want.set('B' + l.id, { type: 'brw', bid: l.id, amount: l.amount, date: borrowDate(l), time: l.time || '', note: l.name });
-      for (const x of l.pays || []) want.set('BP' + (x.id || l.id + x.d + x.amount), { type: 'brep', bid: l.id, amount: x.amount, date: x.d, time: x.t || '', note: l.name });
+      want.set('B' + l.id, { type: 'brw', bid: l.id, amount: l.amount, date: borrowDate(l), time: l.time || '', note: l.name, method: l.method || 'nagd' });
+      for (const x of l.pays || []) want.set('BP' + (x.id || l.id + x.d + x.amount), { type: 'brep', bid: l.id, amount: x.amount, date: x.d, time: x.t || '', note: l.name, method: x.m || 'nagd' });
     }
     for (const [id, f] of want) {
       const t = db.tx.find(x => x.id === id);
       if (!t) db.tx.push(Object.assign({ id, created: now, u: now }, f));
-      else if (t.amount !== f.amount || t.date !== f.date || (t.time || '') !== f.time || t.note !== f.note) Object.assign(t, f, { u: now });
+      else if (t.amount !== f.amount || t.date !== f.date || (t.time || '') !== f.time || t.note !== f.note || (t.method || 'nagd') !== f.method) Object.assign(t, f, { u: now });
     }
     const gone = db.tx.filter(t => (t.type === 'brw' || t.type === 'brep') && !want.has(t.id));
     if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
@@ -130,8 +135,8 @@
     return [...m.values()];
   }
   // geri qaytarılan məbləğ ən köhnə açıq borcdan başlayaraq bağlanır
-  function payBack(db, side, key, amount, date, now, mkId, time) {
-    time = time || '';
+  function payBack(db, side, key, amount, date, now, mkId, time, method) {
+    time = time || ''; method = method || 'nagd';
     now = now || Date.now();
     const recs = (side === 'lend' ? db.loans : db.borrow).filter(l => norm(l.name) === key)
       .sort((a, b) => ((side === 'lend' ? a.date : borrowDate(a)) || '').localeCompare((side === 'lend' ? b.date : borrowDate(b)) || '') || (a.created || 0) - (b.created || 0));
@@ -143,9 +148,9 @@
       const use = Math.min(left, rest); rest -= use;
       if (side === 'lend') {
         l.back = (l.back || 0) + use; l.u = now;
-        db.tx.push({ id: mkId(), type: 'lback', lid: l.id, amount: use, date, time, note: l.name, created: now, u: now });
+        db.tx.push({ id: mkId(), type: 'lback', lid: l.id, amount: use, date, time, method, note: l.name, created: now, u: now });
       } else {
-        l.pays = (l.pays || []).concat({ id: mkId(), d: date, t: time, amount: use }); l.u = now;
+        l.pays = (l.pays || []).concat({ id: mkId(), d: date, t: time, m: method, amount: use }); l.u = now;
       }
     }
     if (side === 'borrow') syncBorrowTx(db, now);
@@ -170,6 +175,6 @@
     return { set: !!k, at, nagd: (k ? k.nagd || 0 : 0) + f.nagdIn - f.nagdOut, kart: (k ? k.kart || 0 : 0) + f.kartIn - f.kartOut };
   }
 
-  G.HC = { pad, isCard, flow, dayFlow, monthFlow, nisye, nisyeTotal, debtState, overdue, daysBetween, loanLeft, syncLoanTx,
+  G.HC = { pad, isCard, flow, dayFlow, monthFlow, carry, dayBalance, monthBalance, nisye, nisyeTotal, debtState, overdue, daysBetween, loanLeft, syncLoanTx,
     borrowDate, borrowCalc, syncBorrowTx, norm, parties, payBack, kassaDay, kassaNow };
 })(typeof window !== 'undefined' ? window : globalThis);

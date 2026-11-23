@@ -134,4 +134,35 @@ test('Kassa: cibimdəki və kartdakı pul', () => {
   assert.strictEqual(k.kart, 50000 - 1000);
 });
 
+test('Gün dəyişəndə əvvəlki günlərdən qalan pul qalığa düşür, xərc mənfi göstərilmir', () => {
+  const db = empty();
+  db.tx.push({ id: '1', type: 'inc', amount: 20000, date: '2026-11-21' });
+  db.tx.push({ id: '2', type: 'pexp', amount: 5000, date: '2026-11-22' });
+  db.tx.push({ id: '3', type: 'pexp', amount: 3000, date: '2026-11-23' });
+  const b = C.dayBalance(db, '2026-11-23');
+  assert.strictEqual(b.carry, 15000);
+  assert.strictEqual(b.f.gelir, 0); assert.strictEqual(b.f.cixis, 3000);
+  assert.strictEqual(b.qaliq, 12000);
+  // verdiyim borc əvvəldən qalana da qatılmır
+  db.loans.push({ id: 'l', name: 'X', amount: 9000, date: '2026-11-22', back: 0 });
+  C.syncLoanTx(db);
+  assert.strictEqual(C.dayBalance(db, '2026-11-23').qaliq, 12000);
+  // ay: keçən aydan qalan
+  db.tx.push({ id: '4', type: 'inc', amount: 7000, date: '2026-10-30' });
+  const m = C.monthBalance(db, '2026-11');
+  assert.strictEqual(m.carry, 7000); assert.strictEqual(m.f.qaliq, 12000); assert.strictEqual(m.qaliq, 19000);
+});
+
+test('Aldığım borc kartla da ola bilər: kassada karta düşür', () => {
+  const db = empty();
+  db.borrow.push({ id: 'a', name: 'A', amount: 30000, date: '2026-11-23', method: 'kart', pays: [] });
+  C.syncBorrowTx(db);
+  let k = C.kassaNow(db);
+  assert.strictEqual(k.kart, 30000); assert.strictEqual(k.nagd, 0);
+  C.payBack(db, 'borrow', C.norm('A'), 10000, '2026-11-23', 1, mk, '12:00', 'nagd');
+  k = C.kassaNow(db);
+  assert.strictEqual(k.kart, 30000); assert.strictEqual(k.nagd, -10000);
+  assert.strictEqual(C.monthFlow(db, M).qaliq, 20000);
+});
+
 console.log(n + ' yoxlama keçdi');

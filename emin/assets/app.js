@@ -1,6 +1,6 @@
-// Hesabat 4.0 — sadə versiya. Hesablamalar calc.js-dədir (HC).
+// Hesabat 3.1.3 Rev. 000 — sadə versiya. Hesablamalar calc.js-dədir (HC).
 'use strict';
-const APP_VERSION = '4.0.1';
+const APP_VERSION = '3.1.3 Rev. 000';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.HC;
 const pad = C.pad;
@@ -151,11 +151,11 @@ function refreshSettings() { if (topPage() && topPage().kind === 'settings' && !
 // ---------- telefona: vidcet, qısayollar, xatırlatmalar, günün xülasəsi ----------
 function pushNative() {
   if (!hasNative) return;
-  const td = today(), f = C.dayFlow(db, td);
+  const td = today(), B = C.dayBalance(db, td), f = B.f;
   try {
     if (Android.setWidget) Android.setWidget(td, 'Bu günkü gəlir', money(f.gelir), money(0));
     if (Android.updateShortcuts) Android.updateShortcuts('Bu gün gəlir: ' + money(f.gelir), 'Bu gün xərc: ' + money(f.cixis), '');
-    if (Android.setSummary) Android.setSummary(td, 'Günün xülasəsi', 'Gəlir: ' + money(f.gelir) + ' · Xərc: ' + money(f.cixis) + ' · Qalıq: ' + money(f.qaliq) + (f.newDebt ? ' · Yeni nisyə: ' + money(f.newDebt) : ''), 'Bu gün heç nə yazılmayıb');
+    if (Android.setSummary) Android.setSummary(td, 'Günün xülasəsi', 'Gəlir: ' + money(f.gelir) + ' · Xərc: ' + money(f.cixis) + ' · Qalıq: ' + money(B.qaliq) + (mods.kart ? ' · 💵 ' + money(f.nagdIn) + ' · 💳 ' + money(f.kartIn) : '') + (f.newDebt ? ' · Yeni nisyə: ' + money(f.newDebt) : ''), 'Bu gün heç nə yazılmayıb · Qalıq: ' + money(B.qaliq));
     if (Android.setDueList) {
       const items = [];
       for (const p of db.people) for (const d of C.debtState(db, p.id).debts) if (d.left > 0 && d.t.due) items.push({ d: addDays(d.t.due, -3), line: p.name + ' — nisyə ' + money(d.left) + ' · ödəniş günü ' + fmtDate(d.t.due) });
@@ -222,7 +222,7 @@ const accTx = t => visibleTx(t) && !isLoanTx(t);
 function txRow(t, showDate) {
   const s = txSign(t), who = t.pid ? pname(t.pid) : (['lend', 'lback', 'brw', 'brep'].includes(t.type) ? t.note : '');
   const note = ['lend', 'lback', 'brw', 'brep'].includes(t.type) ? '' : t.note || '';
-  const sub = [showDate ? fmtDate(t.date) : '', t.time || '', who, (s && mods.kart && C.isCard(t)) ? '💳 Kart' : ''].filter(Boolean).join(' · ');
+  const sub = [showDate ? fmtDate(t.date) : '', t.time || '', who, t.type === 'pexp' && t.cid ? '🏷 ' + catName(t.cid) : '', (s && mods.kart && C.isCard(t)) ? '💳 Kart' : ''].filter(Boolean).join(' · ');
   const cls = s > 0 ? 'pay' : s < 0 ? 'exp' : 'debt';
   const val = s > 0 ? '+' + money(t.amount) : s < 0 ? '−' + money(t.amount) : money(t.amount);
   return `<button class="row" data-a="openTx" data-v="${t.id}">
@@ -238,48 +238,54 @@ function pageHead(title, extra) {
 
 // ---------- ANA EKRAN ----------
 function renderHome() {
-  const td = today(), m = td.slice(0, 7), M = C.monthFlow(db, m), D = C.dayFlow(db, td), K = C.kassaNow(db);
+  const td = today(), m = td.slice(0, 7), M = C.monthFlow(db, m), B = C.dayBalance(db, td), D = B.f, K = C.kassaNow(db);
   const nis = C.nisyeTotal(db), lateU = db.people.map(p => ({ p, o: C.overdue(db, p.id, td) })).filter(x => x.o.sum > 0);
   const lateL = C.parties(db, 'lend').filter(g => g.left > 0 && g.due && g.due < td);
   const lateB = C.parties(db, 'borrow').filter(g => g.left > 0 && g.due && g.due < td);
   const recent = sortTx(db.tx.filter(accTx)).slice(0, 8);
   return `<div class="topbar"><h1><span class="sub">${fmtDate(td)}</span>Hesabat</h1><button class="tbtn" data-a="openSettings">${I.gear}</button></div>
   <header>
-    <div class="hbal"><small>${MONTHS[+m.slice(5) - 1]} — xalis qazanc</small><b class="num${M.qaliq < 0 ? ' neg-hero' : ''}">${money(M.qaliq)}</b></div>
+    <div class="hbal" data-a="openDay" data-v="${td}"><small>Bu gün — qalıq</small><b class="num${B.qaliq < 0 ? ' neg-hero' : ''}">${money(B.qaliq)}</b>
+      ${B.carry ? `<small style="display:block;margin-top:2px">Əvvəlki günlərdən qalan: ${money(B.carry)}</small>` : ''}</div>
     <div class="hsplit">
-      <button class="hio" data-a="tab" data-v="report"><span style="min-width:0"><small>Gəlir</small><b class="num">+${money(M.gelir)}</b></span></button>
+      <button class="hio" data-a="openDay" data-v="${td}"><span style="min-width:0"><small>Bu gün gəlir</small><b class="num">+${money(D.gelir)}</b></span></button>
       <div class="sep"></div>
-      <button class="hio" data-a="tab" data-v="report"><span style="min-width:0"><small>Xərc</small><b class="num">${M.cixis ? '−' : ''}${money(M.cixis)}</b></span></button>
+      <button class="hio" data-a="openDay" data-v="${td}"><span style="min-width:0"><small>Bu gün xərc</small><b class="num">${D.cixis ? '−' : ''}${money(D.cixis)}</b></span></button>
     </div>
   </header>
   <main>
-    ${lateU.length ? `<button class="odban" data-a="tab" data-v="people"><span>⚠ ${lateU.length} ustanın nisyəsi gecikir · ${money(lateU.reduce((s, x) => s + x.o.sum, 0))}</span></button>` : ''}
-    ${mods.borclar && lateL.length ? `<button class="odban" data-a="openSide" data-v="lend"><span>⚠ Verdiyim borc gecikir: ${esc(lateL.map(g => g.name).join(', '))}</span></button>` : ''}
-    ${mods.borclar && lateB.length ? `<button class="odban soon" data-a="openSide" data-v="borrow"><span>⏰ Qaytarmalı olduğum borc gecikir: ${esc(lateB.map(g => g.name).join(', '))}</span></button>` : ''}
+    ${lateU.length ? `<button class="odban" data-a="tab" data-v="people"><span>⚠ ${lateU.length} müştərinin nisyəsi gecikir · ${money(lateU.reduce((s, x) => s + x.o.sum, 0))}</span></button>` : ''}
+    ${mods.borclar && lateL.length ? `<button class="odban" data-a="openSide" data-v="lend"><span>⚠ Verdiyim borc gecikir: ${esc(lateL.map(g => g.name + ' (' + C.daysBetween(g.due, td) + ' gün)').join(', '))}</span></button>` : ''}
+    ${mods.borclar && lateB.length ? `<button class="odban soon" data-a="openSide" data-v="borrow"><span>⏰ Qaytarmalı olduğum borc gecikir: ${esc(lateB.map(g => g.name + ' (' + C.daysBetween(g.due, td) + ' gün)').join(', '))}</span></button>` : ''}
+    ${mods.kart && (D.nagdIn || D.kartIn) ? `<div class="card" style="padding:12px 16px">${kv('Bu gün alınan 💵 nağd', '+' + money(D.nagdIn), 'pay')}${kv('Bu gün alınan 💳 kart', '+' + money(D.kartIn), 'pay')}</div>` : ''}
     <div class="hm3">
-      ${mods.kassa ? `<button class="tile" data-a="kassa"><small>Kassa</small>
-        <b class="num ${K.nagd < 0 ? 'neg' : ''}">${money(K.nagd)}</b><span>💵 Cibimdəki pul</span>
-        ${mods.kart ? `<b class="num ${K.kart < 0 ? 'neg' : ''}" style="font-size:16px;margin-top:4px">${money(K.kart)}</b><span>💳 Kartdakı pul</span>` : ''}</button>` : `<button class="tile" data-a="openDay" data-v="${td}"><small>Bu gün</small><b class="num ${netCls(D.qaliq)}">${signed(D.qaliq)}</b><span>+${money(D.gelir)} · −${money(D.cixis)}</span></button>`}
-      <button class="tile" data-a="tab" data-v="people"><small>Ustalardakı nisyə</small><b class="num debt">${money(nis)}</b><span>${db.people.filter(p => C.nisye(db, p.id) > 0).length} usta</span></button>
+      ${mods.kassa ? `<button class="tile" data-a="kassa"><small>Kassa — məndə olmalı</small>
+        <b class="num ${K.nagd + (mods.kart ? K.kart : 0) < 0 ? 'neg' : ''}">${money(K.nagd + (mods.kart ? K.kart : 0))}</b>
+        <span>💵 Nağd: ${money(K.nagd)}</span>
+        ${mods.kart ? `<span>💳 Kart: ${money(K.kart)}</span>` : ''}</button>` : ''}
+      <button class="tile" data-a="tab" data-v="people"><small>Müştərilərdəki nisyə</small><b class="num debt">${money(nis)}</b><span>${db.people.filter(p => C.nisye(db, p.id) > 0).length} müştəri</span></button>
     </div>
-    <div class="sec"><b>Son əməliyyatlar</b><button data-a="openAll">Hamısı</button></div>
+    <button class="card" data-a="tab" data-v="report" style="display:block;width:100%;text-align:left;margin-top:12px">
+      <div class="section-title" style="margin-top:0">${MONTHS[+m.slice(5) - 1]}</div>
+      ${kv('Gəlir', '+' + money(M.gelir), 'pay')}${kv('Xərc', (M.cixis ? '−' : '') + money(M.cixis), 'exp')}${kv('Xalis', money(M.qaliq), netCls(M.qaliq))}</button>
+    <div class="sec"><b>Son əməliyyatlar</b><button data-a="openAll">Hamısı · 🔍</button></div>
     ${recent.length ? `<div class="list">${recent.map(t => txRow(t, true)).join('')}</div>` : '<div class="empty">Hələ heç nə yazılmayıb.<br>Aşağıdakı «+» düyməsi ilə başlayın.</div>'}
   </main>`;
 }
 
-// ---------- USTALAR ----------
+// ---------- MÜŞTƏRİLƏR ----------
 function renderPeople() {
   const td = today();
   const list = db.people.map(p => ({ p, b: C.nisye(db, p.id), o: C.overdue(db, p.id, td) }))
     .sort((a, b) => (b.b > 0) - (a.b > 0) || b.b - a.b || a.p.name.localeCompare(b.p.name, 'az'));
-  return `<div class="topbar"><h1>Ustalar</h1><button class="tbtn" data-a="newPerson">${I.plus}</button></div>
-  <header><div class="hbal" style="padding-bottom:4px"><small>Ustalardakı nisyə</small><b class="num">${money(C.nisyeTotal(db))}</b></div></header>
+  return `<div class="topbar"><h1>Müştərilər</h1><button class="tbtn" data-a="newPerson">${I.plus}</button></div>
+  <header><div class="hbal" style="padding-bottom:4px"><small>Müştərilərdəki nisyə</small><b class="num">${money(C.nisyeTotal(db))}</b></div></header>
   <main>
     <input class="search" id="q" placeholder="🔍 Ad və ya telefon" autocomplete="off">
     ${list.length ? `<div class="list" id="plist">${list.map(x => `<button class="row" data-a="openPerson" data-v="${x.p.id}" data-name="${esc(fold(x.p.name + ' ' + (x.p.phone || '')))}">
       <div class="avatar">${esc(initials(x.p.name))}</div>
       <div class="grow"><div class="t">${esc(x.p.name)}</div><div class="s">${x.o.sum ? `<span class="neg">⏰ ${x.o.days} gün gecikir</span>` : esc(x.p.phone || '')}</div></div>
-      <div class="amt num ${x.b > 0 ? 'debt' : 'zero'}">${money(x.b)}${x.b > 0 ? '<small>nisyə</small>' : ''}</div></button>`).join('')}</div>` : '<div class="empty">Usta yoxdur. Yuxarıdakı «+» ilə əlavə edin.</div>'}
+      <div class="amt num ${x.b > 0 ? 'debt' : 'zero'}">${money(x.b)}${x.b > 0 ? '<small>nisyə</small>' : ''}</div></button>`).join('')}</div>` : '<div class="empty">Müştəri yoxdur. Yuxarıdakı «+» ilə əlavə edin.</div>'}
   </main>`;
 }
 function renderPerson(pg) {
@@ -293,7 +299,8 @@ function renderPerson(pg) {
     ${age ? `<div style="position:relative;text-align:center;margin-top:6px;font-size:13px">${age}</div>` : ''}</div>
   <main style="padding-bottom:40px">
     <div class="two"><button class="btn debtb" data-a="newJob" data-v="${p.id}">+ İş yaz</button><button class="btn payb" data-a="newPay" data-v="${p.id}">Ödəniş aldım</button></div>
-    ${p.phone ? `<div class="two" style="margin-top:10px"><a class="btn ghost" style="margin:0;text-decoration:none" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 Zəng</a><a class="btn ghost" style="margin:0;text-decoration:none" href="https://wa.me/${waNum(p.phone)}${b > 0 ? '?text=' + encodeURIComponent('Salam! Nisyə qalığınız: ' + money(b)) : ''}">💬 WhatsApp</a></div>` : ''}
+    ${p.phone ? `<div class="two" style="margin-top:10px"><a class="btn ghost" style="margin:0;text-decoration:none" href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">📞 Zəng</a><a class="btn ghost" style="margin:0;text-decoration:none" href="https://wa.me/${waNum(p.phone)}">💬 WhatsApp</a></div>` : ''}
+    ${b > 0 ? `<a class="btn primary" style="text-decoration:none;display:block;text-align:center" href="${waLink(p.phone, msgPerson(p))}">📨 WhatsApp — hazır mesaj (tarixçə ilə)</a>` : ''}
     <div class="section-title">Əməliyyatlar</div>
     ${tx.length ? `<div class="list">${tx.map(t => txRow(t, true)).join('')}</div>` : '<div class="empty">Hələ əməliyyat yoxdur</div>'}
   </main></div>`;
@@ -340,6 +347,7 @@ function renderParty(pg) {
       <button class="btn payb" data-a="newBack" data-v="${pg.side}|${esc(g.key)}" ${g.left > 0 ? '' : 'disabled style="opacity:.45"'}>${lend ? 'Qaytarıldı' : 'Qaytardım'}</button>
     </div>
     ${g.phone ? `<div class="two" style="margin-top:10px"><a class="btn ghost" style="margin:0;text-decoration:none" href="tel:${esc(g.phone.replace(/[^\d+]/g, ''))}">📞 Zəng</a><a class="btn ghost" style="margin:0;text-decoration:none" href="https://wa.me/${waNum(g.phone)}">💬 WhatsApp</a></div>` : ''}
+    <a class="btn primary" style="text-decoration:none;display:block;text-align:center" href="${waLink(g.phone, msgParty(g, lend))}">📨 WhatsApp — hazır mesaj (tarixçə ilə)</a>
     <div class="section-title">${lend ? 'Qaytarmalar' : 'Ödənişlərim'} — gün, saat, məbləğ</div>
     ${backs.length ? `<div class="list">${backs.map(backRow).join('')}</div>` : '<div class="empty">Hələ qaytarılmayıb</div>'}
     <div class="section-title">${lend ? 'Verdiyim' : 'Aldığım'}</div>
@@ -353,11 +361,43 @@ function backTime(t) {
   return '';
 }
 
+// ---------- WhatsApp üçün hazır rəsmi mesaj ----------
+const waLink = (phone, text) => 'https://wa.me/' + (phone ? waNum(phone) : '') + '?text=' + encodeURIComponent(text);
+const whenTxt = t => fmtDate(t.date) + (backTime(t) || t.time ? ', ' + (backTime(t) || t.time) : '');
+function msgParty(g, lend) {
+  const ids = new Set(g.recs.map(l => l.id)), mine = t => lend ? ids.has(t.lid) : ids.has(t.bid);
+  const given = db.tx.filter(t => t.type === (lend ? 'lend' : 'brw') && mine(t)).sort((a, b) => a.date.localeCompare(b.date));
+  const backs = db.tx.filter(t => t.type === (lend ? 'lback' : 'brep') && mine(t)).sort((a, b) => (a.date + (backTime(a) || '')).localeCompare(b.date + (backTime(b) || '')));
+  const td = today(), L = [];
+  L.push('Salam, ' + g.name + '!', '');
+  L.push(lend ? 'Borc haqqında məlumat:' : 'Sizdən aldığım borc haqqında məlumat:', '');
+  L.push(lend ? '📅 Verilib:' : '📅 Alınıb:');
+  given.forEach(t => L.push('• ' + fmtDate(t.date) + ' — ' + money(t.amount)));
+  if (backs.length) { L.push('', lend ? '✅ Ödənişləriniz:' : '✅ Qaytardığım:'); backs.forEach(t => L.push('• ' + whenTxt(t) + ' — ' + money(t.amount))); }
+  L.push('', 'Cəmi: ' + money(g.total), (lend ? 'Ödənilib: ' : 'Qaytarılıb: ') + money(g.back), 'Qalıq: ' + money(g.left));
+  if (g.left > 0 && g.due) L.push(g.due < td ? '⏰ Qaytarma günü: ' + fmtDate(g.due) + ' (' + C.daysBetween(g.due, td) + ' gün gecikir)' : '📅 Qaytarma günü: ' + fmtDate(g.due));
+  if (g.left <= 0) L.push('Borc tam bağlanıb. Təşəkkür edirəm!');
+  L.push('', 'Hörmətlə.');
+  return L.join('\n');
+}
+function msgPerson(p) {
+  const tx = db.tx.filter(t => t.pid === p.id && !t.corr).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  const jobs = tx.filter(t => t.type === 'debt'), pays = tx.filter(t => t.type === 'pay');
+  const b = C.nisye(db, p.id), o = C.overdue(db, p.id, today()), L = [];
+  L.push('Salam, ' + p.name + '!', '', 'Nisyə haqqında məlumat:', '');
+  if (jobs.length) { L.push('🔧 Görülən işlər:'); jobs.forEach(t => L.push('• ' + fmtDate(t.date) + (t.note ? ' — ' + t.note : '') + ' — ' + money(t.amount))); }
+  if (pays.length) { L.push('', '✅ Ödənişləriniz:'); pays.forEach(t => L.push('• ' + whenTxt(t) + ' — ' + money(t.amount))); }
+  L.push('', 'Cəmi: ' + money(jobs.reduce((s, t) => s + t.amount, 0)), 'Ödənilib: ' + money(pays.reduce((s, t) => s + t.amount, 0)), 'Qalıq: ' + money(b));
+  if (o.sum) L.push('⏰ ' + o.days + ' gün gecikir');
+  L.push('', 'Hörmətlə.');
+  return L.join('\n');
+}
+
 // ---------- HESABAT ----------
-function reportCard(F) {
+function reportCard(F, B, carryLabel) {
   return `<div class="card">
     <div class="section-title" style="margin-top:0">Gəlir (+)</div>
-    ${F.work ? kv('Nağd işlər', '+' + money(F.work), 'pay') : ''}
+    ${F.work ? kv('İşlər', '+' + money(F.work), 'pay') : ''}
     ${F.pays ? kv('Nisyə ödənişləri', '+' + money(F.pays), 'pay') : ''}
     ${F.other ? kv('Digər gəlir', '+' + money(F.other), 'pay') : ''}
     ${F.brw ? kv('Aldığım borc', '+' + money(F.brw), 'pay') : ''}
@@ -368,39 +408,93 @@ function reportCard(F) {
     ${F.loss ? kv('Ziyan', '−' + money(F.loss), 'exp') : ''}
     ${F.brep ? kv('Qaytardığım borc', '−' + money(F.brep), 'exp') : ''}
     <div class="kv total"><span>Cəmi xərc</span><b class="num exp">${F.cixis ? '−' : ''}${money(F.cixis)}</b></div>
-    <div class="kv total" style="font-size:20px;border-top:2px solid var(--line);margin-top:6px;padding-top:12px"><span>Qalıq</span><b class="num ${netCls(F.qaliq)}">${money(F.qaliq)}</b></div>
+    ${B ? kv(carryLabel, money(B.carry), netCls(B.carry)) + kv('Bu dövrün nəticəsi', money(F.qaliq), netCls(F.qaliq)) : ''}
+    <div class="kv total" style="font-size:20px;border-top:2px solid var(--line);margin-top:6px;padding-top:12px"><span>Qalıq</span><b class="num ${netCls(B ? B.qaliq : F.qaliq)}">${money(B ? B.qaliq : F.qaliq)}</b></div>
     ${mods.kart ? kv('💵 Nağd: daxil / çıxan', '+' + money(F.nagdIn) + ' / ' + (F.nagdOut ? '−' : '') + money(F.nagdOut)) + kv('💳 Kart: daxil / çıxan', '+' + money(F.kartIn) + ' / ' + (F.kartOut ? '−' : '') + money(F.kartOut)) : ''}
     ${F.newDebt ? kv('Yazılan yeni nisyə (gəlir deyil)', money(F.newDebt), 'debt') : ''}
   </div>`;
 }
+// ---------- dairəvi qrafik ----------
+const PIE = ['#16A34A', '#0E9384', '#3E63DD', '#D97706', '#7C3AED', '#DC2626', '#0090FF', '#E5484D', '#12A594', '#F76B15', '#8E4EC6', '#8B8D98'];
+function donut(title, parts, total, cls) {
+  parts = parts.filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  if (!total || !parts.length) return '';
+  const R = 52, L = 2 * Math.PI * R;
+  let off = 0;
+  const segs = parts.map(([, v], i) => { const len = v / total * L, c = `<circle r="${R}" cx="70" cy="70" fill="none" stroke="${PIE[i % PIE.length]}" stroke-width="22" stroke-dasharray="${len} ${L - len}" stroke-dashoffset="${-off}"/>`; off += len; return c; }).join('');
+  return `<div class="card"><div class="section-title" style="margin-top:0">${title}</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <svg viewBox="0 0 140 140" style="width:130px;height:130px;flex:none;transform:rotate(-90deg)">${segs}</svg>
+      <div style="flex:1;min-width:0;text-align:center"><b class="num ${cls}" style="font-size:20px">${money(total)}</b></div></div>
+    ${parts.map(([n, v], i) => `<div class="kv"><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${PIE[i % PIE.length]};margin-right:8px"></i>${esc(n)}</span><b class="num">${money(v)} · ${Math.round(v / total * 100)}%</b></div>`).join('')}</div>`;
+}
+const catName = id => (db.cats.find(c => c.id === id) || {}).name || '';
+function charts(list, F) {
+  const exp = new Map();
+  const addE = (n, v) => exp.set(n, (exp.get(n) || 0) + v);
+  for (const t of list) {
+    if (t.corr) continue;
+    if (t.type === 'pexp' || t.type === 'exp') addE(catName(t.cid) || 'Kateqoriyasız', t.amount);
+    if (t.cost) addE('Hissələr', t.cost);
+  }
+  if (F.loss) addE('Ziyan', F.loss);
+  if (F.brep) addE('Qaytardığım borc', F.brep);
+  return donut('Gəlir — dairəvi qrafik', [['İşlər', F.work], ['Nisyə ödənişləri', F.pays], ['Digər gəlir', F.other], ['Aldığım borc', F.brw]], F.gelir, 'pay')
+    + donut('Xərc — dairəvi qrafik', [...exp.entries()], F.cixis, 'exp');
+}
 function renderReport() {
-  const m = state.month, F = C.monthFlow(db, m);
-  const days = [...new Set(db.tx.filter(t => (t.date || '').slice(0, 7) === m && !t.corr && !isLoanTx(t)).map(t => t.date))].sort().reverse();
+  const m = state.month, B = C.monthBalance(db, m), F = B.f, td = today();
+  const mTx = db.tx.filter(t => (t.date || '').slice(0, 7) === m && !t.corr && !isLoanTx(t));
+  const days = [...new Set(mTx.map(t => t.date))].sort().reverse();
+  const [y, mo] = m.split('-').map(Number), nDays = m === td.slice(0, 7) ? +td.slice(8) : new Date(y, mo, 0).getDate();
   return `<div class="topbar"><h1>Hesabat</h1></div>
   <main style="padding-top:6px">
-    <div class="mbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${mLabel(m)}</b><button class="iconbtn" data-a="month" data-v="1" ${m >= today().slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
-    ${reportCard(F)}
+    <div class="mbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${mLabel(m)}</b><button class="iconbtn" data-a="month" data-v="1" ${m >= td.slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
+    ${reportCard(F, B, 'Keçən aylardan qalan')}
+    <div class="card">${kv('Gündəlik orta gəlir', money(Math.round(F.gelir / nDays)), 'pay')}<div class="note">${mLabel(m)}: ${nDays} günə görə</div></div>
+    ${charts(mTx, F)}
     <div class="sec"><b>Günlər</b></div>
-    ${days.length ? `<div class="list">${days.map(d => { const f = C.dayFlow(db, d); return `<button class="row" data-a="openDay" data-v="${d}"><div class="grow"><div class="t">${fmtDate(d)}</div><div class="s">+${money(f.gelir)} · −${money(f.cixis)}${f.newDebt ? ' · nisyə ' + money(f.newDebt) : ''}</div></div><div class="amt num ${netCls(f.qaliq)}">${money(f.qaliq)}</div></button>`; }).join('')}</div>` : '<div class="empty">Bu ay əməliyyat yoxdur</div>'}
+    ${days.length ? `<div class="list">${days.map(d => { const b = C.dayBalance(db, d), f = b.f; return `<button class="row" data-a="openDay" data-v="${d}"><div class="grow"><div class="t">${fmtDate(d)}</div><div class="s">+${money(f.gelir)} · −${money(f.cixis)}${f.newDebt ? ' · nisyə ' + money(f.newDebt) : ''}</div></div><div class="amt num ${netCls(b.qaliq)}">${money(b.qaliq)}<small>qalıq</small></div></button>`; }).join('')}</div>` : '<div class="empty">Bu ay əməliyyat yoxdur</div>'}
   </main>`;
 }
 function renderDay(pg) {
-  const d = pg.d, F = C.dayFlow(db, d);
+  const d = pg.d, B = C.dayBalance(db, d), F = B.f;
   const tx = sortTx(db.tx.filter(t => t.date === d && accTx(t)));
   return `<div class="page">${pageHead(fmtDate(d))}
   <main style="padding-top:6px;padding-bottom:40px">
-    ${reportCard(F)}
+    ${reportCard(F, B, 'Əvvəlki günlərdən qalan')}
     <div class="section-title">Əməliyyatlar</div>
     ${tx.length ? `<div class="list">${tx.map(t => txRow(t, false)).join('')}</div>` : '<div class="empty">Bu gün heç nə yazılmayıb</div>'}
   </main></div>`;
 }
+// axtarış və filtr: bütün aylar üzrə; axtarış boşdursa yalnız seçilən ay görünür
+const txSearchText = t => fold([txTitle(t), t.note, t.pid ? pname(t.pid) : '', catName(t.cid), fmtDate(t.date), t.date, t.date.split('-').reverse().join('.'), t.time, money(t.amount), String(t.amount / 100).replace('.', ',')].filter(Boolean).join(' '));
 function renderAll() {
-  const m = state.month, tx = sortTx(db.tx.filter(t => (t.date || '').slice(0, 7) === m && accTx(t)));
+  const m = state.month, tx = sortTx(db.tx.filter(accTx));
+  const row = t => { const sg = txSign(t); return txRow(t, true).replace('<button class="row"', `<button class="row" data-s="${esc(txSearchText(t))}" data-k="${sg > 0 ? 'in' : sg < 0 ? 'out' : 'n'}" data-m="${sg ? (C.isCard(t) ? 'kart' : 'nagd') : ''}" data-mo="${(t.date || '').slice(0, 7)}"`); };
   return `<div class="page">${pageHead('Bütün əməliyyatlar')}
   <main style="padding-top:6px;padding-bottom:40px">
-    <div class="mbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${mLabel(m)}</b><button class="iconbtn" data-a="month" data-v="1" ${m >= today().slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
-    ${tx.length ? `<div class="list">${tx.map(t => txRow(t, true)).join('')}</div>` : '<div class="empty">Bu ay əməliyyat yoxdur</div>'}
+    <input class="search" id="tq" placeholder="🔍 Ad, qeyd, məbləğ və ya tarix (bütün aylar)" autocomplete="off">
+    <div class="seg" data-group="fk" style="margin-top:8px"><button class="on" data-a="flt" data-v="fk|">Hamısı</button><button data-a="flt" data-v="fk|in">Gəlir</button><button data-a="flt" data-v="fk|out">Xərc</button></div>
+    ${mods.kart ? `<div class="seg" data-group="fm" style="margin-top:8px"><button class="on" data-a="flt" data-v="fm|">Hamısı</button><button data-a="flt" data-v="fm|nagd">💵 Nağd</button><button data-a="flt" data-v="fm|kart">💳 Kart</button></div>` : ''}
+    <div class="mbar" id="tmbar"><button class="iconbtn" data-a="month" data-v="-1">‹</button><b>${mLabel(m)}</b><button class="iconbtn" data-a="month" data-v="1" ${m >= today().slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
+    <div class="card" id="tsum" style="padding:12px 16px"></div>
+    ${tx.length ? `<div class="list" id="tlist">${tx.map(row).join('')}</div>` : ''}
+    <div class="empty hidden" id="tempty">Heç nə tapılmadı</div>
   </main></div>`;
+}
+function filterAll() {
+  const q = fold(val('tq')), list = document.getElementById('tlist');
+  const fk = picked('fk') || '', fm = picked('fm') || '';
+  const bar = document.getElementById('tmbar'); if (bar) bar.classList.toggle('hidden', !!q);
+  let n = 0, inn = 0, out = 0;
+  if (list) list.querySelectorAll('.row').forEach(r => {
+    const ok = (q ? r.dataset.s.includes(q) : r.dataset.mo === state.month) && (!fk || r.dataset.k === fk) && (!fm || r.dataset.m === fm);
+    r.classList.toggle('hidden', !ok);
+    if (ok) { n++; const t = db.tx.find(x => x.id === r.dataset.v); if (t) { const sg = txSign(t); if (sg > 0) inn += t.amount; else if (sg < 0) out += t.amount; } }
+  });
+  const e = document.getElementById('tempty'); if (e) e.classList.toggle('hidden', n > 0);
+  const sm = document.getElementById('tsum'); if (sm) sm.innerHTML = kv(n + ' əməliyyat · gəlir', '+' + money(inn), 'pay') + kv('Xərc', (out ? '−' : '') + money(out), 'exp');
 }
 
 // ---------- AYARLAR ----------
@@ -424,6 +518,7 @@ function renderSettings() {
     <div class="slabel">Görünüş</div>
     <div class="sgroup">
       ${srow('theme', null, '🌓', '#6E56CF', 'Tema', `<em>${theme === 'dark' ? 'Gecə (qızılı)' : 'Gündüz'}</em>`)}
+      ${srow('summary', null, '🔔', '#F76B15', 'Günün xülasəsi', `<em>${esc((hasNative && Android.summaryTime && Android.summaryTime()) || 'sönülü')}</em>`)}
       ${srow('currency', null, cur(), '#0E9384', 'Valyuta', `<em>${esc((CURRENCIES.find(c => c[0] === cur()) || ['', ''])[1])}</em>`)}
     </div>
     <div class="slabel">Bölmələr</div>
@@ -445,7 +540,7 @@ function renderSettings() {
 }
 function trashLabel(e) {
   if (e.kind === 'tx') return txTitle(e.tx) + ' — ' + money(e.tx.amount) + (e.tx.pid ? ' · ' + (pname(e.tx.pid) || (db.trash.find(x => x.kind === 'person' && x.person.id === e.tx.pid) || { person: {} }).person.name || '') : '');
-  if (e.kind === 'person') return 'Usta: ' + e.person.name;
+  if (e.kind === 'person') return 'Müştəri: ' + e.person.name;
   if (e.kind === 'loan') return 'Verdiyim borc: ' + e.loan.name + ' — ' + money(e.loan.amount);
   if (e.kind === 'borrow') return 'Aldığım borc: ' + e.borrow.name + ' — ' + money(e.borrow.amount);
   if (e.kind === 'cat') return 'Bölmə: ' + e.cat.name;
@@ -461,15 +556,27 @@ function renderTrash() {
       <button class="btn danger" data-a="emptyTrash">Zibil qutusunu boşalt</button>` : '<div class="empty">Zibil qutusu boşdur</div>'}
   </main></div>`;
 }
-const PRIVACY = [['Hansı məlumatlar saxlanılır', ['Yalnız sizin yazdıqlarınız: usta adları, telefon nömrələri, nisyə, ödənişlər, gəlir, xərc və borclar.', 'Bu məlumatlar yalnız sizin telefonunuzda saxlanılır.']],
+const PRIVACY = [['Hansı məlumatlar saxlanılır', ['Yalnız sizin yazdıqlarınız: müştəri adları, telefon nömrələri, nisyə, ödənişlər, gəlir, xərc və borclar.', 'Bu məlumatlar yalnız sizin telefonunuzda saxlanılır.']],
   ['Google hesabı ilə yedək (istəyə bağlı)', ['Yedəyi özünüz qoşsanız, məlumatın surəti öz Google Drive hesabınızda, yalnız bu tətbiqin görə bildiyi gizli qovluqda (appDataFolder) saxlanılır.', 'Tətbiq Drive-dakı digər fayllarınızı görə, oxuya və ya dəyişə bilməz.']],
   ['Kimlərə ötürülür', ['Məlumatlarınız heç kimə göndərilmir, satılmır və reklam üçün istifadə olunmur.', 'Tətbiqdə reklam və izləmə yoxdur.', 'Siz özünüz WhatsApp və ya zəng düyməsinə basanda yalnız seçdiyiniz tətbiq açılır.']],
   ['Silmək', ['Ayarlar → «Google hesabından ayır» ilə yedəyi dayandıra bilərsiniz.', 'Google Drive-dakı surəti Drive → Ayarlar → Tətbiqləri idarə et → Hesabat → «Gizli tətbiq məlumatlarını sil» ilə silə bilərsiniz.']],
   ['Əlaqə', ['ProTechtor Group · Bakı, Azərbaycan · 0553115544@gmail.com']]];
 function renderPrivacy() {
   return `<div class="page">${pageHead('Məxfilik siyasəti')}<main style="padding-top:6px;padding-bottom:40px"><div class="card">
-    <p style="margin:0">Hesabat — ustaların nisyəsini, ödənişləri, gəlir, xərc və borcları yazmaq üçün Android tətbiqidir.</p>
+    <p style="margin:0">Hesabat — müştərilərin nisyəsini, ödənişləri, gəlir, xərc və borcları yazmaq üçün Android tətbiqidir.</p>
     ${PRIVACY.map(([h, l]) => `<h3 style="margin:16px 0 6px;font-size:16px">${h}</h3><ul style="margin:0;padding-left:20px">${l.map(x => `<li style="margin:4px 0">${esc(x)}</li>`).join('')}</ul>`).join('')}</div></main></div>`;
+}
+
+// ---------- kateqoriya təklifləri (yazdıqca hərfə uyğun) ----------
+function catSuggest() {
+  const box = document.getElementById('catsug'), inp = document.getElementById('f_cat');
+  if (!box || !inp) return;
+  const use = new Map();
+  for (const t of db.tx) if (t.cid && (t.type === 'pexp' || t.type === 'exp')) use.set(t.cid, (use.get(t.cid) || 0) + 1);
+  const q = fold(inp.value);
+  const list = db.cats.filter(c => !c.secret && use.has(c.id) && fold(c.name) !== q && (!q || fold(c.name).includes(q)))
+    .sort((a, b) => (q ? fold(b.name).startsWith(q) - fold(a.name).startsWith(q) : 0) || use.get(b.id) - use.get(a.id)).slice(0, 12);
+  box.innerHTML = list.map(c => `<button class="chip" data-a="catPick" data-v="${esc(c.name)}">${esc(c.name)}</button>`).join('');
 }
 
 // ---------- FORMALAR (açılan vərəqlər) ----------
@@ -487,7 +594,7 @@ function renderSheet(s) {
   switch (s.kind) {
     case 'add': return `<h2>Nə yazırsınız?</h2><div class="addgrid">
       <button class="addopt" data-a="newJob">${IC('var(--brand-soft)', 'var(--brand)', '🔧')}<b>İş<small>Ödədi və ya nisyə</small></b></button>
-      <button class="addopt" data-a="newPay">${IC('var(--pay-soft)', 'var(--pay)', '💰')}<b>Nisyə ödənişi<small>Usta ödədi</small></b></button>
+      <button class="addopt" data-a="newPay">${IC('var(--pay-soft)', 'var(--pay)', '💰')}<b>Nisyə ödənişi<small>Müştəri ödədi</small></b></button>
       <button class="addopt" data-a="newInc">${IC('var(--pay-soft)', 'var(--pay)', '➕')}<b>Digər gəlir</b></button>
       <button class="addopt" data-a="newExp">${IC('var(--exp-soft)', 'var(--exp)', '🧾')}<b>Xərc</b></button>
       ${mods.borclar ? `<button class="addopt" data-a="newRec" data-v="lend|">${IC('var(--amber-soft)', 'var(--amber)', '🤝')}<b>Borc verdim</b></button>
@@ -498,7 +605,7 @@ function renderSheet(s) {
     case 'job': {
       const t = s.id && db.tx.find(x => x.id === s.id), paid = t ? t.type === 'inc' : s.paid !== false;
       return `<h2>${t ? 'İşi düzəlt' : '🔧 İş yaz'}</h2>
-      <label>Usta</label><input class="field" id="f_who" list="dl_people" value="${esc(t ? pname(t.pid) : s.pid ? pname(s.pid) : '')}" placeholder="adı yazın (nağd işdə boş qala bilər)" autocomplete="off">
+      <label>Müştəri</label><div style="display:flex;gap:8px"><input class="field" id="f_who" list="dl_people" value="${esc(t ? pname(t.pid) : s.pid ? pname(s.pid) : '')}" placeholder="adı yazın (nağd işdə boş qala bilər)" autocomplete="off"><button class="btn ghost" data-a="contact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇</button></div><input type="hidden" id="f_phone" value="">
       ${nameList('dl_people', db.people.map(p => p.name))}
       <label>Görülən iş</label><input class="field" id="f_note" value="${esc(t ? t.note || '' : '')}" placeholder="məs. iPhone 11 ekran" autocomplete="off">
       ${fAmount(t ? amountInput(t.amount) : '', 'İşin dəyəri')}
@@ -513,7 +620,7 @@ function renderSheet(s) {
       const t = s.id && db.tx.find(x => x.id === s.id), withDebt = db.people.filter(p => C.nisye(db, p.id) > 0);
       const pid = t ? t.pid : s.pid;
       return `<h2>${t ? 'Ödənişi düzəlt' : '💰 Nisyə ödənişi'}</h2>
-      <label>Usta</label><input class="field" id="f_who" list="dl_people" value="${esc(pid ? pname(pid) : '')}" placeholder="kim ödədi?" autocomplete="off">
+      <label>Müştəri</label><input class="field" id="f_who" list="dl_people" value="${esc(pid ? pname(pid) : '')}" placeholder="kim ödədi?" autocomplete="off">
       ${nameList('dl_people', withDebt.map(p => p.name).concat(pid ? [pname(pid)] : []))}
       ${pid ? `<div class="note" style="margin-top:6px">Nisyə qalığı: <b>${money(C.nisye(db, pid))}</b></div>` : ''}
       ${fAmount(t ? amountInput(t.amount) : '')}${fMethod(mOf(t))}${fDate(t)}
@@ -521,11 +628,11 @@ function renderSheet(s) {
     }
     case 'inc': case 'exp': {
       const t = s.id && db.tx.find(x => x.id === s.id), inc = s.kind === 'inc';
-      const cats = db.cats.filter(c => !c.secret);
+      const cn = t && t.cid ? catName(t.cid) : '';
       return `<h2>${inc ? (t ? 'Gəliri düzəlt' : '➕ Digər gəlir') : (t ? 'Xərci düzəlt' : '🧾 Xərc')}</h2>
       <label>${inc ? 'Nə gəliri?' : 'Nəyə xərclədim?'}</label><input class="field" id="f_note" value="${esc(t ? t.note || '' : '')}" placeholder="${inc ? 'məs. köhnə telefon satdım' : 'məs. çörək, benzin, icarə'}" autocomplete="off">
       ${fAmount(t ? amountInput(t.amount) : '')}
-      ${!inc && cats.length ? `<label>Bölmə (istəyə bağlı)</label><div class="chips" data-group="cat">${cats.map(c => `<button class="chip ${t && t.cid === c.id ? 'on' : ''}" data-a="pickChip" data-v="cat|${c.id}">${esc(c.name)}</button>`).join('')}</div>` : ''}
+      ${!inc ? `<label>Kateqoriya (istəyə bağlı — yeni ad yazsanız, yaradılır)</label><input class="field" id="f_cat" value="${esc(cn)}" placeholder="məs. Yemək, Yol, İcarə" autocomplete="off"><div class="chips" id="catsug" style="margin-top:8px"></div>` : ''}
       ${fMethod(mOf(t))}${fDate(t)}
       ${saveBtn(inc ? 'saveInc' : 'saveExp')}${t ? '<button class="btn danger" data-a="delTx">Sil</button>' : ''}`;
     }
@@ -537,6 +644,7 @@ function renderSheet(s) {
       ${nameList('dl_names', list.map(l => l.name))}
       <label>Telefon (istəyə bağlı)</label><div style="display:flex;gap:8px"><input class="field" id="f_phone" type="tel" value="${esc(r ? r.phone || '' : g ? g.phone : '')}" autocomplete="off"><button class="btn ghost" data-a="contact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇</button></div>
       ${fAmount(r ? amountInput(r.amount) : '')}
+      ${!lend ? fMethod(r ? r.method || 'nagd' : 'nagd') : ''}
       ${r && !lend && (r.rate || r.months) ? `<div class="note" style="margin-top:6px">Faizlə qaytarılacaq cəmi: ${money(C.borrowCalc(r).total)}</div>` : ''}
       <div class="two"><div><label>Tarix</label><input class="field" id="f_date" type="date" value="${r ? (lend ? r.date : C.borrowDate(r)) : today()}" max="${today()}"></div>
       <div><label>Qaytarma günü</label><input class="field" id="f_due" type="date" value="${r && r.due || ''}"></div></div>
@@ -548,14 +656,14 @@ function renderSheet(s) {
       const lend = s.side === 'lend', open = C.parties(db, s.side).filter(g => g.left > 0), g = s.key && open.find(x => x.key === s.key);
       return `<h2>${lend ? '↩️ Borc qaytarıldı' : '📤 Borcu qaytardım'}</h2>
       ${open.length ? `<label>${lend ? 'Kim qaytardı?' : 'Kimə qaytardım?'}</label><div class="chips" data-group="who">${open.map(x => `<button class="chip ${g && g.key === x.key ? 'on' : ''}" data-a="pickChip" data-v="who|${esc(x.key)}">${esc(x.name)} · ${money(x.left)}</button>`).join('')}</div>
-      ${fAmount(g ? amountInput(g.left) : '')}${fDate()}${saveBtn('saveBack')}` : '<div class="empty">Açıq borc yoxdur</div>'}`;
+      ${fAmount(g ? amountInput(g.left) : '')}${!lend ? fMethod('nagd') : ''}${fDate()}${saveBtn('saveBack')}` : '<div class="empty">Açıq borc yoxdur</div>'}`;
     }
     case 'person': {
       const p = s.id && person(s.id);
-      return `<h2>${p ? 'Ustanı düzəlt' : '👤 Yeni usta'}</h2>
+      return `<h2>${p ? 'Müştərini düzəlt' : '👤 Yeni müştəri'}</h2>
       <label>Ad</label><input class="field" id="f_name" value="${esc(p ? p.name : '')}" autocomplete="off">
       <label>Telefon</label><div style="display:flex;gap:8px"><input class="field" id="f_phone" type="tel" value="${esc(p ? p.phone || '' : '')}" autocomplete="off"><button class="btn ghost" data-a="contact" style="width:auto;margin:0;padding:0 14px;white-space:nowrap">📇</button></div>
-      ${saveBtn('savePerson')}${p ? '<button class="btn danger" data-a="delPerson">Ustanı sil</button>' : ''}`;
+      ${saveBtn('savePerson')}${p ? '<button class="btn danger" data-a="delPerson">Müştərini sil</button>' : ''}`;
     }
     case 'kassa': {
       const K = C.kassaNow(db);
@@ -568,16 +676,20 @@ function renderSheet(s) {
     }
     case 'tx': { // nisyə düzəlişi, ziyan və digər köhnə növlər: yalnız baxmaq və silmək
       const t = db.tx.find(x => x.id === s.id);
-      return `<h2>${esc(txTitle(t))}</h2><div class="card">${kv('Məbləğ', money(t.amount))}${t.cost ? kv('Hissə', money(t.cost)) : ''}${kv('Tarix', fmtDate(t.date) + (t.time ? ', ' + t.time : ''))}${t.pid ? kv('Usta', esc(pname(t.pid))) : ''}${t.note ? kv('Qeyd', esc(t.note)) : ''}</div>
+      return `<h2>${esc(txTitle(t))}</h2><div class="card">${kv('Məbləğ', money(t.amount))}${t.cost ? kv('Hissə', money(t.cost)) : ''}${kv('Tarix', fmtDate(t.date) + (t.time ? ', ' + t.time : ''))}${t.pid ? kv('Müştəri', esc(pname(t.pid))) : ''}${t.note ? kv('Qeyd', esc(t.note)) : ''}</div>
       <button class="btn danger" data-a="delTx">Sil</button>`;
     }
     case 'backrow': { // qaytarmanı düzəltmək: məbləğ, gün, saat; ya da silmək
       const t = db.tx.find(x => x.id === s.id);
       return `<h2>${t.type === 'lback' ? '↩️ Qaytarma' : '📤 Qaytardığım'} — ${esc(t.note)}</h2>
-      ${fAmount(amountInput(t.amount))}
+      ${fAmount(amountInput(t.amount))}${t.type === 'brep' ? fMethod(mOf(t)) : ''}
       <div class="two"><div><label>Tarix</label><input class="field" id="f_date" type="date" value="${t.date || today()}" max="${today()}"></div><div><label>Saat</label><input class="field" id="f_time" type="time" value="${esc(backTime(t))}"></div></div>
       ${saveBtn('saveBackRow')}<button class="btn danger" data-a="delBackRow">Sil</button>`;
     }
+    case 'summary': return `<h2>🔔 Günün xülasəsi</h2>
+      <div class="note">Hər gün seçdiyiniz saatda telefona bildiriş gəlir: bu günün gəliri, xərci, qalığı (əvvəlki günlərdən qalanla), nağd və kart.</div>
+      <label>Saat</label><input class="field big num" id="f_stime" type="time" value="${esc(hasNative && Android.summaryTime ? Android.summaryTime() : '')}">
+      ${saveBtn('saveSummary')}<button class="btn danger" data-a="offSummary">Söndür</button>`;
     case 'currency': return `<h2>Valyuta</h2><div class="sgroup">${CURRENCIES.map(([c, n]) => `<button class="srow" data-a="setCur" data-v="${c}"><span class="si" style="background:#0E9384">${c}</span><span class="st"><span>${n}</span>${c === cur() ? '<em>✓</em>' : ''}</span></button>`).join('')}</div>`;
   }
   return '';
@@ -629,7 +741,7 @@ function render() {
   else { state.tab = 'home'; h = renderHome(); }
   h += `<nav>
     <button class="${state.tab === 'home' ? 'on' : ''}" data-a="tab" data-v="home">${I.home}Ana</button>
-    <button class="${state.tab === 'people' ? 'on' : ''}" data-a="tab" data-v="people">${I.people}Ustalar</button>
+    <button class="${state.tab === 'people' ? 'on' : ''}" data-a="tab" data-v="people">${I.people}Müştərilər</button>
     <button class="navplus" data-a="add"><span>${I.plus}</span></button>
     ${mods.borclar ? `<button class="${state.tab === 'debts' ? 'on' : ''}" data-a="tab" data-v="debts">${I.hand}Borclar</button>` : ''}
     <button class="${state.tab === 'report' ? 'on' : ''}" data-a="tab" data-v="report">${I.report}Hesabat</button></nav>`;
@@ -645,6 +757,8 @@ function render() {
   window.scrollTo(0, y);
   const p2 = app.querySelector('.page'); if (p2 && pg && pg === state.lastPage) p2.scrollTop = py;
   state.lastPage = pg;
+  if (pg && pg.kind === 'all') filterAll();
+  if (state.sheet && (state.sheet.kind === 'exp')) catSuggest();
 }
 function openSheet(s) { state.sheet = s; render(); }
 function closeSheet() { state.sheet = null; render(); }
@@ -741,8 +855,9 @@ const actions = {
     const s = state.sheet, amount = parseAmount(val('f_amount')), cost = parseAmount(val('f_cost')), paid = picked('paid') !== '0';
     const who = val('f_who').trim();
     if (!amount) return toast('İşin dəyərini yazın');
-    if (!paid && !who) return toast('Nisyə üçün ustanın adını yazın');
-    const p = findPersonByName(who, true);
+    if (!paid && !who) return toast('Nisyə üçün müştərinin adını yazın');
+    const p = findPersonByName(who, true), ph = val('f_phone').trim();
+    if (p && ph && !p.phone) { p.phone = ph; p.u = Date.now(); }
     let t = s.id && db.tx.find(x => x.id === s.id);
     if (!t) { t = { id: uid(), created: Date.now() }; db.tx.push(t); }
     Object.assign(t, { type: paid ? 'inc' : 'debt', pid: p ? p.id : null, amount, note: val('f_note').trim() });
@@ -753,7 +868,7 @@ const actions = {
   },
   savePay() {
     const s = state.sheet, amount = parseAmount(val('f_amount')), p = findPersonByName(val('f_who'), false);
-    if (!p) return toast('Ustanı siyahıdan seçin');
+    if (!p) return toast('Müştərini siyahıdan seçin');
     if (!amount) return toast('Məbləği yazın');
     let t = s.id && db.tx.find(x => x.id === s.id);
     if (!t) { t = { id: uid(), created: Date.now() }; db.tx.push(t); }
@@ -771,7 +886,15 @@ const actions = {
     Object.assign(t, { amount, note, method: mods.kart ? picked('method') || 'nagd' : t.method || 'nagd' });
     if (t.method === 'nagd') delete t.bank;
     if (t.type === 'inc') t.other = true;
-    const cat = picked('cat'); if (t.type === 'pexp') { if (cat) t.cid = cat; else if (!s.id) delete t.cid; }
+    if (t.type === 'pexp') {
+      const cn = val('f_cat').trim().replace(/\s+/g, ' ');
+      if (!cn) delete t.cid;
+      else {
+        let c = db.cats.find(x => C.norm(x.name) === C.norm(cn));
+        if (!c) { c = { id: uid(), name: cn, created: Date.now(), u: Date.now() }; db.cats.push(c); }
+        t.cid = c.id;
+      }
+    }
     txBase(t); save(); closeSheet(); toast('Yazıldı');
   },
   delTx() {
@@ -789,7 +912,7 @@ const actions = {
     // eyni adamın başqa qeydləri də eyni adla qalsın
     Object.assign(r, { name, phone: val('f_phone').trim(), amount, note: val('f_note').trim(), u: Date.now() });
     if (lend) { r.date = val('f_date') || today(); if ((r.back || 0) > amount) r.back = amount; }
-    else { r.date = val('f_date') || today(); if (r.start) r.start = r.date; }
+    else { r.date = val('f_date') || today(); if (r.start) r.start = r.date; r.method = mods.kart ? picked('method') || 'nagd' : r.method || 'nagd'; }
     const due = val('f_due'); if (due) r.due = due; else delete r.due;
     save(); closeSheet(); toast('Yazıldı');
   },
@@ -810,7 +933,7 @@ const actions = {
     if (amount > g.left && !confirm(`Qalan borc ${money(g.left)}-dır. Yalnız ${money(g.left)} yazılsın?`)) return;
     const d = val('f_date') || today();
     if (d > today()) return toast('Gələcək tarix olmaz');
-    const done = C.payBack(db, s.side, key, amount, d, Date.now(), uid, val('f_time') || nowHm());
+    const done = C.payBack(db, s.side, key, amount, d, Date.now(), uid, val('f_time') || nowHm(), s.side === 'borrow' && mods.kart ? picked('method') || 'nagd' : 'nagd');
     save(); closeSheet(); toast(money(done) + ' yazıldı');
   },
   saveBackRow() {
@@ -835,7 +958,7 @@ const actions = {
       const c = C.borrowCalc(l), max = c.left + x.amount;
       if (amount > max) return toast('Borcdan artıq ola bilməz: ən çoxu ' + money(max));
       if (!x.id) { db.removed[t.id] = now; db.tx = db.tx.filter(y => y !== t); x.id = uid(); }
-      Object.assign(x, { amount, d, t: tm }); l.u = now;
+      Object.assign(x, { amount, d, t: tm }); if (mods.kart) x.m = picked('method') || 'nagd'; l.u = now;
     }
     save(); closeSheet(); toast('Düzəldildi');
   },
@@ -857,7 +980,7 @@ const actions = {
     const s = state.sheet, name = val('f_name').trim();
     if (!name) return toast('Adı yazın');
     const dup = db.people.find(x => C.norm(x.name) === C.norm(name) && x.id !== s.id);
-    if (dup) return toast('Bu adda usta artıq var');
+    if (dup) return toast('Bu adda müştəri artıq var');
     let p = s.id && person(s.id);
     if (!p) { p = { id: uid(), created: Date.now() }; db.people.push(p); }
     Object.assign(p, { name, phone: val('f_phone').trim(), u: Date.now() });
@@ -892,6 +1015,11 @@ const actions = {
   checkBackup() { state.checkResult = null; sync.check = true; runSync(); },
   theme() { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('theme', theme); } catch (e) {} applyTheme(); render(); },
   currency() { openSheet({ kind: 'currency' }); },
+  summary() { openSheet({ kind: 'summary' }); },
+  saveSummary() { const tm = val('f_stime'); if (!/^\d{1,2}:\d{2}$/.test(tm)) return toast('Saatı seçin'); if (hasNative && Android.setSummaryTime) Android.setSummaryTime(tm); pushNative(); closeSheet(); toast('Hər gün ' + tm + '-da bildiriş gələcək'); },
+  offSummary() { if (hasNative && Android.setSummaryTime) Android.setSummaryTime(''); closeSheet(); toast('Söndürüldü'); },
+  catPick(v) { const i = document.getElementById('f_cat'); if (i) { i.value = v; catSuggest(); } },
+  flt(v, e, el) { el.closest('[data-group]').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)); filterAll(); },
   setCur(v) { db.cur = { v, u: Date.now() }; save(); closeSheet(); },
   mod(v) { mods[v] = !mods[v]; saveMods(); if (!mods.borclar && state.tab === 'debts') state.tab = 'home'; render(); },
   pin() {
@@ -910,7 +1038,7 @@ const actions = {
     const back = [e];
     if (e.kind === 'tx' && e.tx.pid && !person(e.tx.pid)) {
       const owner = db.trash.find(x => x.kind === 'person' && x.person.id === e.tx.pid);
-      if (!owner) return toast('Bu əməliyyatın ustası həmişəlik silinib');
+      if (!owner) return toast('Bu əməliyyatın müştərisi həmişəlik silinib');
       back.push(owner);
     }
     const t = Date.now() + 1;
@@ -928,9 +1056,9 @@ const actions = {
     db.trash = db.trash.filter(x => !back.includes(x));
     save(); render(); toast('Qaytarıldı');
   },
-  // ustalar, nisyə, gəlir, xərc, kassa və s. silinir; yalnız «Borc verdim / Borc aldım» qalır
+  // müştərilər, nisyə, gəlir, xərc, kassa və s. silinir; yalnız «Borc verdim / Borc aldım» qalır
   resetAll() {
-    if (!confirm('Ustalar, nisyə, bütün gəlir və xərclər, kassa silinəcək. Yalnız «Borc verdim» və «Borc aldım» qalacaq. Davam edək?')) return;
+    if (!confirm('Müştərilər, nisyə, bütün gəlir və xərclər, kassa silinəcək. Yalnız «Borc verdim» və «Borc aldım» qalacaq. Davam edək?')) return;
     if (!confirm('Əminsiniz? Bu geri qaytarılmır (Google-dakı surət də yenilənəcək).')) return;
     const now = Date.now(), keep = t => ['lend', 'lback', 'brw', 'brep'].includes(t.type);
     for (const k of LISTS) {
@@ -982,6 +1110,8 @@ app.addEventListener('click', e => {
 // axtarış: siyahı yenidən çəkilmir, yalnız sətirlər gizlənir
 const fold = s => C.norm(s).replace(/ə/g, 'e').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u');
 app.addEventListener('input', e => {
+  if (e.target.id === 'f_cat') return catSuggest();
+  if (e.target.id === 'tq') return filterAll();
   if (e.target.id !== 'q') return;
   const q = fold(e.target.value), qd = e.target.value.replace(/\D/g, '');
   app.querySelectorAll('#plist .row').forEach(r => { const n = r.dataset.name || ''; r.classList.toggle('hidden', !!q && !n.includes(q) && !(qd.length > 1 && n.replace(/\D/g, '').includes(qd))); });
