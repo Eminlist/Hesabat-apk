@@ -1,6 +1,6 @@
 // Hesabat 3.1.3 Rev. 000 — sadə versiya. Hesablamalar calc.js-dədir (HC).
 'use strict';
-const APP_VERSION = '3.1.3 Rev. 000';
+const APP_VERSION = '3.1.3 Rev. 001';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.HC;
 const pad = C.pad;
@@ -556,16 +556,75 @@ function renderTrash() {
       <button class="btn danger" data-a="emptyTrash">Zibil qutusunu boşalt</button>` : '<div class="empty">Zibil qutusu boşdur</div>'}
   </main></div>`;
 }
-const PRIVACY = [['Hansı məlumatlar saxlanılır', ['Yalnız sizin yazdıqlarınız: müştəri adları, telefon nömrələri, nisyə, ödənişlər, gəlir, xərc və borclar.', 'Bu məlumatlar yalnız sizin telefonunuzda saxlanılır.']],
-  ['Google hesabı ilə yedək (istəyə bağlı)', ['Yedəyi özünüz qoşsanız, məlumatın surəti öz Google Drive hesabınızda, yalnız bu tətbiqin görə bildiyi gizli qovluqda (appDataFolder) saxlanılır.', 'Tətbiq Drive-dakı digər fayllarınızı görə, oxuya və ya dəyişə bilməz.']],
-  ['Kimlərə ötürülür', ['Məlumatlarınız heç kimə göndərilmir, satılmır və reklam üçün istifadə olunmur.', 'Tətbiqdə reklam və izləmə yoxdur.', 'Siz özünüz WhatsApp və ya zəng düyməsinə basanda yalnız seçdiyiniz tətbiq açılır.']],
-  ['Silmək', ['Ayarlar → «Google hesabından ayır» ilə yedəyi dayandıra bilərsiniz.', 'Google Drive-dakı surəti Drive → Ayarlar → Tətbiqləri idarə et → Hesabat → «Gizli tətbiq məlumatlarını sil» ilə silə bilərsiniz.']],
-  ['Əlaqə', ['ProTechtor Group · Bakı, Azərbaycan · 0553115544@gmail.com']]];
+const PRIVACY = {
+  intro: 'HESABAT · MƏXFİLİK SİYASƏTİ VƏ İSTİFADƏ ŞƏRTLƏRİ\nProqramdan istifadə etməzdən əvvəl bütün 10 bəndi diqqətlə oxuyun.\nSon redaktə: 23.11.2026',
+  items: [
+    ['ÜMUMİ MÜDDƏALAR', [
+      'Bu Məxfilik Siyasəti «Hesabat» proqramının (bundan sonra – «Proqram») istifadəsi zamanı məlumatların toplanması, saxlanılması və mühafizəsi qaydalarını, habelə istifadəçinin hüquq və öhdəliklərini müəyyən edir.',
+      'Proqram gəlir, xərc, müştərilərin nisyəsi, verilən və alınan borclar, kassa (nağd və kart) üzrə şəxsi uçotun aparılması üçün nəzərdə tutulmuş Android proqramıdır.',
+      'Proqramın operatoru (bundan sonra – «Operator»): ProTechtor Group, Bakı, Azərbaycan Respublikası.',
+      'Proqramdan istifadə bu Siyasətin bütün şərtlərinin tam və qeyd-şərtsiz qəbul edilməsi deməkdir. Şərtlərlə razı olmayan şəxs Proqramdan istifadəni dayandırmalıdır.']],
+    ['HESABLAMALARIN DƏQİQLİYİ (ƏSAS XƏBƏRDARLIQ)', [
+      'Proqramdakı bütün hesablamalar (gəlir, xərc, qalıq, kassa, nisyə və borc qalıqları, hesabatlar və qrafiklər) YALNIZ İSTİFADƏÇİNİN DAXİL ETDİYİ MƏLUMATLAR əsasında aparılır.',
+      'Məlumatların düzgün və tam daxil edilməsinə istifadəçi özü cavabdehdir. Səhv və ya natamam daxil edilmiş məlumat hesablamaların nəticəsinə təsir edir.',
+      'Proqram mühasibat, vergi və ya hüquqi sənəd hesab edilmir. Proqramın göstəricilərinə əsasən qəbul edilən maliyyə qərarlarına görə məsuliyyət istifadəçiyə aiddir.']],
+    ['TOPLANAN MƏLUMATLAR', [
+      'Proqram yalnız istifadəçinin özünün daxil etdiyi məlumatları emal edir: müştəri və borc tərəflərinin adları və telefon nömrələri, görülən işlər, gəlir və xərclər, onların kateqoriyaları, nisyə, ödənişlər, borclar və qaytarılma tarixləri, kassa məbləğləri, qeydlər.',
+      'Proqram qeydiyyat tələb etmir, məkan məlumatlarını toplamır, reklam və davranış izləmə alətlərindən istifadə etmir.']],
+    ['MƏLUMATLARIN SAXLANILMASI', [
+      'Bütün məlumatlar istifadəçinin telefonunda, Proqramın daxili yaddaşında saxlanılır.',
+      'Silinmiş qeydlər «Zibil qutusu» bölməsinə keçir və oradan geri qaytarıla və ya həmişəlik silinə bilər.',
+      'Proqram telefondan silindikdə telefondakı məlumatlar da silinir. Google hesabı ilə sinxronizasiya qoşulubsa, surət istifadəçinin öz Google Drive hesabında qalır.']],
+    ['GOOGLE HESABI İLƏ SİNXRONİZASİYA (İSTƏYƏ BAĞLI)', [
+      'İstifadəçi öz Google hesabını qoşduqda hər dəyişiklik dərhal həmin hesabın Google Drive yaddaşına göndərilir. Surət yalnız Proqramın görə bildiyi gizli qovluqda (appDataFolder) saxlanılır.',
+      'Proqram Google Drive-dakı digər fayllara baxa, onları oxuya və ya dəyişə bilməz.',
+      'Telefon dəyişdirildikdə eyni Google hesabı qoşularaq bütün məlumatlar bərpa olunur.']],
+    ['TELEFONUN İCAZƏLƏRİ', [
+      'Kontaktlar: yalnız istifadəçi «📇» düyməsinə basıb kontakt seçdikdə, seçilən kontaktın adı və nömrəsi forma sahəsinə yazılır. Telefon kitabçasının qalan hissəsi oxunmur və heç yerə göndərilmir.',
+      'Bildirişlər: borcların qaytarılma gününə 3 gün qalmış gündəlik xatırlatmalar və istifadəçinin seçdiyi saatda «Günün xülasəsi» üçün istifadə olunur.',
+      'Barmaq izi: Proqramın kilidini açmaq üçün telefonun öz sistemi vasitəsilə yoxlanılır; barmaq izi məlumatı Proqrama ötürülmür və saxlanılmır.',
+      'İnternet: yalnız Google sinxronizasiyası və Proqramın yeni versiyasının yoxlanılması üçün istifadə olunur.']],
+    ['ÜÇÜNCÜ TƏRƏFLƏRƏ ÖTÜRÜLMƏ', [
+      'Məlumatlar heç kimə satılmır, ötürülmür və reklam məqsədilə istifadə edilmir.',
+      'İstifadəçi «WhatsApp» və ya «Zəng» düyməsinə basdıqda yalnız seçilən proqram açılır və hazır mesajın mətni yalnız istifadəçinin özü göndərdikdə alıcıya çatır. Bundan sonrakı proses həmin proqramın qaydalarına tabe olur.',
+      'Proqramın yeni versiyası GitHub serverindən yoxlanılır və yüklənir; bu zaman istifadəçinin məlumatları ötürülmür.']],
+    ['TƏHLÜKƏSİZLİK', [
+      'İstifadəçi Proqrama PIN kod və barmaq izi ilə giriş qoya bilər. PIN kodun özü saxlanılmır — telefonda yalnız onun geri çevrilməz şifrələnmiş izi saxlanılır.',
+      'Ayarlarda «Ekran şəklini qadağan et» seçimi ilə Proqramın ekran şəklinin çəkilməsinin qarşısı alına bilər.',
+      'Operator məlumatların qorunması üçün məqbul texniki tədbirlər görür; lakin telefonun itirilməsi, başqa şəxsə verilməsi və ya qorunmaması nəticəsində yaranan hallara görə məsuliyyət daşımır.']],
+    ['İSTİFADƏÇİNİN HÜQUQLARI VƏ MƏLUMATLARIN SİLİNMƏSİ', [
+      'İstifadəçi öz məlumatlarına istənilən vaxt baxa, onları düzəldə və silə bilər.',
+      'Sinxronizasiyanı «Ayarlar → Google hesabından ayır» ilə dayandırmaq olar.',
+      'Google Drive-dakı surət «Google Drive → Ayarlar → Tətbiqləri idarə et → Hesabat → Gizli tətbiq məlumatlarını sil» yolu ilə silinir.']],
+    ['DƏYİŞİKLİKLƏR, ƏLAQƏ VƏ HÜQUQİ TƏNZİMLƏMƏ', [
+      'Operator bu Siyasətə dəyişiklik etmək hüququnu saxlayır; yeni redaksiya Proqramda dərc edildiyi andan qüvvəyə minir.',
+      'Sual və müraciətlər üçün əlaqə: 0553115544@gmail.com.',
+      'Münasibətlər Azərbaycan Respublikasının qüvvədə olan qanunvericiliyi ilə tənzimlənir.']]
+  ],
+  foot: 'Hesabat · ProTechtor Group · Bütün hüquqlar qorunur · Son redaktə: 23.11.2026'
+};
+const PP_COLORS = ['#0E9384', '#E5484D', '#3E63DD', '#16A34A', '#0090FF', '#D97706', '#8E4EC6', '#12A594', '#F76B15', '#D9B45A'];
 function renderPrivacy() {
-  return `<div class="page">${pageHead('Məxfilik siyasəti')}<main style="padding-top:6px;padding-bottom:40px"><div class="card">
-    <p style="margin:0">Hesabat — müştərilərin nisyəsini, ödənişləri, gəlir, xərc və borcları yazmaq üçün Android tətbiqidir.</p>
-    ${PRIVACY.map(([h, l]) => `<h3 style="margin:16px 0 6px;font-size:16px">${h}</h3><ul style="margin:0;padding-left:20px">${l.map(x => `<li style="margin:4px 0">${esc(x)}</li>`).join('')}</ul>`).join('')}</div></main></div>`;
+  return `<div class="page">${pageHead('Məxfilik siyasəti')}<main style="padding-top:6px;padding-bottom:40px">
+    <div class="pp-intro"><b class="pp-it">${esc(PRIVACY.intro.split('\n')[0])}</b>${esc(PRIVACY.intro.split('\n').slice(1).join('\n'))}</div>
+    <div id="ppList">${PRIVACY.items.map(([h, l], i) => `<details class="pp-item${i === 1 ? ' warn' : ''}" style="--c:${i === 1 ? '#E5484D' : PP_COLORS[i]}"${i === 0 ? ' open' : ''}>
+      <summary class="pp-head"><span class="pp-num">${pad(i + 1)}</span><span class="pp-title">${esc(h)}</span><span class="pp-chev">›</span></summary>
+      <div class="pp-body">${l.map((x, j) => `<p><b class="pp-sub">${i + 1}.${j + 1}</b>${esc(x)}</p>`).join('')}</div></details>`).join('')}</div>
+    <div class="pp-foot">${esc(PRIVACY.foot)}</div></main></div>`;
 }
+// bir bölmə açılanda digərləri yumşaq bağlanır
+app.addEventListener('click', e => {
+  const sm = e.target.closest('.pp-head');
+  if (!sm) return;
+  e.preventDefault();
+  const d = sm.parentElement, b = d.querySelector('.pp-body');
+  const close = x => { const bb = x.querySelector('.pp-body'); bb.style.height = bb.scrollHeight + 'px'; void bb.offsetHeight; bb.style.height = '0px'; bb.style.opacity = '0'; setTimeout(() => { x.open = false; bb.style.cssText = ''; }, 320); };
+  if (d.open) return close(d);
+  document.querySelectorAll('#ppList details[open]').forEach(x => { if (x !== d) close(x); });
+  d.open = true; b.style.height = '0px'; b.style.opacity = '0'; void b.offsetHeight;
+  b.style.height = b.scrollHeight + 'px'; b.style.opacity = '1';
+  setTimeout(() => { b.style.cssText = ''; d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 340);
+});
 
 // ---------- kateqoriya təklifləri (yazdıqca hərfə uyğun) ----------
 function catSuggest() {

@@ -306,6 +306,25 @@
   .switch.on { background: var(--brand); } .switch.on::after { left: 23px; }
   .ok-box { background: var(--pay-soft); color: var(--pay); border-radius: 14px; padding: 12px; font-weight: 750; text-align: center; margin-top: 12px; }
   .bad-box { background: var(--red-soft); color: var(--red); border-radius: 14px; padding: 12px; font-weight: 750; text-align: center; margin-top: 12px; }
+
+  /* Məxfilik siyasəti — ProTechtor üslubu */
+  .pp-intro { white-space: pre-line; border: 1px solid var(--brand); border-radius: 16px; padding: 14px 16px; margin: 4px 0 16px; background: linear-gradient(135deg, var(--brand-soft), var(--card)); font-size: 12.5px; color: var(--muted); text-align: center; letter-spacing: .5px; line-height: 1.6; font-weight: 600; }
+  .pp-it { display: block; color: var(--brand); font-weight: 900; letter-spacing: 1px; font-size: 13px; margin-bottom: 4px; }
+  .pp-item { position: relative; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 16px; margin-bottom: 12px; overflow: hidden; transition: box-shadow .35s, border-color .35s; }
+  .pp-item[open] { box-shadow: 0 16px 32px -18px var(--c); border-color: color-mix(in srgb, var(--c) 55%, var(--line)); border-left-color: var(--c); }
+  .pp-head { list-style: none; display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; background: linear-gradient(90deg, color-mix(in srgb, var(--c) 14%, transparent), transparent); }
+  .pp-head::-webkit-details-marker { display: none; }
+  .pp-num { min-width: 36px; height: 36px; border-radius: 11px; background: var(--c); color: #fff; font-weight: 900; font-size: 15px; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 14px -6px var(--c); }
+  .pp-title { flex: 1; color: var(--c); font-weight: 850; font-size: 13px; letter-spacing: .8px; line-height: 1.35; }
+  .pp-chev { width: 28px; height: 28px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--muted); background: var(--card); border: 1px solid var(--line); transition: transform .45s cubic-bezier(.2,.9,.25,1.2), background .3s, color .3s; padding-bottom: 2px; box-sizing: border-box; }
+  .pp-item[open] .pp-chev { transform: rotate(90deg); background: var(--c); color: #fff; border-color: transparent; }
+  .pp-body { padding: 12px 14px 4px; font-size: 14px; line-height: 1.65; color: var(--text); transition: height .32s cubic-bezier(.4,0,.2,1), opacity .26s ease; overflow: hidden; }
+  .pp-body p { margin: 0 0 10px; }
+  .pp-sub { color: var(--c); font-weight: 900; margin-right: 6px; }
+  .pp-item.warn { border: 1px solid var(--c); border-left: 5px solid var(--c); }
+  .pp-item.warn .pp-body { background: color-mix(in srgb, var(--c) 8%, transparent); }
+  .pp-foot { text-align: center; color: var(--muted); font-size: 12px; letter-spacing: .8px; padding: 10px 0 30px; }
+  :root[data-theme="dark"] .pp-num, :root[data-theme="dark"] .pp-item[open] .pp-chev { color: #111; }
 </style>
 </head>
 <body>
