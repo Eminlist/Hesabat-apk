@@ -97,7 +97,7 @@ public class MainActivity extends Activity {
         try {
             startActivity(gm);
         } catch (Exception e) {
-            startActivity(Intent.createChooser(i, "Hesabatı göndər"));
+            startActivity(Intent.createChooser(i, "Göndər"));
         }
     }
 
@@ -426,7 +426,7 @@ public class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private Intent phoneLockIntent(String title) {
         KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-        return km == null ? null : km.createConfirmDeviceCredentialIntent("Hesabat", title);
+        return km == null ? null : km.createConfirmDeviceCredentialIntent("My Finance™", title);
     }
 
     /** Hides the data and asks for the phone's own screen lock (PIN, pattern, fingerprint). */
@@ -640,6 +640,24 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /** Köhnə Hesabatın məlumat faylı bir dəfə ayrıca saxlanılır (hesabat-kohne.json), My Finance™ ondan təmiz başlayır. */
+        @JavascriptInterface
+        public void archiveOld() {
+            try {
+                File f = dataFile();
+                File old = new File(getFilesDir(), "hesabat-kohne.json");
+                if (!f.exists() || old.exists()) return;
+                FileInputStream in = new FileInputStream(f);
+                FileOutputStream out = new FileOutputStream(old);
+                byte[] b = new byte[8192];
+                int n;
+                while ((n = in.read(b)) > 0) out.write(b, 0, n);
+                in.close();
+                out.close();
+            } catch (Exception ignored) {
+            }
         }
 
         @JavascriptInterface
@@ -944,7 +962,7 @@ public class MainActivity extends Activity {
                     try {
                         java.util.concurrent.Executor ex = getMainExecutor();
                         android.hardware.biometrics.BiometricPrompt bp = new android.hardware.biometrics.BiometricPrompt.Builder(MainActivity.this)
-                                .setTitle("Hesabat")
+                                .setTitle("My Finance™")
                                 .setSubtitle("Barmaq izi ilə açın")
                                 .setNegativeButton("PIN kod", ex, new android.content.DialogInterface.OnClickListener() {
                                     @Override
@@ -1082,7 +1100,7 @@ public class MainActivity extends Activity {
             Intent i = new Intent(Intent.ACTION_SEND);
             i.setType("text/plain");
             i.putExtra(Intent.EXTRA_TEXT, text);
-            startActivity(Intent.createChooser(i, "Hesabatı göndər"));
+            startActivity(Intent.createChooser(i, "Göndər"));
         }
 
         @JavascriptInterface

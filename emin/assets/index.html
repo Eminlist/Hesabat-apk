@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Hesabat</title>
+<title>My Finance™</title>
 <style>
   :root {
     --bg: #F4F7F9; --card: #FFFFFF; --text: #0F1A24; --muted: #6B7785; --line: #E7ECF0; --line2: #F0F3F6;
@@ -336,6 +336,58 @@
   .whorow small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
   .whorow em { font-style: normal; font-weight: 800; font-size: 14px; }
   .duesel { -webkit-appearance: none; appearance: none; font: inherit; font-size: 14px; font-weight: 650; }
+</style>
+<style>
+  /* My Finance™ */
+  .duebox { background: var(--red-soft); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); border-radius: 20px; padding: 12px; margin-bottom: 12px; }
+  .duehead { display: flex; justify-content: space-between; align-items: center; color: var(--red); margin: 0 2px 8px; }
+  .duehead b { font-size: 15px; }
+  .duehead button { color: #fff; background: var(--red); border-radius: 999px; padding: 6px 13px; font-weight: 750; font-size: 13px; }
+  .duerow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--card); border-radius: 14px; padding: 10px 12px; margin-top: 6px; color: var(--text); border-left: 4px solid var(--red); }
+  .duerow b { display: block; font-size: 15px; }
+  .duerow small { display: block; color: var(--red); font-weight: 700; font-size: 12.5px; }
+  .duerow em { font-style: normal; font-weight: 800; color: var(--red); }
+  .duemore { width: 100%; text-align: center; color: var(--red); font-weight: 750; padding: 8px 0 2px; font-size: 13px; }
+  .outcard { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--card); border-radius: 20px; padding: 14px 16px; box-shadow: var(--shadow); color: var(--text); margin-bottom: 4px; }
+  :root[data-theme="dark"] .outcard { border: 1px solid var(--line); }
+  .outcard small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
+  .outcard b { display: block; font-size: 24px; font-weight: 850; color: var(--debt); letter-spacing: -.3px; }
+  .outcard .s { color: var(--muted); font-size: 12.5px; }
+  .navbadge { position: absolute; top: 6px; left: 50%; margin-left: 6px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--red); color: #fff; font-size: 11px; font-style: normal; font-weight: 800; display: grid; place-items: center; padding: 0 5px; }
+  .row.age1 { box-shadow: inset 4px 0 0 #EAB308; } .row.age2 { box-shadow: inset 4px 0 0 #F97316; } .row.age3 { box-shadow: inset 4px 0 0 #DC2626; }
+  .age1t { color: #CA8A04 !important; font-weight: 700 !important; } .age2t { color: #EA580C !important; font-weight: 700 !important; } .age3t { color: #DC2626 !important; font-weight: 700 !important; }
+  .agebar { border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 750; margin-bottom: 8px; background: var(--line2); color: var(--muted); }
+  .agebar.age1b { background: #FEF9C3; color: #A16207; } .agebar.age2b { background: #FFEDD5; color: #C2410C; } .agebar.age3b { background: var(--red-soft); color: var(--red); }
+  :root[data-theme="dark"] .agebar.age1b { background: #2A2508; color: #FACC15; } :root[data-theme="dark"] .agebar.age2b { background: #2B1708; color: #FB923C; }
+  .s.late { color: var(--red) !important; font-weight: 750; }
+  .extnote { font-size: 12.5px; color: var(--amber); font-weight: 700; margin: -2px 6px 8px; }
+  .s.extsm { color: var(--amber) !important; font-size: 12px; font-weight: 650; }
+  .badge.tagb { background: var(--brand-soft); color: var(--brand); margin-left: 4px; }
+  .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 2px; }
+  .acts button { background: var(--card); border-radius: 18px; padding: 12px 4px 10px; box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text); }
+  :root[data-theme="dark"] .acts button { border: 1px solid var(--line); }
+  .acts button:active { transform: scale(.96); }
+  .acts span { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; }
+  .acts span svg { width: 21px; height: 21px; }
+  .rbtn { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; flex: none; font-weight: 900; font-size: 18px; }
+  .rbtn svg { width: 21px; height: 21px; }
+  .whofix { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 11px 13px; font-size: 14px; line-height: 1.5; }
+  .logobox { width: 74px; height: 74px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; font-size: 30px; overflow: hidden; flex: none; }
+  .logobox img { width: 100%; height: 100%; object-fit: cover; }
+  .ktab { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 6px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+  .ktab b { text-align: right; }
+  .ktab:first-child b { color: var(--muted); font-size: 12.5px; }
+  .btn.dangerb { background: var(--red); color: #fff; }
+  .cfm-shade { position: fixed; inset: 0; z-index: 40; background: var(--shade); display: grid; place-items: center; padding: 24px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: shadeIn .2s ease-out; }
+  .cfm { width: 100%; max-width: 360px; background: var(--card); border-radius: 26px; padding: 22px 18px 16px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,.3); animation: cfmIn .26s cubic-bezier(.2,.9,.3,1.2); }
+  :root[data-theme="dark"] .cfm { border: 1px solid rgba(233,196,106,.28); }
+  .cfm-ic { width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 20px; display: grid; place-items: center; font-size: 28px; background: var(--brand-soft); }
+  .cfm.danger .cfm-ic { background: var(--red-soft); }
+  .cfm h3 { margin: 0 0 6px; font-size: 19px; font-weight: 850; }
+  .cfm p { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+  .cfm .two .btn { margin-top: 0; }
+  @keyframes cfmIn { from { transform: scale(.88); opacity: 0; } to { transform: none; opacity: 1; } }
+  textarea.field { font: inherit; line-height: 1.45; }
 </style>
 </head>
 <body>

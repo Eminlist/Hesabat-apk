@@ -1,168 +1,141 @@
-// Hesablamaların avtomatik yoxlanması: biri səhv çıxsa, APK yığılmır.
+// My Finance™ hesablamalarının avtomatik yoxlanması: biri səhv çıxsa, APK yığılmır.
 // İşə salmaq: node emin/tests/calc.test.js
 'use strict';
 const assert = require('assert');
 const path = require('path');
 require(path.join(__dirname, '..', 'assets', 'calc.js'));
-const C = globalThis.HC;
+const C = globalThis.MF;
 
-let n = 0, id = 0;
-const mk = () => 'x' + (++id);
-const empty = () => ({ people: [], tx: [], loans: [], borrow: [], kassa: [], removed: {} });
+let n = 0, k = 0;
+const empty = () => ({ customers: [{ id: 'a', name: 'Əli' }, { id: 'b', name: 'Vüqar' }], ops: [], recs: [], trash: [] });
+const op = (o) => Object.assign({ id: 'o' + (++k), c: k, time: '10:00' }, o);
 function test(name, f) { f(); n++; console.log('✓ ' + name); }
-const M = '2026-11';
+const T = '2026-11-24';
 
-test('Borc aldım: A-dan 500, B-dən 100, A-ya 100 qaytardım', () => {
-  const db = empty();
-  db.borrow.push({ id: 'a', name: 'A', amount: 50000, date: '2026-11-01', pays: [] });
-  db.borrow.push({ id: 'b', name: 'B', amount: 10000, date: '2026-11-10', pays: [] });
-  C.syncBorrowTx(db);
-  C.payBack(db, 'borrow', C.norm('A'), 10000, '2026-11-12', 1, mk);
-  const f = C.monthFlow(db, M);
-  assert.strictEqual(f.gelir, 60000);
-  assert.strictEqual(f.cixis, 10000);
-  assert.strictEqual(f.qaliq, 50000);
-  const p = C.parties(db, 'borrow');
-  assert.strictEqual(p.find(x => x.name === 'A').left, 40000);
-  assert.strictEqual(p.find(x => x.name === 'B').left, 10000);
-  assert.strictEqual(p.reduce((s, x) => s + x.left, 0), 50000);
+test('Kalkulyator: 15+20+12.5 = 47.5', () => {
+  assert.strictEqual(C.evalExpr('15+20+12.5'), 4750);
+  assert.strictEqual(C.evalExpr('15+20+12,5'), 4750);
+  assert.strictEqual(C.evalExpr('3*2,5'), 750);
+  assert.strictEqual(C.evalExpr('10-2*3'), 400);
+  assert.strictEqual(C.evalExpr('100/3'), 3333);
+  assert.ok(isNaN(C.evalExpr('5+')));
+  assert.ok(isNaN(C.evalExpr('abc')));
+  assert.ok(isNaN(C.evalExpr('5/0')));
+  assert.strictEqual(C.evalExpr(''), null);
 });
 
-test('Eyni adamdan iki dəfə borc: qaytarma ən köhnədən bağlanır', () => {
+test('Nisyə kassaya yazılmır, ödəniş həmin günün gəliridir', () => {
   const db = empty();
-  db.borrow.push({ id: 'a1', name: 'Əli', amount: 30000, date: '2026-11-01', pays: [] });
-  db.borrow.push({ id: 'a2', name: 'əli ', amount: 20000, date: '2026-11-05', pays: [] });
-  C.syncBorrowTx(db);
-  C.payBack(db, 'borrow', C.norm('ƏLİ'), 35000, '2026-11-20', 1, mk);
-  assert.strictEqual(C.borrowCalc(db.borrow[0]).left, 0);
-  assert.strictEqual(C.borrowCalc(db.borrow[1]).left, 15000);
-  const g = C.parties(db, 'borrow');
-  assert.strictEqual(g.length, 1);
-  assert.strictEqual(g[0].left, 15000);
-  assert.strictEqual(C.monthFlow(db, M).qaliq, 50000 - 35000);
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 10000, date: '2026-11-20', due: '2026-11-25' }));
+  let f = C.flow(db, '2026-11-20', '2026-11-20');
+  assert.strictEqual(f.income, 0);
+  assert.strictEqual(f.nisye, 10000);
+  db.ops.push(op({ kind: 'pay', cid: 'a', amount: 4000, method: 'cash', date: '2026-11-22' }));
+  f = C.flow(db, '2026-11-22', '2026-11-22');
+  assert.strictEqual(f.income, 4000);
+  assert.strictEqual(f.inCash, 4000);
+  const s = C.custState(db, 'a', T);
+  assert.strictEqual(s.debt, 6000);
+  assert.strictEqual(s.given, 10000);
+  assert.strictEqual(s.paid, 4000);
 });
 
-test('Borc verdim: ümumi hesaba (gəlir, xərc, qalıq, kassa) QATILMIR', () => {
+test('Hissə-hissə ödəniş ən köhnə nisyədən bağlanır', () => {
   const db = empty();
-  db.tx.push({ id: 'i', type: 'inc', amount: 10000, date: '2026-11-02', created: 200 });
-  db.kassa.push({ id: 'kassa', nagd: 30000, kart: 0, at: 100 });
-  db.loans.push({ id: 'l', name: 'C', amount: 20000, date: '2026-11-03', due: '2026-11-25', back: 0 });
-  C.syncLoanTx(db, 300);
-  let f = C.monthFlow(db, M);
-  assert.strictEqual(f.gelir, 10000); assert.strictEqual(f.cixis, 0); assert.strictEqual(f.qaliq, 10000);
-  assert.strictEqual(f.nagdOut, 0);
-  C.payBack(db, 'lend', C.norm('C'), 5000, '2026-11-15', 400, mk, '14:35');
-  f = C.monthFlow(db, M);
-  assert.strictEqual(f.gelir, 10000); assert.strictEqual(f.cixis, 0); assert.strictEqual(f.qaliq, 10000);
-  assert.strictEqual(C.dayFlow(db, '2026-11-15').qaliq, 0);
-  assert.strictEqual(C.kassaNow(db).nagd, 30000 + 10000);
-  // qaytarmanın günü, saatı və məbləği saxlanır
-  const b = db.tx.find(t => t.type === 'lback');
-  assert.strictEqual(b.date, '2026-11-15'); assert.strictEqual(b.time, '14:35'); assert.strictEqual(b.amount, 5000);
-  assert.strictEqual(C.parties(db, 'lend')[0].left, 15000);
-  assert.strictEqual(C.parties(db, 'lend')[0].due, '2026-11-25');
-  // artıq ödəniş qəbul olunmur: yalnız qalan 150 bağlanır
-  assert.strictEqual(C.payBack(db, 'lend', C.norm('C'), 99999, '2026-11-16', 500, mk, '09:00'), 15000);
-  assert.strictEqual(C.parties(db, 'lend')[0].left, 0);
-  assert.strictEqual(C.parties(db, 'lend')[0].due, null);
-  assert.strictEqual(C.monthFlow(db, M).qaliq, 10000);
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 5000, date: '2026-10-01', due: '2026-10-10' }));
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 3000, date: '2026-11-01', due: '2026-11-30' }));
+  db.ops.push(op({ kind: 'pay', cid: 'a', amount: 2000, method: 'card', date: '2026-11-02' }));
+  let s = C.custState(db, 'a', T);
+  assert.strictEqual(s.open.length, 2);
+  assert.strictEqual(s.open[0].left, 3000);
+  assert.strictEqual(s.due, '2026-10-10');
+  assert.strictEqual(s.overdue, 45);
+  db.ops.push(op({ kind: 'pay', cid: 'a', amount: 3000, method: 'cash', date: '2026-11-03' }));
+  s = C.custState(db, 'a', T);
+  assert.strictEqual(s.open.length, 1);
+  assert.strictEqual(s.due, '2026-11-30');
+  assert.strictEqual(s.overdue, 0);
+  assert.strictEqual(s.debt, 3000);
 });
 
-test('Aldığım borcun qaytarılmasında saat saxlanır', () => {
+test('Artıq ödəniş avans kimi qalır (80 borca 100 ödəniş → +20 avans)', () => {
   const db = empty();
-  db.borrow.push({ id: 'a', name: 'A', amount: 50000, date: '2026-11-01', pays: [] });
-  C.syncBorrowTx(db);
-  C.payBack(db, 'borrow', C.norm('A'), 10000, '2026-11-12', 1, mk, '18:20');
-  const t = db.tx.find(x => x.type === 'brep');
-  assert.strictEqual(t.date, '2026-11-12'); assert.strictEqual(t.time, '18:20'); assert.strictEqual(t.amount, 10000);
-  db.borrow[0].pays[0].t = '19:00'; C.syncBorrowTx(db);
-  assert.strictEqual(db.tx.find(x => x.type === 'brep').time, '19:00');
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 8000, date: '2026-11-01', due: '2026-11-10' }));
+  db.ops.push(op({ kind: 'pay', cid: 'a', amount: 10000, method: 'cash', date: '2026-11-05' }));
+  const s = C.custState(db, 'a', T);
+  assert.strictEqual(s.debt, 0);
+  assert.strictEqual(s.advance, 2000);
+  assert.strictEqual(s.isDue, false);
+  assert.strictEqual(C.flow(db, '2026-11-05', '2026-11-05').income, 10000);
+  // növbəti nisyə avansdan çıxılır
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 5000, date: '2026-11-20', due: '2026-11-30' }));
+  assert.strictEqual(C.custState(db, 'a', T).debt, 3000);
 });
 
-test('Nisyə gəlir deyil, ödəniləndə gəlirdir; hissə xərcdir', () => {
+test('Çöldə olan ümumi pul', () => {
   const db = empty();
-  db.people.push({ id: 'u', name: 'Usta' });
-  db.tx.push({ id: 'd', pid: 'u', type: 'debt', amount: 10000, cost: 3000, date: '2026-11-02' });
-  let f = C.monthFlow(db, M);
-  assert.strictEqual(f.gelir, 0); assert.strictEqual(f.parts, 3000); assert.strictEqual(f.newDebt, 10000);
-  assert.strictEqual(C.nisye(db, 'u'), 10000);
-  db.tx.push({ id: 'p', pid: 'u', type: 'pay', amount: 6000, date: '2026-11-04' });
-  f = C.monthFlow(db, M);
-  assert.strictEqual(f.gelir, 6000); assert.strictEqual(f.qaliq, 3000);
-  assert.strictEqual(C.nisye(db, 'u'), 4000);
-  assert.strictEqual(C.nisyeTotal(db), 4000);
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 5000, date: '2026-11-01' }));
+  db.ops.push(op({ kind: 'nisye', cid: 'b', amount: 7000, date: '2026-11-02' }));
+  db.ops.push(op({ kind: 'pay', cid: 'b', amount: 9000, method: 'cash', date: '2026-11-03' }));
+  const o = C.outstanding(db, T);
+  assert.strictEqual(o.total, 5000);
+  assert.strictEqual(o.count, 1);
 });
 
-test('Nağd və kart ayrı sayılır; kassa', () => {
+test('Kassa: nağd və kart ayrı, əvvəlki günlərin qalığı ilə', () => {
   const db = empty();
-  db.tx.push({ id: '1', type: 'inc', amount: 8000, method: 'kart', date: '2026-11-07' });
-  db.tx.push({ id: '2', type: 'inc', amount: 5000, date: '2026-11-07', cost: 1000 });
-  db.tx.push({ id: '3', type: 'pexp', amount: 700, date: '2026-11-07' });
-  db.kassa.push({ id: 'k2026-11-06', date: '2026-11-06', close: 2000 });
-  const k = C.kassaDay(db, '2026-11-07');
-  assert.strictEqual(k.f.kartIn, 8000);
-  assert.strictEqual(k.f.nagdIn, 5000);
-  assert.strictEqual(k.f.nagdOut, 1700);
-  assert.strictEqual(k.expect, 2000 + 5000 - 1700);
-  assert.strictEqual(C.dayFlow(db, '2026-11-07').qaliq, 13000 - 1700);
+  db.ops.push(op({ kind: 'in', amount: 20000, method: 'cash', date: '2026-11-20' }));
+  db.ops.push(op({ kind: 'in', amount: 15000, method: 'card', date: '2026-11-21' }));
+  db.ops.push(op({ kind: 'out', amount: 5000, method: 'cash', date: '2026-11-22' }));
+  db.ops.push(op({ kind: 'out', amount: 2500, method: 'card', date: '2026-11-24' }));
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 99900, date: '2026-11-24' }));
+  const b = C.balances(db, T);
+  assert.strictEqual(b.cash, 15000);
+  assert.strictEqual(b.card, 12500);
+  assert.strictEqual(b.total, 27500);
+  assert.strictEqual(C.balances(db, '2026-11-21').total, 35000);
 });
 
-test('Gecikən nisyə', () => {
+test('Borcun yaşı: 30 sarı, 60 narıncı, 90+ qırmızı', () => {
   const db = empty();
-  db.tx.push({ id: 'd', pid: 'u', type: 'debt', amount: 5000, date: '2026-11-01', due: '2026-11-10' });
-  assert.deepStrictEqual(C.overdue(db, 'u', '2026-11-13'), { sum: 5000, days: 3 });
-  db.tx.push({ id: 'p', pid: 'u', type: 'pay', amount: 5000, date: '2026-11-12' });
-  assert.deepStrictEqual(C.overdue(db, 'u', '2026-11-13'), { sum: 0, days: 0 });
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 1000, date: C.addDays(T, -31) }));
+  assert.strictEqual(C.custState(db, 'a', T).age, 1);
+  db.ops[0].date = C.addDays(T, -60);
+  assert.strictEqual(C.custState(db, 'a', T).age, 2);
+  db.ops[0].date = C.addDays(T, -95);
+  assert.strictEqual(C.custState(db, 'a', T).age, 3);
+  db.ops[0].date = C.addDays(T, -5);
+  assert.strictEqual(C.custState(db, 'a', T).age, 0);
 });
 
-test('Silinmiş borcun gizli düzəlişi (corr) hesaba düşmür', () => {
+test('Sabit aylıq xərc: ödəmə günü və ödənilib-ödənilməməsi', () => {
   const db = empty();
-  db.tx.push({ id: 'c', pid: null, type: 'debt', corr: true, amount: -900, cost: 100, date: '2026-11-01' });
-  const f = C.monthFlow(db, M);
-  assert.strictEqual(f.parts, 0); assert.strictEqual(f.newDebt, 0);
+  db.recs.push({ id: 'r1', name: 'İcarə', amount: 30000, day: 31 });
+  assert.strictEqual(C.recDate(db.recs[0], '2026-11'), '2026-11-30');
+  assert.strictEqual(C.recDate(db.recs[0], '2027-02'), '2027-02-28');
+  let st = C.recStatus(db, T)[0];
+  assert.strictEqual(st.paid, null);
+  db.ops.push(op({ kind: 'out', amount: 30000, method: 'cash', date: '2026-11-24', rec: 'r1', recMonth: '2026-11' }));
+  st = C.recStatus(db, T)[0];
+  assert.ok(st.paid);
 });
 
-test('Kassa: cibimdəki və kartdakı pul', () => {
-  const db = empty();
-  db.tx.push({ id: 'old', type: 'inc', amount: 99900, date: '2026-11-01', created: 50 });
-  db.kassa.push({ id: 'kassa', nagd: 20000, kart: 50000, at: 100 });
-  db.tx.push({ id: '1', type: 'inc', amount: 3000, date: '2026-11-22', created: 101 });
-  db.tx.push({ id: '2', type: 'pexp', amount: 1000, method: 'kart', date: '2026-11-22', created: 102 });
-  db.tx.push({ id: '3', type: 'debt', amount: 5000, cost: 500, date: '2026-11-22', created: 103 });
-  const k = C.kassaNow(db);
-  assert.strictEqual(k.nagd, 20000 + 3000 - 500);
-  assert.strictEqual(k.kart, 50000 - 1000);
+test('WhatsApp tonu: 1-ci gün yumşaq, 5-ci gün rəsmi, 15+ son xəbərdarlıq', () => {
+  assert.strictEqual(C.toneFor(0), 1);
+  assert.strictEqual(C.toneFor(1), 1);
+  assert.strictEqual(C.toneFor(5), 2);
+  assert.strictEqual(C.toneFor(14), 2);
+  assert.strictEqual(C.toneFor(15), 3);
 });
 
-test('Gün dəyişəndə əvvəlki günlərdən qalan pul qalığa düşür, xərc mənfi göstərilmir', () => {
+test('Tarixçə xronoloji və qalıqla', () => {
   const db = empty();
-  db.tx.push({ id: '1', type: 'inc', amount: 20000, date: '2026-11-21' });
-  db.tx.push({ id: '2', type: 'pexp', amount: 5000, date: '2026-11-22' });
-  db.tx.push({ id: '3', type: 'pexp', amount: 3000, date: '2026-11-23' });
-  const b = C.dayBalance(db, '2026-11-23');
-  assert.strictEqual(b.carry, 15000);
-  assert.strictEqual(b.f.gelir, 0); assert.strictEqual(b.f.cixis, 3000);
-  assert.strictEqual(b.qaliq, 12000);
-  // verdiyim borc əvvəldən qalana da qatılmır
-  db.loans.push({ id: 'l', name: 'X', amount: 9000, date: '2026-11-22', back: 0 });
-  C.syncLoanTx(db);
-  assert.strictEqual(C.dayBalance(db, '2026-11-23').qaliq, 12000);
-  // ay: keçən aydan qalan
-  db.tx.push({ id: '4', type: 'inc', amount: 7000, date: '2026-10-30' });
-  const m = C.monthBalance(db, '2026-11');
-  assert.strictEqual(m.carry, 7000); assert.strictEqual(m.f.qaliq, 12000); assert.strictEqual(m.qaliq, 19000);
+  db.ops.push(op({ kind: 'pay', cid: 'a', amount: 3000, method: 'cash', date: '2026-11-10' }));
+  db.ops.push(op({ kind: 'nisye', cid: 'a', amount: 8000, date: '2026-11-01' }));
+  const h = C.history(db, 'a');
+  assert.strictEqual(h[0].o.kind, 'nisye');
+  assert.strictEqual(h[0].bal, 8000);
+  assert.strictEqual(h[1].bal, 5000);
 });
 
-test('Aldığım borc kartla da ola bilər: kassada karta düşür', () => {
-  const db = empty();
-  db.borrow.push({ id: 'a', name: 'A', amount: 30000, date: '2026-11-23', method: 'kart', pays: [] });
-  C.syncBorrowTx(db);
-  let k = C.kassaNow(db);
-  assert.strictEqual(k.kart, 30000); assert.strictEqual(k.nagd, 0);
-  C.payBack(db, 'borrow', C.norm('A'), 10000, '2026-11-23', 1, mk, '12:00', 'nagd');
-  k = C.kassaNow(db);
-  assert.strictEqual(k.kart, 30000); assert.strictEqual(k.nagd, -10000);
-  assert.strictEqual(C.monthFlow(db, M).qaliq, 20000);
-});
-
-console.log(n + ' yoxlama keçdi');
+console.log('\nHamısı düzgündür: ' + n + ' yoxlama');

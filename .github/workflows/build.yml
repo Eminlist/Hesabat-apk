@@ -96,6 +96,6 @@ jobs:
           # hər proqramın öz release-i: Hesabatim-*.apk yalnız Akif Hesabatı, Hesabat-*.apk yalnız Emin Hesabatı yeniləyir
           while IFS='|' read -r C V A; do
             [ -n "$C" ] || continue
-            case "$A" in out/Hesabatim-*) T="Akif Hesabat $V";; *) T="Emin Hesabat $V";; esac
+            case "$A" in out/Hesabatim-*) T="Akif Hesabat $V";; *) T="My Finance™ $V";; esac
             gh release create "r$C" "$A" --title "$T" --notes-file notes.txt --latest
           done < out/list.txt

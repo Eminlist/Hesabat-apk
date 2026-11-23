@@ -29,7 +29,7 @@ import java.nio.charset.Charset;
  */
 class GoogleSync {
 
-    static final String FILE_NAME = "Hesabat-sinxron.json";
+    static final String FILE_NAME = "MyFinance-sinxron.json";
     private static final String SCOPE = "oauth2:https://www.googleapis.com/auth/drive.appdata";
     private static final String API = "https://www.googleapis.com/drive/v3/files";
     private static final String UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";

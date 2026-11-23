@@ -1,180 +1,135 @@
-// Hesabat — bütün hesablamalar (telefon və GitHub testləri eyni faylı işlədir)
-// Məbləğlər qəpiklə (tam ədəd). Gəlir və xərc pulun cibə girdiyi / çıxdığı gün yazılır.
-//   Gəlir  (+): nağd iş, nisyə ödənişi, digər gəlir, aldığım borc
-//   Xərc   (−): hissə, xərc, ziyan, aldığım borcun qaytarılması
-//   Verdiyim borc və onun qaytarılması ümumi hesaba (gəlir, xərc, qalıq, kassa) QATILMIR
-//   Nisyə: ustanın borcu — ödənənə qədər gəlir deyil
-(function (G) {
+// My Finance™ — hesablamalar (məbləğlər qəpiklə, tam ədəd)
+// Kassa: gəlir (in), xərc (out), nisyədən ödəniş (pay). Nisyə (nisye) kassaya yazılmır.
+(function (g) {
   'use strict';
   const pad = n => String(n).padStart(2, '0');
-  const isCard = t => !!t.bank || (!!t.method && t.method !== 'nagd');
+  const norm = s => String(s == null ? '' : s).trim().toLocaleLowerCase('az').replace(/\s+/g, ' ');
+  const when = o => (o.date || '') + ' ' + (o.time || '00:00') + ' ' + pad(o.c || 0).padStart(14, '0');
+  const byWhen = (a, b) => when(a).localeCompare(when(b));
+  const dayNum = d => Math.round(new Date(d + 'T12:00:00Z').getTime() / 86400000);
+  const daysBetween = (a, b) => dayNum(b) - dayNum(a);
+  const addDays = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const addMonths = (d, n) => {
+    const [y, m, dd] = d.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1 + n, 1, 12));
+    const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0, 12)).getUTCDate();
+    return t.getUTCFullYear() + '-' + pad(t.getUTCMonth() + 1) + '-' + pad(Math.min(dd, last));
+  };
+  const isMoneyIn = o => o.kind === 'in' || o.kind === 'pay';
 
-  // bir siyahı əməliyyatın yekunu
-  function flow(list) {
-    const r = { work: 0, pays: 0, other: 0, lback: 0, brw: 0, gelir: 0,
-      parts: 0, xerc: 0, loss: 0, lend: 0, brep: 0, cixis: 0, qaliq: 0,
-      nagdIn: 0, kartIn: 0, nagdOut: 0, kartOut: 0, newDebt: 0 };
-    for (const t of list) {
-      if (t.corr) continue;
-      const a = t.amount || 0;
-      switch (t.type) {
-        case 'pay': r.pays += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
-        case 'inc': if (t.other) r.other += a; else r.work += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
-        case 'lback': r.lback += a; break; // hesaba qatılmır
-        case 'brw': r.brw += a; isCard(t) ? r.kartIn += a : r.nagdIn += a; break;
-        case 'pexp': case 'exp': r.xerc += a; isCard(t) ? r.kartOut += a : r.nagdOut += a; break;
-        case 'loss': r.loss += a; break;
-        case 'lend': r.lend += a; break; // hesaba qatılmır
-        case 'brep': r.brep += a; isCard(t) ? r.kartOut += a : r.nagdOut += a; break;
-        case 'debt': r.newDebt += a; break;
+  // ---- məbləğ xanasındakı kalkulyator: "15+20+12,5" → 4750 qəpik ----
+  function evalExpr(s) {
+    const src = String(s == null ? '' : s).replace(/\s+/g, '').replace(/×|x|X/g, '*').replace(/÷|:/g, '/').replace(/,/g, '.');
+    if (!src) return null;
+    if (!/^[0-9.+\-*/()]+$/.test(src)) return NaN;
+    let i = 0;
+    const peek = () => src[i];
+    function num() {
+      const m = /^\d*\.?\d+|^\d+\.?/.exec(src.slice(i));
+      if (!m) throw 0;
+      i += m[0].length;
+      return parseFloat(m[0]);
+    }
+    function factor() {
+      if (peek() === '-') { i++; return -factor(); }
+      if (peek() === '+') { i++; return factor(); }
+      if (peek() === '(') { i++; const v = expr(); if (peek() !== ')') throw 0; i++; return v; }
+      return num();
+    }
+    function term() {
+      let v = factor();
+      while (peek() === '*' || peek() === '/') {
+        const op = src[i++], r = factor();
+        if (op === '/') { if (r === 0) throw 0; v /= r; } else v *= r;
       }
-      // hissələr topdançıdan nağd alınır
-      if (t.cost) { r.parts += t.cost; r.nagdOut += t.cost; }
+      return v;
     }
-    r.gelir = r.work + r.pays + r.other + r.brw;
-    r.cixis = r.parts + r.xerc + r.loss + r.brep;
-    r.qaliq = r.gelir - r.cixis;
-    return r;
+    function expr() {
+      let v = term();
+      while (peek() === '+' || peek() === '-') { const op = src[i++]; const r = term(); v = op === '+' ? v + r : v - r; }
+      return v;
+    }
+    try {
+      const v = expr();
+      if (i !== src.length || !isFinite(v)) return NaN;
+      return Math.round(v * 100);
+    } catch (e) { return NaN; }
   }
-  const dayFlow = (db, d) => flow(db.tx.filter(t => t.date === d));
-  const monthFlow = (db, m) => flow(db.tx.filter(t => (t.date || '').slice(0, 7) === m));
-  // əvvəlki günlərdən qalan pul: d tarixindən əvvəlki bütün gəlir − xərc
-  const carry = (db, d) => flow(db.tx.filter(t => (t.date || '') < d)).qaliq;
-  // günün (və ya ayın) qalığı = əvvəldən qalan + bu dövrün gəliri − xərci
-  function dayBalance(db, d) { const c = carry(db, d), f = dayFlow(db, d); return { carry: c, f, qaliq: c + f.qaliq }; }
-  function monthBalance(db, m) { const c = carry(db, m + '-01'), f = monthFlow(db, m); return { carry: c, f, qaliq: c + f.qaliq }; }
+  const hasOp = s => /[0-9.,)]\s*[+\-*/×x÷:]\s*[0-9(]/.test(String(s || ''));
 
-  // ---------- nisyə (ustaların borcu) ----------
-  function nisye(db, pid) {
-    let b = 0;
-    for (const t of db.tx) if (t.pid === pid && !t.corr) b += t.type === 'debt' || t.type === 'adj' ? t.amount : t.type === 'pay' ? -t.amount : 0;
-    return b;
+  // ---- müştəri vəziyyəti ----
+  // Ödənişlər ən köhnə nisyədən bağlanır. bal > 0 — borc, bal < 0 — avans (artıq ödəniş).
+  function custState(db, cid, today) {
+    const ns = db.ops.filter(o => o.kind === 'nisye' && o.cid === cid).sort(byWhen);
+    const ps = db.ops.filter(o => o.kind === 'pay' && o.cid === cid).sort(byWhen);
+    const given = ns.reduce((s, o) => s + o.amount, 0);
+    const paid = ps.reduce((s, o) => s + o.amount, 0);
+    let rest = paid;
+    const items = ns.map(n => { const cov = Math.min(rest, n.amount); rest -= cov; return { n, left: n.amount - cov }; });
+    const open = items.filter(x => x.left > 0);
+    const dues = open.map(x => x.n.due).filter(Boolean).sort();
+    const due = dues[0] || '';
+    const overdue = due && due < today ? daysBetween(due, today) : 0;
+    const ageDays = open.length ? Math.max(0, daysBetween(open[0].n.date, today)) : 0;
+    const bal = given - paid;
+    const last = ns.concat(ps).sort(byWhen).pop();
+    return { cid, given, paid, bal, debt: Math.max(bal, 0), advance: Math.max(-bal, 0), items, open, due,
+      overdue, dueToday: !!due && due === today, isDue: !!due && due <= today && bal > 0, ageDays,
+      age: ageDays >= 90 ? 3 : ageDays >= 60 ? 2 : ageDays >= 30 ? 1 : 0,
+      hasHistory: ns.length + ps.length > 0, last: last ? when(last) : '' };
   }
-  const nisyeTotal = db => db.people.reduce((s, p) => s + Math.max(0, nisye(db, p.id)), 0);
-  // ödənişlər əvvəlcə öz borcunu, sonra ən köhnə borcları bağlayır
-  function debtState(db, pid) {
-    const tx = db.tx.filter(t => t.pid === pid && !t.corr).sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
-    const debts = tx.filter(t => t.type === 'debt' || (t.type === 'adj' && t.amount > 0)).map(t => ({ t, left: t.amount }));
-    let free = 0;
-    for (const t of tx) {
-      const amt = t.type === 'pay' ? t.amount : t.type === 'adj' && t.amount < 0 ? -t.amount : 0;
-      if (!amt) continue;
-      const own = t.forDebt && debts.find(d => d.t.id === t.forDebt);
-      if (own) { const use = Math.min(own.left, amt); own.left -= use; free += amt - use; } else free += amt;
-    }
-    for (const d of debts) { const use = Math.min(d.left, free); d.left -= use; free -= use; }
-    const open = debts.find(d => d.left > 0);
-    return { since: open ? open.t.date : null, debts };
+  // ümumi çöldə olan pul (aktiv nisyə)
+  function outstanding(db, today) {
+    let total = 0, count = 0;
+    for (const c of db.customers) { const s = custState(db, c.id, today); if (s.debt > 0) { total += s.debt; count++; } }
+    return { total, count };
   }
-  function daysBetween(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5); }
-  // ödəniş günü keçmiş, hələ ödənməmiş nisyə
-  function overdue(db, pid, today) {
-    let sum = 0, days = 0;
-    for (const d of debtState(db, pid).debts) if (d.left > 0 && d.t.due && d.t.due < today) { sum += d.left; days = Math.max(days, daysBetween(d.t.due, today)); }
-    return { sum, days };
-  }
-
-  // ---------- verdiyim borc ----------
-  const loanLeft = l => (l.amount || 0) - (l.back || 0);
-  function syncLoanTx(db, now) {
-    now = now || Date.now();
-    const ids = new Set(db.loans.map(l => l.id));
-    for (const l of db.loans) {
-      const t = db.tx.find(x => x.id === 'L' + l.id);
-      if (!t) {
-        db.tx.push({ id: 'L' + l.id, type: 'lend', lid: l.id, amount: l.amount, date: l.date, note: l.name, created: l.created || now, u: now });
-        if (l.back > 0 && !db.tx.some(x => x.type === 'lback' && x.lid === l.id)) db.tx.push({ id: 'LB' + l.id, type: 'lback', lid: l.id, amount: l.back, date: l.date, note: l.name, created: now, u: now });
-      } else if (t.amount !== l.amount || t.date !== l.date || t.note !== l.name) Object.assign(t, { amount: l.amount, date: l.date, note: l.name, u: now });
-    }
-    const gone = db.tx.filter(t => (t.type === 'lend' || t.type === 'lback') && !ids.has(t.lid));
-    if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
+  // müştərinin tarixçəsi xronoloji ardıcıllıqla, hər sətirdən sonrakı qalıqla
+  function history(db, cid) {
+    const list = db.ops.filter(o => (o.kind === 'nisye' || o.kind === 'pay') && o.cid === cid).sort(byWhen);
+    let bal = 0;
+    return list.map(o => { bal += o.kind === 'nisye' ? o.amount : -o.amount; return { o, bal }; });
   }
 
-  // ---------- aldığım borc ----------
-  const borrowDate = l => l.start || l.date;
-  function borrowCalc(l) {
-    const P = l.amount || 0, n = l.months || 0, r = (l.rate || 0) / 1200;
-    const pmt = n ? (r ? P * r / (1 - Math.pow(1 + r, -n)) : P / n) : 0;
-    const total = Math.round(n ? pmt * n : P * (1 + (l.rate || 0) / 100));
-    const paid = (l.pays || []).reduce((s, x) => s + x.amount, 0);
-    return { total, paid, left: Math.max(0, total - paid) };
+  // ---- kassa ----
+  function flow(db, from, to) {
+    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, count: 0 };
+    for (const o of db.ops) {
+      if (o.date < from || o.date > to) continue;
+      f.count++;
+      const card = o.method === 'card';
+      if (isMoneyIn(o)) { if (card) f.inCard += o.amount; else f.inCash += o.amount; if (o.kind === 'pay') f.payIn += o.amount; }
+      else if (o.kind === 'out') { if (card) f.outCard += o.amount; else f.outCash += o.amount; }
+      else if (o.kind === 'nisye') f.nisye += o.amount;
+    }
+    f.income = f.inCash + f.inCard;
+    f.expense = f.outCash + f.outCard;
+    f.net = f.income - f.expense;
+    return f;
   }
-  function syncBorrowTx(db, now) {
-    now = now || Date.now();
-    const want = new Map();
-    for (const l of db.borrow) {
-      want.set('B' + l.id, { type: 'brw', bid: l.id, amount: l.amount, date: borrowDate(l), time: l.time || '', note: l.name, method: l.method || 'nagd' });
-      for (const x of l.pays || []) want.set('BP' + (x.id || l.id + x.d + x.amount), { type: 'brep', bid: l.id, amount: x.amount, date: x.d, time: x.t || '', note: l.name, method: x.m || 'nagd' });
-    }
-    for (const [id, f] of want) {
-      const t = db.tx.find(x => x.id === id);
-      if (!t) db.tx.push(Object.assign({ id, created: now, u: now }, f));
-      else if (t.amount !== f.amount || t.date !== f.date || (t.time || '') !== f.time || t.note !== f.note || (t.method || 'nagd') !== f.method) Object.assign(t, f, { u: now });
-    }
-    const gone = db.tx.filter(t => (t.type === 'brw' || t.type === 'brep') && !want.has(t.id));
-    if (gone.length) { gone.forEach(t => { db.removed[t.id] = now; }); db.tx = db.tx.filter(t => !gone.includes(t)); }
+  // kassadakı nağd və kartdakı pul: bu günə qədər (daxil) bütün gəlir − xərc
+  function balances(db, upto) {
+    const f = flow(db, '0000-00-00', upto || '9999-99-99');
+    return { cash: f.inCash - f.outCash, card: f.inCard - f.outCard, total: f.net };
   }
 
-  // ---------- borcları adla qruplaşdırmaq ----------
-  const norm = s => String(s || '').trim().replace(/[İIı]/g, 'i').toLowerCase().replace(/\s+/g, ' ');
-  // side: 'lend' (verdiyim) və ya 'borrow' (aldığım)
-  function parties(db, side) {
-    const m = new Map();
-    for (const l of side === 'lend' ? db.loans : db.borrow) {
-      const k = norm(l.name);
-      const g = m.get(k) || { key: k, name: l.name, phone: '', total: 0, back: 0, left: 0, due: null, first: null, recs: [] };
-      const c = side === 'lend' ? { total: l.amount || 0, left: loanLeft(l) } : borrowCalc(l);
-      g.total += c.total; g.left += Math.max(0, c.left); g.back += c.total - Math.max(0, c.left);
-      if (l.phone && !g.phone) g.phone = l.phone;
-      const d = side === 'lend' ? l.date : borrowDate(l);
-      if (!g.first || d < g.first) g.first = d;
-      if (c.left > 0 && l.due && (!g.due || l.due < g.due)) g.due = l.due;
-      g.recs.push(l);
-      m.set(k, g);
-    }
-    return [...m.values()];
+  // ---- sabit aylıq xərclər ----
+  function recDate(r, month) {
+    const [y, m] = month.split('-').map(Number);
+    const last = new Date(Date.UTC(y, m, 0, 12)).getUTCDate();
+    return month + '-' + pad(Math.min(Math.max(1, +r.day || 1), last));
   }
-  // geri qaytarılan məbləğ ən köhnə açıq borcdan başlayaraq bağlanır
-  function payBack(db, side, key, amount, date, now, mkId, time, method) {
-    time = time || ''; method = method || 'nagd';
-    now = now || Date.now();
-    const recs = (side === 'lend' ? db.loans : db.borrow).filter(l => norm(l.name) === key)
-      .sort((a, b) => ((side === 'lend' ? a.date : borrowDate(a)) || '').localeCompare((side === 'lend' ? b.date : borrowDate(b)) || '') || (a.created || 0) - (b.created || 0));
-    let rest = amount;
-    for (const l of recs) {
-      if (rest <= 0) break;
-      const left = side === 'lend' ? loanLeft(l) : borrowCalc(l).left;
-      if (left <= 0) continue;
-      const use = Math.min(left, rest); rest -= use;
-      if (side === 'lend') {
-        l.back = (l.back || 0) + use; l.u = now;
-        db.tx.push({ id: mkId(), type: 'lback', lid: l.id, amount: use, date, time, method, note: l.name, created: now, u: now });
-      } else {
-        l.pays = (l.pays || []).concat({ id: mkId(), d: date, t: time, m: method, amount: use }); l.u = now;
-      }
-    }
-    if (side === 'borrow') syncBorrowTx(db, now);
-    return amount - rest; // həqiqətən bağlanan məbləğ
+  function recPaid(db, r, month) { return db.ops.find(o => o.kind === 'out' && o.rec === r.id && (o.recMonth || o.date.slice(0, 7)) === month) || null; }
+  function recStatus(db, today) {
+    const month = today.slice(0, 7);
+    return db.recs.map(r => {
+      const d = recDate(r, month), paid = recPaid(db, r, month);
+      return { r, date: d, paid, days: daysBetween(today, d), month };
+    });
   }
 
-  // ---------- kassa: gün başı + daxil olan − çıxan ----------
-  function kassaDay(db, d) {
-    const k = db.kassa.find(x => x.date === d) || {};
-    const prev = f => { let best = null; for (const x of db.kassa) if (x.date < d && x[f] != null && (!best || x.date > best.date)) best = x; return best ? best[f] : null; };
-    const open = k.open != null ? k.open : prev('close'), copen = k.copen != null ? k.copen : prev('cclose');
-    const f = dayFlow(db, d);
-    return { k, open, copen, f, expect: (open || 0) + f.nagdIn - f.nagdOut, cexpect: (copen || 0) + f.kartIn - f.kartOut };
-  }
+  // ---- WhatsApp mesaj tonu: gecikmə gününə görə ----
+  const toneFor = overdue => overdue >= 15 ? 3 : overdue >= 5 ? 2 : 1;
 
-  // ---------- kassa: cibimdəki pul və kartdakı pul ----------
-  // Sonuncu dəfə yazılan məbləğ + ondan sonra yazılan bütün əməliyyatlar
-  function kassaNow(db) {
-    const k = db.kassa.find(x => x.id === 'kassa') || null;
-    const at = k ? k.at || 0 : 0;
-    const f = flow(db.tx.filter(t => (t.created || 0) > at));
-    return { set: !!k, at, nagd: (k ? k.nagd || 0 : 0) + f.nagdIn - f.nagdOut, kart: (k ? k.kart || 0 : 0) + f.kartIn - f.kartOut };
-  }
-
-  G.HC = { pad, isCard, flow, dayFlow, monthFlow, carry, dayBalance, monthBalance, nisye, nisyeTotal, debtState, overdue, daysBetween, loanLeft, syncLoanTx,
-    borrowDate, borrowCalc, syncBorrowTx, norm, parties, payBack, kassaDay, kassaNow };
+  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn };
 })(typeof window !== 'undefined' ? window : globalThis);
