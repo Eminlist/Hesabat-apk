@@ -1,6 +1,6 @@
 // Hesabat 3.1.3 Rev. 000 — sadə versiya. Hesablamalar calc.js-dədir (HC).
 'use strict';
-const APP_VERSION = '3.1.3 Rev. 002';
+const APP_VERSION = '3.1.3 Rev. 003';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.HC;
 const pad = C.pad;
@@ -673,7 +673,7 @@ function renderSheet(s) {
       <label>Ödəniş</label><div class="seg" data-group="paid"><button class="pay ${paid ? 'on' : ''}" data-a="pick" data-v="paid|1">Ödədi</button><button class="debt ${paid ? '' : 'on'}" data-a="pick" data-v="paid|0">Nisyə</button></div>
       <div data-show="paid|1" class="${paid ? '' : 'hidden'}">${fMethod(mOf(t))}</div>
       <div data-show="paid|0" class="${paid ? 'hidden' : ''}"><label>Ödəniş günü (istəyə bağlı — 3 gün qabaqdan xatırladılır)</label>
-        <div class="chips" data-group="due"><button class="chip" data-a="dueSet" data-v="3">3 gün</button><button class="chip" data-a="dueSet" data-v="10">10 gün</button><button class="chip" data-a="dueSet" data-v="m1">1 ay</button><button class="chip" data-a="dueSet" data-v="hand">✍️ Əl ilə</button></div>
+        <div class="chips" data-group="due"><select class="chip duesel" id="f_dueN"><option value="">Gün seç ▾</option>${Array.from({ length: 30 }, (_, i) => `<option value="${i + 1}">${i + 1} gün</option>`).join('')}</select><button class="chip" data-a="dueSet" data-v="m1">1 ay</button></div>
         <input class="field" id="f_due" type="date" value="${t && t.due || ''}" style="margin-top:8px"></div>
       ${fDate(t)}
       ${saveBtn('saveJob')}${t ? '<button class="btn danger" data-a="delTx">Sil</button>' : ''}`;
@@ -1106,7 +1106,7 @@ const actions = {
   dueSet(v, e, el) {
     el.closest('[data-group]').querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el));
     const f = document.getElementById('f_due'), base = val('f_date') || today();
-    if (v === 'hand') { f.focus(); if (f.showPicker) try { f.showPicker(); } catch (x) {} return; }
+    if (v === 'm1') { const n = document.getElementById('f_dueN'); if (n) n.value = ''; }
     if (v === 'm1') { const x = new Date(base + 'T12:00:00'); const day = x.getDate(); x.setDate(1); x.setMonth(x.getMonth() + 1); x.setDate(Math.min(day, new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate())); f.value = x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); }
     else f.value = addDays(base, +v);
   },
@@ -1203,6 +1203,7 @@ app.addEventListener('click', e => {
 const fold = s => C.norm(s).replace(/ə/g, 'e').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u');
 app.addEventListener('input', e => {
   if (e.target.id === 'f_cat') return catSuggest();
+  if (e.target.id === 'f_dueN') return e.target.value ? actions.dueSet(e.target.value, e, e.target) : null;
   if (e.target.id === 'f_who' && document.getElementById('whosug')) { const sh = document.getElementById('f_phone_show'), ph = document.getElementById('f_phone'); if (sh) sh.textContent = ''; if (ph) ph.value = ''; return whoSuggest(); }
   if (e.target.id === 'tq') return filterAll();
   if (e.target.id !== 'q') return;
