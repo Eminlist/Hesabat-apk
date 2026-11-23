@@ -1,6 +1,6 @@
 // Hesabat 3.1.3 Rev. 000 — sadə versiya. Hesablamalar calc.js-dədir (HC).
 'use strict';
-const APP_VERSION = '3.1.3 Rev. 003';
+const APP_VERSION = '3.1.3 Rev. 004';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.HC;
 const pad = C.pad;
@@ -532,7 +532,6 @@ function renderSettings() {
     <div class="slabel">Digər</div>
     <div class="sgroup">
       ${srow('openTrash', null, '🗑', '#8B8D98', 'Zibil qutusu', `<em>${db.trash.length || ''}</em>`)}
-      ${srow('resetAll', null, '⟲', '#E5484D', 'Hər şeyi sil — yalnız borclar qalsın', '')}
       ${srow('openPrivacy', null, '🛡', '#30A46C', 'Məxfilik siyasəti', '')}
       ${srow('noop', null, 'ℹ', '#0090FF', 'Versiya', `<em>${APP_VERSION}</em>`)}
     </div>
@@ -1147,20 +1146,6 @@ const actions = {
     }
     db.trash = db.trash.filter(x => !back.includes(x));
     save(); render(); toast('Qaytarıldı');
-  },
-  // müştərilər, nisyə, gəlir, xərc, kassa və s. silinir; yalnız «Borc verdim / Borc aldım» qalır
-  resetAll() {
-    if (!confirm('Müştərilər, nisyə, bütün gəlir və xərclər, kassa silinəcək. Yalnız «Borc verdim» və «Borc aldım» qalacaq. Davam edək?')) return;
-    if (!confirm('Əminsiniz? Bu geri qaytarılmır (Google-dakı surət də yenilənəcək).')) return;
-    const now = Date.now(), keep = t => ['lend', 'lback', 'brw', 'brep'].includes(t.type);
-    for (const k of LISTS) {
-      if (k === 'loans' || k === 'borrow') continue;
-      const list = k === 'tx' ? db.tx.filter(t => !keep(t)) : db[k];
-      list.forEach(r => { if (r && r.id) db.removed[r.id] = now; });
-      db[k] = k === 'tx' ? db.tx.filter(keep) : [];
-    }
-    state.pages = []; state.tab = 'home'; state.month = today().slice(0, 7);
-    save(); render(); toast('Silindi. Yalnız borclar qaldı');
   },
   emptyTrash() {
     if (!confirm('Zibil qutusu həmişəlik boşaldılsın?')) return;
