@@ -21,17 +21,15 @@ jobs:
 
       - name: Alətləri qur
         run: |
-          # paket serveri bəzən ilişir: hər cəhd 4 dəqiqə ilə məhdud, 3 dəfə yoxlanır
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
-          for i in 1 2 3; do
-            if timeout 240 sudo apt-get $APT update -qq && timeout 240 sudo apt-get $APT install -y -qq openjdk-21-jdk-headless aapt apksigner dalvik-exchange zip zipalign; then break; fi
-            [ $i = 3 ] && exit 1; echo "Təkrar cəhd $i"; sleep 10
-            # Azure güzgüsü ilişibsə: əsas Ubuntu serverinə keç, əlavə (Microsoft və s.) mənbələri götür
-            M=$([ $i = 1 ] && echo http://archive.ubuntu.com || echo http://mirrors.edge.kernel.org)
-            sudo sed -i -E "s#https?://[^ ]*(archive|mirrors)[^ ]*/ubuntu/?#$M/ubuntu/#g" /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
-            sudo find /etc/apt/sources.list.d -type f ! -name 'ubuntu.sources' -delete || true
-          done
-          curl -sSL -o /tmp/android.jar https://raw.githubusercontent.com/Sable/android-platforms/master/android-34/android.jar
+          # Android SDK GitHub-ın öz maşınında hazır var: paket serverindən (apt) heç nə yüklənmir
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "Build-tools: $BT"
+          for t in aapt zipalign d8 apksigner; do [ -x "$BT/$t" ] || { echo "$t tapılmadı"; exit 1; }; done
+          echo "$BT" >> "$GITHUB_PATH"
+          echo "APKSIG=$BT/lib/apksigner.jar" >> "$GITHUB_ENV"
+          if [ -f "$ANDROID_HOME/platforms/android-34/android.jar" ]; then cp "$ANDROID_HOME/platforms/android-34/android.jar" /tmp/android.jar
+          else curl -sSL -o /tmp/android.jar https://raw.githubusercontent.com/Sable/android-platforms/master/android-34/android.jar; fi
+          java -version 2>&1 | head -1
 
       - name: Yığ və imzala
         env:
@@ -47,7 +45,7 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | LC_ALL=C tr -cd 'A-Za-z0-9+/=' | base64 -d > /tmp/release.p12
           echo "Parol uzunluğu: ${#PW} (24 olmalıdır)"
           rm -rf build out && mkdir -p build/tools out
-          javac -cp /usr/share/java/apksig.jar -d build/tools tools/Sign.java
+          javac -cp "$APKSIG" -d build/tools tools/Sign.java
 
           # $1 = kod qovluğu, $2 = APK adının başı, $3 = əlavə aapt parametrləri, $4 = proqramın adı (boşsa dəyişmir)
           # hər proqram yalnız öz release-i (r<versionCode>) hələ yoxdursa yığılır
@@ -64,12 +62,12 @@ jobs:
             fi
             aapt package -f -M "$W/AndroidManifest.xml" -S "$W/res" -A "$SRC/assets" -I $AJAR $EXTRA --custom-package az.usta.hesab -J "$W/gen" -F "$W/u.apk"
             javac -Xlint:-options -source 8 -target 8 -bootclasspath $AJAR -d "$W/classes" $(find "$SRC/src" "$W/gen" -name "*.java")
-            dalvik-exchange --dex --output="$W/dex/classes.dex" "$W/classes"
+            d8 --min-api 24 --lib $AJAR --output "$W/dex" $(find "$W/classes" -name "*.class")
             (cd "$W/dex" && zip -q ../u.apk classes.dex)
             # Android 11+ quraşdırmır, əgər resources.arsc 4 bayta düzülməyibsə
             zipalign -f -p 4 "$W/u.apk" "$W/aligned.apk"
             local OUT="out/$PFX-$(echo "$V" | sed 's/ Rev\. */-Rev/; s/ /-/g').apk"
-            java --add-exports java.base/sun.security.x509=ALL-UNNAMED --add-exports java.base/sun.security.pkcs=ALL-UNNAMED --add-exports java.base/sun.security.util=ALL-UNNAMED -cp /usr/share/java/apksig.jar:build/tools Sign /tmp/release.p12 "$PW" usta "$W/aligned.apk" "$OUT"
+            java --add-exports java.base/sun.security.x509=ALL-UNNAMED --add-exports java.base/sun.security.pkcs=ALL-UNNAMED --add-exports java.base/sun.security.util=ALL-UNNAMED -cp "$APKSIG":build/tools Sign /tmp/release.p12 "$PW" usta "$W/aligned.apk" "$OUT"
             zipalign -c -p 4 "$OUT"
             apksigner verify --print-certs "$OUT"
             aapt dump badging "$OUT" | head -1
