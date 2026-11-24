@@ -26,6 +26,10 @@ jobs:
           for i in 1 2 3; do
             if timeout 240 sudo apt-get $APT update -qq && timeout 240 sudo apt-get $APT install -y -qq openjdk-21-jdk-headless aapt apksigner dalvik-exchange zip zipalign; then break; fi
             [ $i = 3 ] && exit 1; echo "Təkrar cəhd $i"; sleep 10
+            # Azure güzgüsü ilişibsə: əsas Ubuntu serverinə keç, əlavə (Microsoft və s.) mənbələri götür
+            M=$([ $i = 1 ] && echo http://archive.ubuntu.com || echo http://mirrors.edge.kernel.org)
+            sudo sed -i -E "s#https?://[^ ]*(archive|mirrors)[^ ]*/ubuntu/?#$M/ubuntu/#g" /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+            sudo find /etc/apt/sources.list.d -type f ! -name 'ubuntu.sources' -delete || true
           done
           curl -sSL -o /tmp/android.jar https://raw.githubusercontent.com/Sable/android-platforms/master/android-34/android.jar
 
