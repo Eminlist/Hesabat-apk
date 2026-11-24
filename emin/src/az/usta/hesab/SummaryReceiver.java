@@ -72,8 +72,8 @@ public class SummaryReceiver extends BroadcastReceiver {
             if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) return;
             SharedPreferences p = prefs(c);
             String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-            String title = p.getString("title", "Günün xülasəsi");
-            String text = today.equals(p.getString("date", "")) ? p.getString("text", "") : p.getString("empty", "Bu gün heç nə yazılmayıb");
+            String title = p.getString("title", Tr.t(c, "Günün xülasəsi"));
+            String text = today.equals(p.getString("date", "")) ? p.getString("text", "") : p.getString("empty", Tr.t(c, "Bu gün heç nə yazılmayıb"));
             NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) return;
             Notification.Builder b;

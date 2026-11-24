@@ -166,26 +166,26 @@ class GoogleSync {
 
     private String token() throws Exception {
         String name = account();
-        if (name.isEmpty()) throw new SyncError("Google hesabı seçilməyib");
+        if (name.isEmpty()) throw new SyncError(Tr.t(activity, "Google hesabı seçilməyib"));
         try {
             // with the activity given, the phone shows Google's "allow" window itself when it is needed
             Bundle b = AccountManager.get(activity).getAuthToken(new Account(name, "com.google"), SCOPE, null, activity, null, null).getResult();
             String t = b.getString(AccountManager.KEY_AUTHTOKEN);
-            if (t == null || t.isEmpty()) throw new SyncError("Google icazə vermədi");
+            if (t == null || t.isEmpty()) throw new SyncError(Tr.t(activity, "Google icazə vermədi"));
             return t;
         } catch (OperationCanceledException e) {
-            throw new SyncError("Google icazəsi verilmədi — yenidən “İndi yenilə” basın və icazə verin");
+            throw new SyncError(Tr.t(activity, "Google icazəsi verilmədi — yenidən “İndi yenilə” basın və icazə verin"));
         } catch (AuthenticatorException e) {
             String m = String.valueOf(e.getMessage());
             if (m.contains("UNREGISTERED_ON_API_CONSOLE") || m.contains("INVALID_AUDIENCE"))
-                throw new SyncError("Tətbiq Google Cloud-da qeydiyyatdan keçməyib (paket adı və SHA-1 yoxlanmalıdır)");
+                throw new SyncError(Tr.t(activity, "Tətbiq Google Cloud-da qeydiyyatdan keçməyib (paket adı və SHA-1 yoxlanmalıdır)"));
             if (m.contains("BadAuthentication") || m.contains("NeedPermission"))
-                throw new SyncError("Google hesabına giriş alınmadı — telefonun Ayarlarında hesabı yoxlayın");
-            throw new SyncError("Google xətası: " + m);
+                throw new SyncError(Tr.t(activity, "Google hesabına giriş alınmadı — telefonun Ayarlarında hesabı yoxlayın"));
+            throw new SyncError(Tr.t(activity, "Google xətası: ") + m);
         } catch (IOException e) {
-            throw new SyncError("İnternet yoxdur");
+            throw new SyncError(Tr.t(activity, "İnternet yoxdur"));
         } catch (SecurityException e) {
-            throw new SyncError("Bu Google hesabına icazə yoxdur — hesabı yenidən seçin");
+            throw new SyncError(Tr.t(activity, "Bu Google hesabına icazə yoxdur — hesabı yenidən seçin"));
         }
     }
 
@@ -197,14 +197,14 @@ class GoogleSync {
 
     private SyncError explain(HttpError e) {
         String b = e.body;
-        if (e.code == 401) return new SyncError("Google girişi alınmadı — hesabı yenidən seçin");
+        if (e.code == 401) return new SyncError(Tr.t(activity, "Google girişi alınmadı — hesabı yenidən seçin"));
         if (e.code == 403 && (b.contains("accessNotConfigured") || b.contains("SERVICE_DISABLED") || b.contains("has not been used")))
-            return new SyncError("Google Cloud-da “Google Drive API” aktiv edilməyib");
+            return new SyncError(Tr.t(activity, "Google Cloud-da “Google Drive API” aktiv edilməyib"));
         if (e.code == 403 && (b.contains("storageQuotaExceeded") || b.contains("quotaExceeded")))
-            return new SyncError("Google Drive-da yer qalmayıb");
-        if (e.code == 403) return new SyncError("Google icazə vermədi (403)");
-        if (e.code == 429 || e.code >= 500) return new SyncError("Google hazırda cavab vermir, bir az sonra yenə yoxlanacaq");
-        return new SyncError("Google xətası (" + e.code + ")");
+            return new SyncError(Tr.t(activity, "Google Drive-da yer qalmayıb"));
+        if (e.code == 403) return new SyncError(Tr.t(activity, "Google icazə vermədi (403)"));
+        if (e.code == 429 || e.code >= 500) return new SyncError(Tr.t(activity, "Google hazırda cavab vermir, bir az sonra yenə yoxlanacaq"));
+        return new SyncError(Tr.t(activity, "Google xətası (") + e.code + ")");
     }
 
     // ---------- plain HTTPS ----------
@@ -214,7 +214,7 @@ class GoogleSync {
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
         } catch (IOException e) {
-            throw new SyncError("İnternet yoxdur");
+            throw new SyncError(Tr.t(null, "İnternet yoxdur"));
         }
         try {
             c.setConnectTimeout(20000);
@@ -243,7 +243,7 @@ class GoogleSync {
         } catch (HttpError e) {
             throw e;
         } catch (IOException e) {
-            throw new SyncError("İnternet yoxdur");
+            throw new SyncError(Tr.t(null, "İnternet yoxdur"));
         } finally {
             c.disconnect();
         }

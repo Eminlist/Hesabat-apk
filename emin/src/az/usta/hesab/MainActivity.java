@@ -97,7 +97,7 @@ public class MainActivity extends Activity {
         try {
             startActivity(gm);
         } catch (Exception e) {
-            startActivity(Intent.createChooser(i, "Göndər"));
+            startActivity(Intent.createChooser(i, Tr.t(MainActivity.this, "Göndər")));
         }
     }
 
@@ -140,6 +140,7 @@ public class MainActivity extends Activity {
             w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         }
 
+        Tr.app = getApplicationContext();
         gsync = new GoogleSync(this);
         web = new WebView(this);
         WebSettings s = web.getSettings();
@@ -431,7 +432,7 @@ public class MainActivity extends Activity {
 
     /** Hides the data and asks for the phone's own screen lock (PIN, pattern, fingerprint). */
     private void askUnlock() {
-        Intent i = phoneLockIntent("Davam etmək üçün kilidi açın");
+        Intent i = phoneLockIntent(Tr.t(MainActivity.this, "Davam etmək üçün kilidi açın"));
         if (i == null) {
             // the phone has no screen lock any more; don't lock the user out
             locked = false;
@@ -459,9 +460,9 @@ public class MainActivity extends Activity {
     private String explain(Exception e) {
         if (e instanceof GoogleSync.SyncError) return e.getMessage();
         String m = String.valueOf(e.getMessage());
-        if (e instanceof SecurityException) return "Fayla icazə itib, faylı yenidən seçin";
-        if (e instanceof java.io.FileNotFoundException) return "Drive-dakı fayl tapılmadı (silinib?) — yenidən seçin";
-        if (m.contains("network") || m.contains("Network")) return "İnternet yoxdur";
+        if (e instanceof SecurityException) return Tr.t(MainActivity.this, "Fayla icazə itib, faylı yenidən seçin");
+        if (e instanceof java.io.FileNotFoundException) return Tr.t(MainActivity.this, "Drive-dakı fayl tapılmadı (silinib?) — yenidən seçin");
+        if (m.contains("network") || m.contains("Network")) return Tr.t(MainActivity.this, "İnternet yoxdur");
         return m;
     }
 
@@ -537,7 +538,7 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_ACCOUNT) {
             String name = resultCode == RESULT_OK && data != null ? data.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME) : null;
             if (name == null || name.isEmpty()) {
-                pageToast("Hesab seçilmədi");
+                pageToast(Tr.t(MainActivity.this, "Hesab seçilmədi"));
                 return;
             }
             gsync.link(name);
@@ -576,7 +577,7 @@ public class MainActivity extends Activity {
                     js("window.onImported(" + org.json.JSONObject.quote(new String(all, "UTF-8")) + ")");
             }
         } catch (Exception e) {
-            pageToast("Xəta: " + e.getMessage());
+            pageToast(Tr.t(MainActivity.this, "Xəta: ") + e.getMessage());
         }
     }
 
@@ -620,7 +621,7 @@ public class MainActivity extends Activity {
                     String url = "data:image/jpeg;base64," + android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
                     js("window.onPhotoPicked(" + JSONObject.quote(url) + ")");
                 } catch (Exception e) {
-                    pageToast("Şəkil açılmadı");
+                    pageToast(Tr.t(MainActivity.this, "Şəkil açılmadı"));
                 }
             }
         }).start();
@@ -640,6 +641,26 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /** Proqramın dili: telefon tərəfindəki mətnlər (bildiriş kanalı, yeniləmə pəncərəsi və s.) də bu dildə olur. */
+        @JavascriptInterface
+        public void setLang(String lang) {
+            appPrefs().edit().putString("lang", lang == null ? "az" : lang).apply();
+        }
+
+        /** Köhnə Emin Hesabatın məlumatı (borclar köçürülsün deyə): ayrıca saxlanmış fayl, yoxdursa köhnə formatda qalan əsas fayl. */
+        @JavascriptInterface
+        public String loadOld() {
+            for (File f : new File[]{new File(getFilesDir(), "hesabat-kohne.json"), dataFile(), new File(getFilesDir(), "data.prev.json")}) {
+                if (!f.exists()) continue;
+                try {
+                    String s = readAll(new FileInputStream(f)).trim();
+                    if (s.startsWith("{") && s.contains("\"loans\"") && !s.contains("\"mf\":")) return s;
+                } catch (Exception ignored) {
+                }
+            }
+            return "";
         }
 
         /** Köhnə Hesabatın məlumat faylı bir dəfə ayrıca saxlanılır (hesabat-kohne.json), My Finance™ ondan təmiz başlayır. */
@@ -710,9 +731,9 @@ public class MainActivity extends Activity {
                 i.putExtra(Intent.EXTRA_STREAM, uri);
                 i.putExtra(Intent.EXTRA_SUBJECT, name);
                 i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(i, "Ehtiyat nüsxəni göndər"));
+                startActivity(Intent.createChooser(i, Tr.t(MainActivity.this, "Ehtiyat nüsxəni göndər")));
             } catch (Exception e) {
-                pageToast("Xəta: " + e.getMessage());
+                pageToast(Tr.t(MainActivity.this, "Xəta: ") + e.getMessage());
             }
         }
 
@@ -729,7 +750,7 @@ public class MainActivity extends Activity {
             try {
                 startActivityForResult(new Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI), REQ_CONTACT);
             } catch (Exception e) {
-                pageToast("Kontaktlar açılmadı");
+                pageToast(Tr.t(MainActivity.this, "Kontaktlar açılmadı"));
             }
         }
 
@@ -739,7 +760,7 @@ public class MainActivity extends Activity {
             try {
                 startActivityForResult(GoogleSync.chooseIntent(), REQ_ACCOUNT);
             } catch (Exception e) {
-                pageToast("Google hesabı seçmək mümkün olmadı");
+                pageToast(Tr.t(MainActivity.this, "Google hesabı seçmək mümkün olmadı"));
             }
         }
 
@@ -793,9 +814,9 @@ public class MainActivity extends Activity {
                 Intent i = new Intent(Intent.ACTION_GET_CONTENT);
                 i.setType("image/*");
                 i.addCategory(Intent.CATEGORY_OPENABLE);
-                startActivityForResult(Intent.createChooser(i, "Şəkil seçin"), REQ_PHOTO);
+                startActivityForResult(Intent.createChooser(i, Tr.t(MainActivity.this, "Şəkil seçin")), REQ_PHOTO);
             } catch (Exception e) {
-                pageToast("Qalereya açılmadı");
+                pageToast(Tr.t(MainActivity.this, "Qalereya açılmadı"));
             }
         }
 
@@ -842,9 +863,9 @@ public class MainActivity extends Activity {
                 i.putExtra(Intent.EXTRA_STREAM, uri);
                 i.putExtra(Intent.EXTRA_SUBJECT, name);
                 i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(i, "Faylı göndər"));
+                startActivity(Intent.createChooser(i, Tr.t(MainActivity.this, "Faylı göndər")));
             } catch (Exception e) {
-                pageToast("Xəta: " + e.getMessage());
+                pageToast(Tr.t(MainActivity.this, "Xəta: ") + e.getMessage());
             }
         }
 
@@ -963,8 +984,8 @@ public class MainActivity extends Activity {
                         java.util.concurrent.Executor ex = getMainExecutor();
                         android.hardware.biometrics.BiometricPrompt bp = new android.hardware.biometrics.BiometricPrompt.Builder(MainActivity.this)
                                 .setTitle("My Finance™")
-                                .setSubtitle("Barmaq izi ilə açın")
-                                .setNegativeButton("PIN kod", ex, new android.content.DialogInterface.OnClickListener() {
+                                .setSubtitle(Tr.t(MainActivity.this, "Barmaq izi ilə açın"))
+                                .setNegativeButton(Tr.t(MainActivity.this, "PIN kod"), ex, new android.content.DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(android.content.DialogInterface d, int w) {
                                         bioShowing = false;
@@ -1035,7 +1056,7 @@ public class MainActivity extends Activity {
         /** "Forgot PIN": the phone's own screen lock proves it's the owner, then the PIN is removed. */
         @JavascriptInterface
         public boolean resetPinWithPhone() {
-            final Intent i = phoneLockIntent("PIN-i sıfırlamaq üçün telefonun kilidini açın");
+            final Intent i = phoneLockIntent(Tr.t(MainActivity.this, "PIN-i sıfırlamaq üçün telefonun kilidini açın"));
             if (i == null) return false;
             runOnUiThread(new Runnable() {
                 @Override
@@ -1100,7 +1121,7 @@ public class MainActivity extends Activity {
             Intent i = new Intent(Intent.ACTION_SEND);
             i.setType("text/plain");
             i.putExtra(Intent.EXTRA_TEXT, text);
-            startActivity(Intent.createChooser(i, "Göndər"));
+            startActivity(Intent.createChooser(i, Tr.t(MainActivity.this, "Göndər")));
         }
 
         @JavascriptInterface
@@ -1154,7 +1175,7 @@ public class MainActivity extends Activity {
                 out.close();
                 mailFile(name, mime, to, subject);
             } catch (Exception e) {
-                pageToast("Xəta: " + e.getMessage());
+                pageToast(Tr.t(MainActivity.this, "Xəta: ") + e.getMessage());
             }
         }
 
@@ -1217,9 +1238,9 @@ public class MainActivity extends Activity {
                 i.setType("application/pdf");
                 i.putExtra(Intent.EXTRA_STREAM, uri);
                 i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(i, o.optString("share", "Qəbzi göndər")));
+                startActivity(Intent.createChooser(i, o.optString("share", Tr.t(MainActivity.this, "Qəbzi göndər"))));
             } catch (Exception e) {
-                MainActivity.this.toast("PDF yaradılmadı");
+                MainActivity.this.toast(Tr.t(MainActivity.this, "PDF yaradılmadı"));
             }
         }
     }

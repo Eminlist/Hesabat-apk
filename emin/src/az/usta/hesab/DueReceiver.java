@@ -82,12 +82,12 @@ public class DueReceiver extends BroadcastReceiver {
             if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) return;
             NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) return;
-            String title = o.optString("title", "Ödəniş günü çatıb");
+            String title = o.optString("title", Tr.t(c, "Ödəniş günü çatıb"));
             String text = lines.size() == 1 ? lines.get(0) : o.optString("more", "{0}").replace("{0}", String.valueOf(lines.size()));
             Notification.Builder b;
             if (Build.VERSION.SDK_INT >= 26) {
                 // the phone's own message (SMS) sound, so a debt reminder is heard like a new message
-                NotificationChannel ch = new NotificationChannel(CHANNEL, "Borc xatırlatmaları", NotificationManager.IMPORTANCE_HIGH);
+                NotificationChannel ch = new NotificationChannel(CHANNEL, Tr.t(c, "Borc xatırlatmaları"), NotificationManager.IMPORTANCE_HIGH);
                 ch.setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION),
                         new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT)
                                 .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build());

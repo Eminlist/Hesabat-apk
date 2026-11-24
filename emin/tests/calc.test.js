@@ -7,7 +7,7 @@ require(path.join(__dirname, '..', 'assets', 'calc.js'));
 const C = globalThis.MF;
 
 let n = 0, k = 0;
-const empty = () => ({ customers: [{ id: 'a', name: 'Əli' }, { id: 'b', name: 'Vüqar' }], ops: [], recs: [], trash: [] });
+const empty = () => ({ customers: [{ id: 'a', name: 'Əli' }, { id: 'b', name: 'Vüqar' }], ops: [], recs: [], trash: [], debts: [] });
 const op = (o) => Object.assign({ id: 'o' + (++k), c: k, time: '10:00' }, o);
 function test(name, f) { f(); n++; console.log('✓ ' + name); }
 const T = '2026-11-24';
@@ -136,6 +136,71 @@ test('Tarixçə xronoloji və qalıqla', () => {
   assert.strictEqual(h[0].o.kind, 'nisye');
   assert.strictEqual(h[0].bal, 8000);
   assert.strictEqual(h[1].bal, 5000);
+});
+
+test('Borc aldım: A-dan 500, B-dən 100, A-ya 100 qaytardım (köhnədəki kimi)', () => {
+  const db = empty();
+  db.debts.push({ id: 'd1', side: 'borrow', name: 'A', amount: 50000, date: '2026-11-01', method: 'cash' });
+  db.debts.push({ id: 'd2', side: 'borrow', name: 'B', amount: 10000, date: '2026-11-10', method: 'card' });
+  const al = C.allocBack(db, 'borrow', C.norm('A'), 10000);
+  assert.deepStrictEqual(al, [{ did: 'd1', amount: 10000 }]);
+  db.ops.push(op({ kind: 'brep', did: 'd1', amount: 10000, method: 'cash', date: '2026-11-12' }));
+  const f = C.flow(db, '2026-11-01', '2026-11-30');
+  assert.strictEqual(f.income, 60000);
+  assert.strictEqual(f.expense, 10000);
+  assert.strictEqual(f.net, 50000);
+  const b = C.balances(db, T);
+  assert.strictEqual(b.cash, 40000);
+  assert.strictEqual(b.card, 10000);
+  const p = C.parties(db, 'borrow', T);
+  assert.strictEqual(p.find(x => x.name === 'A').left, 40000);
+  assert.strictEqual(p.find(x => x.name === 'B').left, 10000);
+});
+
+test('Verdiyim borc ümumi hesaba qatılmır, qaytarma ən köhnədən bağlanır', () => {
+  const db = empty();
+  db.debts.push({ id: 'l1', side: 'lend', name: 'Əli', amount: 30000, date: '2026-11-01', due: '2026-11-20' });
+  db.debts.push({ id: 'l2', side: 'lend', name: 'əli ', amount: 20000, date: '2026-11-05', due: '2026-11-30' });
+  const al = C.allocBack(db, 'lend', C.norm('Əli'), 40000);
+  assert.deepStrictEqual(al, [{ did: 'l1', amount: 30000 }, { did: 'l2', amount: 10000 }]);
+  for (const x of al) db.ops.push(op({ kind: 'lback', did: x.did, amount: x.amount, method: 'cash', date: '2026-11-22' }));
+  const f = C.flow(db, '2026-11-01', '2026-11-30');
+  assert.strictEqual(f.income, 0);
+  assert.strictEqual(f.expense, 0);
+  const g = C.parties(db, 'lend', T)[0];
+  assert.strictEqual(g.total, 50000);
+  assert.strictEqual(g.left, 10000);
+  assert.strictEqual(g.due, '2026-11-30');
+  assert.strictEqual(g.daysLeft, 6);
+  assert.strictEqual(g.soon, false);
+});
+
+test('Borcun 3 gün qalmış xəbərdarlığı və gecikməsi', () => {
+  const db = empty();
+  db.debts.push({ id: 'l1', side: 'lend', name: 'X', amount: 1000, date: '2026-11-01', due: '2026-11-26' });
+  db.debts.push({ id: 'l2', side: 'lend', name: 'Y', amount: 1000, date: '2026-11-01', due: '2026-11-20' });
+  const p = C.parties(db, 'lend', T);
+  assert.strictEqual(p.find(x => x.name === 'X').soon, true);
+  assert.strictEqual(p.find(x => x.name === 'Y').overdue, 4);
+});
+
+test('Köhnə Emin Hesabatdan borcların köçürülməsi', () => {
+  const old = {
+    loans: [{ id: 'k1', name: 'Rəşad', phone: '055', amount: 20000, date: '2026-11-01', due: '2026-11-15', back: 5000 }],
+    borrow: [{ id: 'b1', name: 'Anar', amount: 30000, date: '2026-11-02', method: 'kart', pays: [{ id: 'p1', d: '2026-11-10', t: '12:00', m: 'nagd', amount: 10000 }] }],
+    tx: [{ id: 't1', type: 'lback', lid: 'k1', amount: 5000, date: '2026-11-05', time: '10:00' }]
+  };
+  const r = C.migrateOld(old);
+  assert.strictEqual(r.debts.length, 2);
+  assert.strictEqual(r.ops.length, 2);
+  const db = empty(); db.debts = r.debts; db.ops = r.ops;
+  assert.strictEqual(C.parties(db, 'lend', T)[0].left, 15000);
+  assert.strictEqual(C.parties(db, 'borrow', T)[0].left, 20000);
+  const f = C.flow(db, '2026-11-01', '2026-11-30');
+  assert.strictEqual(f.inCard, 30000);
+  assert.strictEqual(f.outCash, 10000);
+  // təkrar köçürmə eyni id-ləri verir
+  assert.deepStrictEqual(C.migrateOld(old).debts.map(d => d.id), r.debts.map(d => d.id));
 });
 
 console.log('\nHamısı düzgündür: ' + n + ' yoxlama');

@@ -1,5 +1,8 @@
 // My Finance™ — hesablamalar (məbləğlər qəpiklə, tam ədəd)
 // Kassa: gəlir (in), xərc (out), nisyədən ödəniş (pay). Nisyə (nisye) kassaya yazılmır.
+// Borclar (köhnə Emin Hesabatdakı kimi):
+//   Aldığım borc — alanda gəlirə (+), qaytaranda (brep) xərcə (−) düşür.
+//   Verdiyim borc və onun qaytarılması (lback) ümumi hesaba QATILMIR — yalnız xatırlatma.
 (function (g) {
   'use strict';
   const pad = n => String(n).padStart(2, '0');
@@ -93,14 +96,19 @@
 
   // ---- kassa ----
   function flow(db, from, to) {
-    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, count: 0 };
+    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, borrowIn: 0, borrowOut: 0, count: 0 };
     for (const o of db.ops) {
       if (o.date < from || o.date > to) continue;
       f.count++;
       const card = o.method === 'card';
       if (isMoneyIn(o)) { if (card) f.inCard += o.amount; else f.inCash += o.amount; if (o.kind === 'pay') f.payIn += o.amount; }
-      else if (o.kind === 'out') { if (card) f.outCard += o.amount; else f.outCash += o.amount; }
+      else if (o.kind === 'out' || o.kind === 'brep') { if (card) f.outCard += o.amount; else f.outCash += o.amount; if (o.kind === 'brep') f.borrowOut += o.amount; }
       else if (o.kind === 'nisye') f.nisye += o.amount;
+    }
+    for (const d of db.debts || []) {
+      if (d.side !== 'borrow' || d.date < from || d.date > to) continue;
+      if (d.method === 'card') f.inCard += d.amount; else f.inCash += d.amount;
+      f.borrowIn += d.amount;
     }
     f.income = f.inCash + f.inCard;
     f.expense = f.outCash + f.outCard;
@@ -128,8 +136,76 @@
     });
   }
 
+
+  // ---- borclar: verdiyim (lend) / aldığım (borrow), adla qruplaşır ----
+  const debtTotal = d => d.total || d.amount || 0;
+  const backKind = side => side === 'lend' ? 'lback' : 'brep';
+  function debtPaid(db, d) { let s = 0; for (const o of db.ops) if (o.did === d.id && (o.kind === 'lback' || o.kind === 'brep')) s += o.amount; return s; }
+  function parties(db, side, today) {
+    const m = new Map();
+    const recs = (db.debts || []).filter(d => d.side === side).slice().sort(byWhen);
+    for (const d of recs) {
+      const k = norm(d.name);
+      const g = m.get(k) || { key: k, side, name: d.name, phone: '', total: 0, back: 0, left: 0, due: '', first: '', recs: [] };
+      const tot = debtTotal(d), paid = debtPaid(db, d), left = Math.max(0, tot - paid);
+      g.total += tot; g.back += Math.min(paid, tot); g.left += left;
+      if (d.phone && !g.phone) g.phone = d.phone;
+      if (!g.first || d.date < g.first) g.first = d.date;
+      if (left > 0 && d.due && (!g.due || d.due < g.due)) g.due = d.due;
+      g.recs.push(d);
+      m.set(k, g);
+    }
+    return [...m.values()].map(g => {
+      g.overdue = g.left > 0 && g.due && g.due < today ? daysBetween(g.due, today) : 0;
+      g.daysLeft = g.left > 0 && g.due ? daysBetween(today, g.due) : null;
+      g.soon = g.left > 0 && !!g.due && g.daysLeft <= 3;
+      return g;
+    });
+  }
+  // qaytarılan məbləğ ən köhnə açıq borcdan başlayaraq bölünür: [{did, amount}]
+  function allocBack(db, side, key, amount) {
+    const g = parties(db, side, '9999-12-31').find(x => x.key === key);
+    const out = [];
+    if (!g) return out;
+    let rest = amount;
+    for (const d of g.recs) {
+      if (rest <= 0) break;
+      const left = debtTotal(d) - debtPaid(db, d);
+      if (left <= 0) continue;
+      const use = Math.min(left, rest); rest -= use;
+      out.push({ did: d.id, amount: use });
+    }
+    return out;
+  }
+
+  // ---- köhnə Emin Hesabatdan borcların köçürülməsi (eyni id-lər: təkrar köçürmə dublikat yaratmır) ----
+  function migrateOld(old) {
+    const debts = [], ops = [];
+    const meth = m => (m && m !== 'nagd') ? 'card' : 'cash';
+    const tx = Array.isArray(old.tx) ? old.tx : [];
+    for (const l of Array.isArray(old.loans) ? old.loans : []) {
+      const id = 'old-L' + l.id;
+      debts.push({ id, side: 'lend', name: String(l.name || '').trim() || '—', phone: l.phone || '', amount: l.amount || 0, date: l.date || '', time: l.time || '', due: l.due || '', note: l.note || '', c: l.created || 0, u: 1 });
+      const backs = tx.filter(t => t.type === 'lback' && t.lid === l.id && !t.corr);
+      let sum = 0;
+      for (const t of backs) { sum += t.amount || 0; ops.push({ id: 'old-' + t.id, kind: 'lback', did: id, amount: t.amount || 0, date: t.date || l.date, time: t.time || '', method: meth(t.method), c: t.created || 0, u: 1 }); }
+      if ((l.back || 0) > sum) ops.push({ id: 'old-LBX' + l.id, kind: 'lback', did: id, amount: l.back - sum, date: l.date || '', time: '', method: 'cash', c: 0, u: 1 });
+    }
+    for (const l of Array.isArray(old.borrow) ? old.borrow : []) {
+      const id = 'old-B' + l.id;
+      const n = l.months || 0, r = (l.rate || 0) / 1200, P = l.amount || 0;
+      const pmt = n ? (r ? P * r / (1 - Math.pow(1 + r, -n)) : P / n) : 0;
+      const total = Math.round(n ? pmt * n : P * (1 + (l.rate || 0) / 100));
+      const d = { id, side: 'borrow', name: String(l.name || '').trim() || '—', phone: l.phone || '', amount: P, date: l.start || l.date || '', time: l.time || '', due: l.due || '', note: l.note || '', method: meth(l.method), c: l.created || 0, u: 1 };
+      if (total !== P) d.total = total;
+      debts.push(d);
+      (l.pays || []).forEach((x, i) => ops.push({ id: 'old-BP' + (x.id || l.id + '-' + i), kind: 'brep', did: id, amount: x.amount || 0, date: x.d || d.date, time: x.t || '', method: meth(x.m), c: 0, u: 1 }));
+    }
+    return { debts, ops };
+  }
+
   // ---- WhatsApp mesaj tonu: gecikmə gününə görə ----
   const toneFor = overdue => overdue >= 15 ? 3 : overdue >= 5 ? 2 : 1;
 
-  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn };
+  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn, debtTotal, debtPaid, backKind, parties, allocBack, migrateOld };
 })(typeof window !== 'undefined' ? window : globalThis);

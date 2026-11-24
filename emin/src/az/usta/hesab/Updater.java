@@ -125,15 +125,15 @@ public class Updater {
     private void offer(String name, final File f) {
         if (act.isFinishing()) return;
         new AlertDialog.Builder(act)
-                .setTitle("Yeni versiya hazırdır")
-                .setMessage(name + "\n\nYükləndi. Quraşdırmaq üçün «Quraşdır» basın. Məlumatlarınız silinmir.")
-                .setPositiveButton("Quraşdır", new DialogInterface.OnClickListener() {
+                .setTitle(Tr.t(act, "Yeni versiya hazırdır"))
+                .setMessage(name + Tr.t(act, "\n\nYükləndi. Quraşdırmaq üçün «Quraşdır» basın. Məlumatlarınız silinmir."))
+                .setPositiveButton(Tr.t(act, "Quraşdır"), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {
                         install(f);
                     }
                 })
-                .setNegativeButton("Sonra", null)
+                .setNegativeButton(Tr.t(act, "Sonra"), null)
                 .show();
     }
 
@@ -144,7 +144,7 @@ public class Updater {
                 waiting = f;
                 act.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + act.getPackageName())));
-                android.widget.Toast.makeText(act, "İcazəni açın, sonra proqrama qayıdın", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(act, Tr.t(act, "İcazəni açın, sonra proqrama qayıdın"), android.widget.Toast.LENGTH_LONG).show();
                 return;
             }
             Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + f.getName());
@@ -153,7 +153,7 @@ public class Updater {
             i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             act.startActivity(i);
         } catch (Exception e) {
-            android.widget.Toast.makeText(act, "Quraşdırmaq alınmadı", android.widget.Toast.LENGTH_LONG).show();
+            android.widget.Toast.makeText(act, Tr.t(act, "Quraşdırmaq alınmadı"), android.widget.Toast.LENGTH_LONG).show();
         }
     }
 

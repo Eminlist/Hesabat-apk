@@ -45,7 +45,7 @@ public class TodayWidget extends AppWidgetProvider {
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
         String amount = today.equals(p.getString("date", "")) ? p.getString("amount", "—") : p.getString("zero", "—");
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_today);
-        v.setTextViewText(R.id.w_label, p.getString("label", "Bu günkü gəlir"));
+        v.setTextViewText(R.id.w_label, p.getString("label", Tr.t(c, "Bu günkü gəlir")));
         v.setTextViewText(R.id.w_amount, amount);
         Intent open = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
         if (open != null) {
