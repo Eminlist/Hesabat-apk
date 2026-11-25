@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev 013';
+const APP_VERSION = '3.1.3 Rev 313';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -97,6 +97,7 @@ function save() {
 const touch = r => { r.u = Date.now(); return r; };
 const cust = id => db.customers.find(c => c.id === id);
 const cname = id => (cust(id) || {}).name || '';
+const opCust = o => cname(o.cid) || o.cn || ''; // silinmiş müştərinin adı əməliyyatda qalır
 const cstate = id => C.custState(db, id, today());
 const debtRec = id => db.debts.find(d => d.id === id);
 
@@ -104,10 +105,14 @@ const debtRec = id => db.debts.find(d => d.id === id);
 const TRASH_DAYS = 30;
 function purgeTrash() {
   const lim = Date.now() - TRASH_DAYS * 86400000;
-  const old = db.trash.filter(e => e.at < lim);
+  // əməliyyatın müştərisi və ya borcu həmişəlik silinibsə (nə yerində, nə zibildə), onu qaytarmaq olmur: avtomatik silinir
+  const inTrash = (k, id) => db.trash.some(x => x.kind === k && (k === 'cust' ? x.cust.id : x.debt.id) === id);
+  const stuck = e => e.kind === 'op' && ((e.op.cid && !db.customers.some(c => c.id === e.op.cid) && !inTrash('cust', e.op.cid)) || (e.op.did && !db.debts.some(d => d.id === e.op.did) && !inTrash('debt', e.op.did)));
+  const old = db.trash.filter(e => e.at < lim || stuck(e));
   if (!old.length) return false;
   for (const e of old) db.removed[e.id] = Date.now();
-  db.trash = db.trash.filter(e => e.at >= lim);
+  const gone = new Set(old.map(e => e.id));
+  db.trash = db.trash.filter(e => !gone.has(e.id));
   return true;
 }
 function trashOp(o) {
@@ -115,14 +120,13 @@ function trashOp(o) {
   db.removed[o.id] = Date.now();
   db.trash.unshift(touch({ id: uid(), at: Date.now(), kind: 'op', op: o }));
 }
+// müştəri silinəndə onun nisyə və ödənişləri kassada və hesabatda qalır (adı əməliyyatın üstündə saxlanılır)
 function trashCustomer(c) {
-  const ops = db.ops.filter(o => o.cid === c.id);
-  db.ops = db.ops.filter(o => o.cid !== c.id);
-  db.customers = db.customers.filter(x => x.id !== c.id);
   const t = Date.now();
+  for (const o of db.ops) if (o.cid === c.id) { o.cn = c.name; touch(o); }
+  db.customers = db.customers.filter(x => x.id !== c.id);
   db.removed[c.id] = t;
-  for (const o of ops) db.removed[o.id] = t;
-  db.trash.unshift(touch({ id: uid(), at: t, kind: 'cust', cust: c, ops }));
+  db.trash.unshift(touch({ id: uid(), at: t, kind: 'cust', cust: c, ops: [] }));
 }
 function trashDebt(d) {
   const ops = db.ops.filter(o => o.did === d.id);
@@ -145,7 +149,7 @@ function markDirty() {
 // ---------- ayarların sinxronu: hər ayarın öz vaxtı var, ən son dəyişən qalib gəlir ----------
 // shop = vizitkart, req = rekvizitlər, tags = müştəri qrupları, theme, lang, sum = günün sonu saatı,
 // secure = ekran şəkli qadağası, bio = barmaq izi, pin = giriş kilidi (PIN/naxış)
-const CFG_KEYS = ['shop', 'req', 'tags', 'theme', 'lang', 'sum', 'secure', 'bio', 'pin'];
+const CFG_KEYS = ['shop', 'req', 'tags', 'theme', 'lang', 'sum', 'due', 'secure', 'bio', 'pin', 'hide'];
 const cfgT = (c, k) => { if (!c) return -1; if (c.t && c.t[k] != null) return c.t[k]; if (c.t) return 0; return ['shop', 'req', 'tags'].includes(k) ? (c.u || 0) : -1; };
 function mergeCfg(a, b) {
   if (!b) return a; if (!a) return b;
@@ -164,9 +168,10 @@ function setCfg(k, v) { db.cfg[k] = v; db.cfg.t = db.cfg.t || {}; db.cfg.t[k] = 
 // telefondakı ayarlar (tema, dil, kilid və s.) bazaya yazılır; köhnə versiyadan keçəndə vaxtı 1 olur
 function readDeviceCfg() {
   const c = {};
-  c.theme = theme; c.lang = lang;
+  c.theme = theme; c.lang = lang; c.hide = !!hideNums;
   if (hasNative) {
     try { c.sum = (Android.summaryTime && Android.summaryTime()) || ''; } catch (e) {}
+    try { c.due = (Android.dueTime && Android.dueTime()) || '10:00'; } catch (e) {}
     try { c.secure = !!(Android.secureOn && Android.secureOn()); } catch (e) {}
     try { c.bio = !!(Android.bioEnabled && Android.bioEnabled()); } catch (e) {}
     try { const pb = Android.pinBlob && Android.pinBlob(); c.pin = pb ? Object.assign(JSON.parse(pb), { type: lockType() }) : null; } catch (e) {}
@@ -188,10 +193,12 @@ function applyCfg() {
   let redraw = false;
   if (t.theme != null && c.theme && c.theme !== theme) { theme = c.theme; try { localStorage.setItem('mfTheme', theme); } catch (e) {} redraw = true; }
   if (t.lang != null && c.lang && c.lang !== lang && LANGS.some(l => l[0] === c.lang)) { lang = c.lang; try { localStorage.setItem('mfLang', lang); } catch (e) {} if (hasNative && Android.setLang) Android.setLang(lang); redraw = true; }
+  if (t.hide != null && !!c.hide !== !!hideNums) { hideNums = !!c.hide; try { localStorage.setItem('mfHide', hideNums ? '1' : '0'); } catch (e) {} redraw = true; }
   if (redraw) applyTheme();
   if (!hasNative) return redraw;
   try {
     if (t.sum != null && (c.sum || '') !== (d.sum || '') && Android.setSummaryTime) Android.setSummaryTime(c.sum || '');
+    if (t.due != null && c.due && c.due !== d.due && Android.setDueTime) Android.setDueTime(c.due);
     if (t.secure != null && !!c.secure !== !!d.secure && Android.setSecure) Android.setSecure(!!c.secure);
     if (t.bio != null && !!c.bio !== !!d.bio && Android.setBio && (!c.bio || (Android.bioAvailable && Android.bioAvailable()))) Android.setBio(!!c.bio);
     if (t.pin != null && Android.setPinBlob) {
@@ -258,6 +265,23 @@ function brief(d) {
   return { customers: x.customers.length, ops: x.ops.length, debts: x.debts.length, nisye: C.outstanding(x, td).total, cash: b.cash, card: b.card,
     lend: C.parties(x, 'lend', td).reduce((s, g) => s + g.left, 0), borrow: C.parties(x, 'borrow', td).reduce((s, g) => s + g.left, 0) };
 }
+// fərqin harada olduğu: hansı müştəri, əməliyyat, borc, ayar
+function diffDb(a, b) {
+  const out = [], LBL = { customers: L('Müştəri'), ops: L('Əməliyyat'), debts: L('Borc'), recs: L('Sabit xərc'), trash: L('Zibil qutusu') };
+  const nm = (k, r) => k === 'customers' ? r.name : k === 'ops' ? opTitle(r) + ' ' + money(r.amount) + ' (' + fmtShort(r.date) + ')' : k === 'debts' ? r.name + ' ' + money(r.amount) : k === 'recs' ? r.name : (r.kind || '');
+  const few = (k, list) => list.slice(0, 3).map(r => nm(k, r)).join(', ') + (list.length > 3 ? ' …' : '');
+  for (const k of Object.keys(LBL)) {
+    const A = new Map((a[k] || []).map(r => [r.id, r])), B = new Map((b[k] || []).map(r => [r.id, r]));
+    const onlyA = [...A.values()].filter(r => !B.has(r.id)), onlyB = [...B.values()].filter(r => !A.has(r.id));
+    const ch = [...A.values()].filter(r => B.has(r.id) && canon(r) !== canon(B.get(r.id)));
+    if (onlyA.length) out.push(L('{0} — yalnız telefonda {1}: {2}', LBL[k], onlyA.length, few(k, onlyA)));
+    if (onlyB.length) out.push(L('{0} — yalnız Google-da {1}: {2}', LBL[k], onlyB.length, few(k, onlyB)));
+    if (ch.length) out.push(L('{0} — fərqli {1}: {2}', LBL[k], ch.length, few(k, ch)));
+  }
+  const cfgD = CFG_KEYS.filter(k => canon((a.cfg || {})[k]) !== canon((b.cfg || {})[k]));
+  if (cfgD.length) out.push(L('Ayarlar fərqlidir: {0}', cfgD.join(', ')));
+  return out;
+}
 function setSynced() {
   sync.dirty = false; sync.pending = 0; sync.last = Date.now(); sync.status = 'ok'; sync.msg = '';
   try { localStorage.setItem('mfSyncDirty', '0'); localStorage.setItem('mfPending', '0'); localStorage.setItem('mfLastSync', sync.last); } catch (e) {}
@@ -268,7 +292,7 @@ window.onSyncRemote = function (text) {
   if (remote && !remote.mf) remote = null;
   const mode = sync.mode;
   if (mode === 'check') {
-    state.checkResult = remote ? { same: canon(db) === canon(remote), a: brief(db), b: brief(remote) } : { none: true };
+    state.checkResult = remote ? { same: canon(db) === canon(remote), a: brief(db), b: brief(remote), diff: diffDb(db, remote) } : { none: true };
     sync.running = false; sync.status = sync.dirty ? 'idle' : 'ok';
     refreshSettings(); return nextSync();
   }
@@ -311,7 +335,25 @@ window.onAppPause = function () { if (sync.account && (sync.dirty || needLink())
 window.onOnline = function () { if (sync.account && (sync.dirty || needLink() || sync.status === 'error')) { sync.wait = 0; runSync('push'); } };
 window.onSyncLinked = function (name) { sync.account = name; sync.status = 'idle'; toast(L('Google hesabı qoşuldu')); render(); runSync('link'); };
 let openedDay = today();
+// proqram bağlıykən dəyişikliklər arxa planda Google-a gedibsə, sayğac düz göstərsin
+function queueCheck() {
+  if (!hasNative || !Android.queueState || !sync.dirty || loadBroken) return;
+  try {
+    const q = JSON.parse(Android.queueState() || '{}');
+    if (q.pending === false && q.last) { sync.dirty = false; sync.pending = 0; sync.last = q.last; try { localStorage.setItem('mfSyncDirty', '0'); localStorage.setItem('mfPending', '0'); localStorage.setItem('mfLastSync', q.last); } catch (e) {} }
+  } catch (e) {}
+}
+// ayda bir dəfə tam yedək telefonun «Download/MyFinance» qovluğuna da yazılır
+function phoneBackup(force) {
+  if (!hasNative || !Android.saveToDownloads || loadBroken) return false;
+  let last = 0; try { last = +localStorage.getItem('mfPhoneBackup') || 0; } catch (e) {}
+  if (!force && Date.now() - last < 30 * 86400000) return false;
+  const ok = Android.saveToDownloads(JSON.stringify(db), 'MyFinance-yedek-' + today() + '.json');
+  if (ok) { try { localStorage.setItem('mfPhoneBackup', Date.now()); } catch (e) {} }
+  return ok;
+}
 window.onAppResume = function () {
+  queueCheck(); phoneBackup();
   if (purgeTrash()) save();
   pushNative();
   if (openedDay !== today()) { openedDay = today(); state.kday = today(); if (!state.sheet) render(); }
@@ -335,19 +377,21 @@ function pushNative() {
       const items = [];
       for (const c of db.customers) {
         const s = C.custState(db, c.id, td);
-        if (s.debt > 0 && s.due) items.push({ d: C.addDays(s.due, -3), line: L('{0} — nisyə {1} · ödəmə günü {2}', c.name, money(s.debt), fmtDate(s.due)) });
+        if (s.debt > 0 && s.due) items.push({ d: C.addDays(s.due, -3), due: s.due, line: L('{0} — nisyə {1} · ödəmə günü {2}', c.name, money(s.debt), fmtDate(s.due)) });
       }
-      for (const g of C.parties(db, 'lend', td)) if (g.left > 0 && g.due) items.push({ d: C.addDays(g.due, -3), line: L('{0} — verdiyim borc {1} · qaytarma günü {2}', g.name, money(g.left), fmtDate(g.due)) });
-      for (const g of C.parties(db, 'borrow', td)) if (g.left > 0 && g.due) items.push({ d: C.addDays(g.due, -3), line: L('{0} — aldığım borc {1} · qaytarma günü {2}', g.name, money(g.left), fmtDate(g.due)) });
+      for (const g of C.parties(db, 'lend', td)) if (g.left > 0 && g.due) items.push({ d: C.addDays(g.due, -3), due: g.due, line: L('{0} — verdiyim borc {1} · qaytarma günü {2}', g.name, money(g.left), fmtDate(g.due)) });
+      for (const g of C.parties(db, 'borrow', td)) if (g.left > 0 && g.due) items.push({ d: C.addDays(g.due, -3), due: g.due, line: L('{0} — aldığım borc {1} · qaytarma günü {2}', g.name, money(g.left), fmtDate(g.due)) });
       for (const r of db.recs) {
         for (const m of [td.slice(0, 7), C.addMonths(td.slice(0, 7) + '-01', 1).slice(0, 7)]) {
           if (C.recPaid(db, r, m)) continue;
           const d = C.recDate(r, m);
-          items.push({ d: C.addDays(d, -3), u: C.addDays(C.addMonths(m + '-01', 1), -1), line: L('{0} — {1} · ödəmə günü {2}', r.name, money(r.amount), fmtDate(d)) });
+          items.push({ d: C.addDays(d, -3), due: d, u: C.addDays(C.addMonths(m + '-01', 1), -1), line: L('{0} — {1} · ödəmə günü {2}', r.name, money(r.amount), fmtDate(d)) });
         }
       }
       items.sort((a, b) => a.d.localeCompare(b.d));
-      Android.setDueList(JSON.stringify({ title: L('{0}: ödəmə xatırlatması', APP_NAME), more: L('{0} ödəmə xatırlatması', '{0}'), items }));
+      // gün sayı bildiriş gələn gün telefonda hesablanır (proqram açılmasa da düz olur)
+      Android.setDueList(JSON.stringify({ title: L('{0}: ödəmə xatırlatması', APP_NAME), more: L('{0} ödəmə xatırlatması', '{0}'),
+        soon: L('{0} gün qalıb', '{0}'), today: L('bu gün ödəmə günüdür'), late: L('{0} gün gecikir', '{0}'), items }));
     }
   } catch (e) {}
 }
@@ -355,8 +399,11 @@ function pushNative() {
 // ---------- tema ----------
 let theme = 'light';
 try { theme = localStorage.getItem('mfTheme') || 'light'; } catch (e) {}
+let hideNums = false; // göz düyməsi: məbləğlər ••• kimi gizlənir
+try { hideNums = localStorage.getItem('mfHide') === '1'; } catch (e) {}
 function applyTheme() {
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle('hidenum', hideNums);
   document.documentElement.lang = lang;
   if (hasNative && Android.setDarkBars) Android.setDarkBars(theme === 'dark');
 }
@@ -372,6 +419,8 @@ const I = {
   people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
@@ -394,14 +443,14 @@ const KIND = {
   lout: { t: 'Borc verdim', ic: '🤝', bg: 'var(--amber-soft)', col: 'var(--amber)', sign: '', cls: 'zero' },
   lback: { t: 'Borc qaytarıldı', ic: '↩️', bg: 'var(--amber-soft)', col: 'var(--amber)', sign: '', cls: 'zero' }
 };
-const noMethod = k => k === 'nisye' || k === 'lout' || k === 'lback';
+const noMethod = k => ['nisye', 'lout', 'lback', 'bin', 'brep'].includes(k); // borclar kassaya düşmür: nağd/kart yoxdur
 const methodTxt = o => noMethod(o.kind) ? '' : (o.method === 'card' ? '💳 ' + L('Kart') : '💵 ' + L('Nağd'));
 const sortDesc = list => list.slice().sort((a, b) => C.byWhen(b, a));
 // borc qeydləri kassa siyahılarında da görünsün (verdim / aldım)
 const debtOps = () => db.debts.map(d => ({ id: 'D' + d.id, kind: d.side === 'lend' ? 'lout' : 'bin', did: d.id, amount: d.amount, date: d.date, time: d.time, method: d.method, note: d.note, c: d.c || 0 }));
 const allOps = () => db.ops.concat(debtOps());
 function opTitle(o) {
-  if (o.kind === 'nisye' || o.kind === 'pay') return L(KIND[o.kind].t) + ' · ' + (cname(o.cid) || '—');
+  if (o.kind === 'nisye' || o.kind === 'pay') return L(KIND[o.kind].t) + ' · ' + (opCust(o) || '—');
   if (o.did) return L(KIND[o.kind].t) + ' · ' + ((debtRec(o.did) || {}).name || '—');
   if (o.kind === 'out' && o.rec) return (db.recs.find(r => r.id === o.rec) || {}).name || o.cat || o.note || L('Sabit xərc');
   if (o.kind === 'in') return o.src || o.note || L('Gəlir');
@@ -450,7 +499,7 @@ function renderHome() {
   const debts = ['lend', 'borrow'].flatMap(side => C.parties(db, side, td).filter(g => g.soon).map(g => ({ g, side })));
   const ops = sortDesc(allOps().filter(o => o.date === td));
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(fmtDay(td))}</span><h1>${esc(APP_NAME)}</h1></div>
-    <button class="tbtn" data-a="openAll">${I.search}</button><button class="tbtn" data-a="settings">${I.gear}</button></div>
+    <button class="tbtn" data-a="eye">${hideNums ? I.eyeOff : I.eye}</button><button class="tbtn" data-a="openAll">${I.search}</button><button class="tbtn" data-a="settings">${I.gear}</button></div>
   <main style="padding-top:6px">
     ${loadBroken ? `<div class="bad-box" style="margin-bottom:12px">⚠️ ${esc(L('Telefondakı məlumat faylı zədələnib. Köhnə məlumat itməsin deyə proqram heç nə yazmır. Bərpa üçün: Ayarlar → «Google hesabından ayır», sonra yenidən «Google Drive-a qoş» (Google-dakı baza telefona gəlir) və ya Ayarlar → «Yedək faylından bərpa et».'))}</div>` : ''}
     ${due.length ? `<div class="duebox"><div class="duehead"><b>⏰ ${esc(L('Ödəmə vaxtı çatanlar ({0})', due.length))}</b><button data-a="tab" data-v="remind">${esc(L('Xatırlat'))} ›</button></div>
@@ -468,6 +517,7 @@ function renderHome() {
     </button>
     <div class="hm-card"><div class="hm-title"><span>${esc(L('Bu gün'))}</span><span class="hm-link" data-a="openKassa">${esc(L('Kassa'))} ›</span></div>
       <div class="hm-3"><div><small>${esc(L('Gəlir'))}</small><b class="num pay">${money(f.income)}</b></div><div><small>${esc(L('Xərc'))}</small><b class="num exp">${money(f.expense)}</b></div><div><small>${esc(L('Nisyə'))}</small><b class="num debt">${money(f.nisye)}</b></div></div></div>
+    ${(() => { const M = C.flow(db, td.slice(0, 7) + '-01', td); return `<button class="hm-card" data-a="openReport" style="display:flex;width:100%;align-items:center;gap:8px;padding:10px 14px;font-size:13px;color:var(--text)"><b style="flex:none">${esc(L('Bu ay'))}:</b><span class="grow" style="text-align:left;min-width:0">${esc(L('Gəlir'))} <b class="num pay">${money(M.income)}</b> · ${esc(L('Xərc'))} <b class="num exp">${money(M.expense)}</b> · ${esc(L('Nəticə'))} <b class="num ${M.net < 0 ? 'neg' : 'pay'}">${money(M.net)}</b></span><span class="chev">›</span></button>`; })()}
     <button class="outcard" data-a="tab" data-v="people"><span class="ic" style="background:var(--debt-soft);color:var(--debt);font-size:22px">🤝</span>
       <span class="grow"><small>${esc(L('Çöldə olan pul (aktiv nisyə)'))}</small><b class="num">${money(O.total)}</b><span class="s">${esc(O.count ? L('{0} müştəridə', O.count) : L('Heç kimdə borc yoxdur'))}</span></span><span class="chev">›</span></button>
     <div class="sec"><b>${esc(L('Bu günün əməliyyatları'))}</b>${ops.length ? `<button data-a="openKassa">${esc(L('Hamısı'))}</button>` : ''}</div>
@@ -483,7 +533,10 @@ function renderCustomers() {
   const active = all.filter(x => !(x.s.bal === 0 && x.s.hasHistory));
   let list = state.seg === 'closed' ? closed : active;
   if (state.tag) list = list.filter(x => (x.c.tags || []).includes(state.tag));
-  list.sort((a, b) => (b.s.isDue - a.s.isDue) || (b.s.overdue - a.s.overdue) || (b.s.debt - a.s.debt) || a.c.name.localeCompare(b.c.name, 'az'));
+  const byName = (a, b) => a.c.name.localeCompare(b.c.name, 'az');
+  const SORTS = { due: (a, b) => (b.s.isDue - a.s.isDue) || (b.s.overdue - a.s.overdue) || (b.s.debt - a.s.debt) || byName(a, b),
+    debt: (a, b) => (b.s.debt - a.s.debt) || byName(a, b), late: (a, b) => (b.s.overdue - a.s.overdue) || (b.s.ageDays - a.s.ageDays) || byName(a, b), name: byName };
+  list.sort(SORTS[state.csort] || SORTS.due);
   const O = C.outstanding(db, td);
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(L('Nisyə dəftəri'))}</span><h1>${esc(L('Müştərilər'))}</h1></div>
     <button class="tbtn" data-a="newCust">${I.plus}</button></div>
@@ -491,6 +544,7 @@ function renderCustomers() {
     <div class="hm-card" style="display:flex;justify-content:space-between;align-items:center"><span class="note" style="font-weight:700">${esc(L('Çöldə olan pul'))}</span><b class="num debt" style="font-size:20px">${money(O.total)}</b></div>
     <input class="search" id="q" placeholder="🔍 ${esc(L('Ad, nömrə, məbləğ və ya qeyd…'))}" autocomplete="off">
     <div class="seg" style="margin-bottom:10px"><button class="${state.seg === 'active' ? 'on' : ''}" data-a="seg" data-v="active">${esc(L('Aktiv'))} (${active.length})</button><button class="${state.seg === 'closed' ? 'on' : ''}" data-a="seg" data-v="closed">${esc(L('Bağlanmışlar'))} (${closed.length})</button></div>
+    <div class="chips" style="margin:0 0 8px">${[['due', L('Vaxtı çatanlar')], ['debt', L('Məbləğə görə')], ['late', L('Gecikməyə görə')], ['name', L('Ada görə')]].map(([k, l]) => `<button class="chip ${(state.csort || 'due') === k ? 'on' : ''}" data-a="csort" data-v="${k}">↕ ${esc(l)}</button>`).join('')}</div>
     <div class="chips" style="margin:0 0 12px"><button class="chip ${!state.tag ? 'on' : ''}" data-a="tagF" data-v="">${esc(L('Hamısı'))}</button>${db.cfg.tags.map(t => `<button class="chip ${state.tag === t ? 'on' : ''}" data-a="tagF" data-v="${esc(t)}">${esc(tagName(t))}</button>`).join('')}</div>
     ${list.length ? `<div class="list" id="plist">${list.map(({ c, s }) => custRow(c, s)).join('')}</div><div class="empty hidden" id="qempty">${esc(L('Heç nə tapılmadı'))}</div>`
       : `<div class="empty">${state.seg === 'closed' ? esc(L('Borcu bağlanmış müştəri yoxdur')) : esc(L('Hələ müştəri yoxdur.')) + '<br>' + esc(L('«+» ilə nisyə yazın və ya yeni müştəri əlavə edin.'))}</div>`}
@@ -581,8 +635,8 @@ function renderParty(pg) {
   const lend = pg.side === 'lend', ids = new Set(g.recs.map(d => d.id));
   const backs = sortDesc(db.ops.filter(o => ids.has(o.did)));
   const given = g.recs.slice().sort((a, b) => C.byWhen(b, a));
-  const giveRow = d => `<button class="row" data-a="editDebt" data-v="${d.id}"><div class="grow"><div class="t">${lend ? '🤝 ' + esc(L('Verdim')) : '📥 ' + esc(L('Aldım'))}${d.note ? ' — ' + esc(d.note) : ''}</div><div class="s">📅 ${fmtDate(d.date)}${d.time ? ' · 🕒 ' + esc(d.time) : ''}${!lend ? ' · ' + methodTxt({ kind: 'bin', method: d.method }) : ''}${d.due ? ' · ' + esc(L('qaytarma: {0}', fmtShort(d.due))) : ''}</div></div><div class="amt num ${lend ? 'debt' : 'exp'}">${money(C.debtTotal(d))}</div></button>`;
-  const backRow = o => `<button class="row" data-a="editOp" data-v="${o.id}"><div class="grow"><div class="t pay">✓ ${esc(lend ? L('Qaytardı') : L('Qaytardım'))}</div><div class="s">📅 ${fmtDate(o.date)} · 🕒 ${esc(o.time || '—')}${!lend ? ' · ' + methodTxt(o) : ''} · ✏️</div></div><div class="amt num pay">${money(o.amount)}</div></button>`;
+  const giveRow = d => `<button class="row" data-a="editDebt" data-v="${d.id}"><div class="grow"><div class="t">${lend ? '🤝 ' + esc(L('Verdim')) : '📥 ' + esc(L('Aldım'))}${d.note ? ' — ' + esc(d.note) : ''}</div><div class="s">📅 ${fmtDate(d.date)}${d.time ? ' · 🕒 ' + esc(d.time) : ''}${d.due ? ' · ' + esc(L('qaytarma: {0}', fmtShort(d.due))) : ''}</div></div><div class="amt num ${lend ? 'debt' : 'exp'}">${money(C.debtTotal(d))}</div></button>`;
+  const backRow = o => `<button class="row" data-a="editOp" data-v="${o.id}"><div class="grow"><div class="t pay">✓ ${esc(lend ? L('Qaytardı') : L('Qaytardım'))}${o.note ? ' — ' + esc(o.note) : ''}</div><div class="s">📅 ${fmtDate(o.date)} · 🕒 ${esc(o.time || '—')} · ✏️</div></div><div class="amt num pay">${money(o.amount)}</div></button>`;
   return `<div class="page">${pageHead(g.name)}
   <main style="padding-top:6px;padding-bottom:40px">
     <div class="hero" style="margin:0 0 12px"><div class="hbal"><small>${esc(lend ? L('Mənə qaytarmalıdır') : L('Mən qaytarmalıyam'))}</small><b class="num">${money(g.left)}</b></div>
@@ -644,6 +698,50 @@ function renderKassa() {
     ${ops.length ? `<div class="list">${ops.map(o => opRow(o)).join('')}</div>` : `<div class="empty">${esc(L('Bu gün üçün heç nə yazılmayıb'))}</div>`}
   </main></div>`;
 }
+// ---------- AYLIQ HESABAT ----------
+const PAL = ['#0E9384', '#E5484D', '#3E63DD', '#F76B15', '#8E4EC6', '#D97706', '#12A594', '#0090FF', '#16A34A', '#8B8D98'];
+function donut(parts, total) {
+  if (!total) return `<div class="empty" style="padding:14px">${esc(L('Bu ay yoxdur'))}</div>`;
+  let a = 0; const stops = parts.map((p, i) => { const st = a; a += p.v / total * 360; return `${PAL[i % PAL.length]} ${st}deg ${a}deg`; }).join(',');
+  return `<div style="display:flex;align-items:center;gap:14px"><div style="width:110px;height:110px;flex:none;border-radius:50%;background:conic-gradient(${stops});-webkit-mask:radial-gradient(circle,transparent 34px,#000 35px);mask:radial-gradient(circle,transparent 34px,#000 35px)"></div>
+    <div class="legend" style="flex-direction:column;gap:4px;margin:0;min-width:0">${parts.map((p, i) => `<span style="--c:${PAL[i % PAL.length]}">${esc(p.k)} — <b class="num">${money(p.v)}</b> (${Math.round(p.v / total * 100)}%)</span>`).join('')}</div></div>`;
+}
+function groupSum(list, key) {
+  const m = new Map(); for (const o of list) { const k = key(o) || L('Digər'); m.set(k, (m.get(k) || 0) + o.amount); }
+  const arr = [...m.entries()].map(([k, v]) => ({ k, v })).sort((a, b) => b.v - a.v);
+  if (arr.length > 7) { const rest = arr.splice(6); arr.push({ k: L('Digər'), v: rest.reduce((s, x) => s + x.v, 0) }); }
+  return arr;
+}
+function renderReport(pg) {
+  const td = today(), mon = pg.m || td.slice(0, 7), from = mon + '-01', last = C.addDays(C.addMonths(from, 1), -1), to = last < td ? last : td;
+  const F = C.flow(db, from, to), P = C.flow(db, C.addMonths(from, -1), C.addDays(from, -1));
+  const ops = db.ops.filter(o => o.date >= from && o.date <= to);
+  const days = []; for (let d = from; d <= last; d = C.addDays(d, 1)) days.push(d);
+  const per = days.map(d => { const f = C.flow(db, d, d); return { d, i: f.income, e: f.expense }; });
+  const mx = Math.max(1, ...per.map(x => Math.max(x.i, x.e)));
+  const diff = (a, b) => b ? ` <small class="${a >= b ? 'pay' : 'neg'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round((a - b) / b * 100))}%</small>` : '';
+  const [y, m] = mon.split('-');
+  return `<div class="page">${pageHead(L('Aylıq hesabat'))}
+  <main style="padding-top:6px;padding-bottom:40px">
+    <div class="monthbar"><button class="iconbtn" data-a="rmon" data-v="-1">‹</button><b>${esc(MONTHS()[+m - 1])} ${y}</b><button class="iconbtn" data-a="rmon" data-v="1" ${mon >= td.slice(0, 7) ? 'disabled style="opacity:.35"' : ''}>›</button></div>
+    <div class="hero" style="margin:0 0 12px"><div class="hbal"><small>${esc(L('Ayın nəticəsi'))}</small><b class="num ${F.net < 0 ? 'neg-hero' : ''}">${money(F.net)}</b></div>
+      <div class="hsplit"><div class="hio"><div style="min-width:0"><small>${esc(L('Gəlir'))}</small><b class="num">${money(F.income)}</b></div></div><div class="sep"></div><div class="hio"><div style="min-width:0"><small>${esc(L('Xərc'))}</small><b class="num">${money(F.expense)}</b></div></div></div></div>
+    <div class="card">
+      ${kv(esc(L('Gəlir')) + diff(F.income, P.income), money(F.income), 'pay')}${kv('&nbsp;&nbsp;💵 ' + esc(L('Nağd')), money(F.inCash))}${kv('&nbsp;&nbsp;💳 ' + esc(L('Kart')), money(F.inCard))}${F.payIn ? kv('&nbsp;&nbsp;' + esc(L('o cümlədən nisyədən ödəniş')), money(F.payIn), 'pay') : ''}
+      ${kv(esc(L('Xərc')) + diff(F.expense, P.expense), money(F.expense), 'exp')}${kv('&nbsp;&nbsp;💵 ' + esc(L('Nağd')), money(F.outCash))}${kv('&nbsp;&nbsp;💳 ' + esc(L('Kart')), money(F.outCard))}
+      ${kv(esc(L('Verilən nisyə (kassaya yazılmır)')), money(F.nisye), 'debt')}
+      ${kv(esc(L('Günlük orta gəlir')), money(Math.round(F.income / Math.max(1, C.daysBetween(from, to) + 1))))}
+      <div class="note" style="margin-top:6px">${esc(L('▲▼ — keçən ayla müqayisə'))}</div></div>
+    <div class="section-title">${esc(L('Günlər üzrə gəlir və xərc'))}</div>
+    <div class="card"><div class="bars">${per.map(x => `<i title="${x.d}"><b style="height:${x.i / mx * 100}%;background:var(--pay)"></b><b style="height:${x.e / mx * 100}%;background:var(--exp)"></b></i>`).join('')}</div>
+      <div class="legend"><span style="--c:var(--pay)">${esc(L('Gəlir'))}</span><span style="--c:var(--exp)">${esc(L('Xərc'))}</span><span style="margin-left:auto;color:var(--muted)">1 — ${days.length}</span></div></div>
+    <div class="section-title">${esc(L('Xərclər — kateqoriyalar'))}</div>
+    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'out'), o => o.cat || o.note), F.expense)}</div>
+    <div class="section-title">${esc(L('Gəlirlər — mənbələr'))}</div>
+    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'in' || o.kind === 'pay'), o => o.kind === 'pay' ? L('Nisyədən ödəniş') : (o.src || o.note)), F.income)}</div>
+    <button class="btn ghost" data-a="xlsxMonth" data-v="${from}|${to}">📊 ${esc(L('Bu ayı Excel-ə çıxar'))}</button>
+  </main></div>`;
+}
 function renderAll(pg) {
   const ops = sortDesc(allOps());
   let lastD = '', h = '';
@@ -657,6 +755,7 @@ function renderAll(pg) {
   <main style="padding-top:6px;padding-bottom:40px">
     <input class="search" id="tq" placeholder="🔍 ${esc(L('Ad, məbləğ, qeyd və ya tarix…'))}" autocomplete="off" value="${esc(pg.q || '')}">
     <div class="chips" style="margin:0 0 6px">${chip('k', '', L('Hamısı'))}${chip('k', 'in', L('Gəlir'))}${chip('k', 'out', L('Xərc'))}${chip('k', 'nisye', L('Nisyə'))}${chip('k', 'pay', L('Ödəniş'))}${chip('k', 'debt', L('Borclar'))}</div>
+    <div class="two" style="margin:0 0 8px"><div><label style="margin-top:0">${esc(L('Tarixdən'))}</label><input class="field" id="tfrom" type="date" value="${esc(pg.from || '')}"></div><div><label style="margin-top:0">${esc(L('Tarixədək'))}</label><input class="field" id="tto" type="date" value="${esc(pg.to || '')}"></div></div>
     <div class="chips" style="margin:0 0 10px">${chip('m', '', L('Hər üsul'))}${chip('m', 'cash', '💵 ' + L('Nağd'))}${chip('m', 'card', '💳 ' + L('Kart'))}</div>
     <div id="alllist">${h || `<div class="empty">${esc(L('Hələ əməliyyat yoxdur'))}</div>`}</div><div class="empty hidden" id="aempty">${esc(L('Heç nə tapılmadı'))}</div>
   </main></div>`;
@@ -670,7 +769,12 @@ function filterAll() {
     const ok = kOk(r.dataset.k) && (!pg.m || r.dataset.m === pg.m) && (!q || r.dataset.s.includes(q) || (qd.length > 1 && r.dataset.s.replace(/\D/g, '').includes(qd)));
     r.classList.toggle('hidden', !ok); if (ok) any = true;
   });
-  app.querySelectorAll('#alllist .dgrp').forEach(g => g.classList.toggle('hidden', !g.querySelector('.row:not(.hidden)')));
+  const inRange = d => (!pg.from || d >= pg.from) && (!pg.to || d <= pg.to);
+  app.querySelectorAll('#alllist .dgrp').forEach(g => {
+    if (!inRange(g.dataset.d)) { g.querySelectorAll('.row').forEach(r => r.classList.add('hidden')); g.classList.add('hidden'); return; }
+    g.classList.toggle('hidden', !g.querySelector('.row:not(.hidden)'));
+  });
+  any = !!app.querySelector('#alllist .dgrp:not(.hidden)');
   const e = document.getElementById('aempty'); if (e) e.classList.toggle('hidden', any || !allOps().length);
 }
 function filterCust(v) {
@@ -682,8 +786,9 @@ function filterCust(v) {
 
 // ---------- XATIRLAT: bu gün ödəyəcəklər ----------
 const TONES = ['', 'Yumşaq xatırlatma', 'Rəsmi bildiriş', 'Son xəbərdarlıq'];
+function dueLends() { return C.parties(db, 'lend', today()).filter(g => g.left > 0 && g.due && g.due <= today()).sort((a, b) => b.overdue - a.overdue || b.left - a.left); }
 function renderRemind() {
-  const due = dueCustomers();
+  const due = dueCustomers(), lends = dueLends();
   const sentN = due.filter(x => state.sent[x.c.id]).length;
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(L('Toplu borc xatırlatması'))}</span><h1>${esc(L('Xatırlat'))}</h1></div></div>
   <main style="padding-top:6px">
@@ -697,6 +802,11 @@ function renderRemind() {
       }).join('')}</div>
       <div class="note" style="margin:10px 4px">${esc(L('Yaşıl düyməyə bir-bir basın: hər müştəriyə gecikməsinə uyğun hazır mesaj WhatsApp-da açılır. Göndərilənlər ✓ ilə işarələnir.'))}</div>`
       : `<div class="empty">🎉 ${esc(L('Bu gün ödəmə vaxtı çatan müştəri yoxdur'))}</div>`}
+    ${lends.length ? `<div class="section-title">🤝 ${esc(L('Verdiyim borclar — qaytarma vaxtı çatıb ({0})', lends.length))}</div>
+      <div class="list">${lends.map(g => `<div class="row"><button class="grow" style="text-align:left" data-a="openParty" data-v="lend|${esc(g.key)}"><div class="t">${esc(g.name)} · <span class="num debt">${money(g.left)}</span></div>
+        <div class="s late">🔴 ${esc(partyDue(g))}</div></button>
+        ${g.phone ? `<button class="rbtn" data-a="call" data-v="p|${esc(g.phone)}" style="background:#E8F1FF;color:#2563EB">${I.phone}</button>` : ''}
+        <button class="rbtn" data-a="partyWa" data-v="lend|${esc(g.key)}" style="background:#16A34A;color:#fff">${I.wa}</button></div>`).join('')}</div>` : ''}
   </main>`;
 }
 
@@ -744,18 +854,22 @@ function renderSettings() {
     <div class="sgroup">
       ${srow('recs', null, '📌', '#E5484D', L('Sabit aylıq xərclər'), `<em>${db.recs.length || ''}</em>`)}
       ${srow('summary', null, '🔔', '#F76B15', L('Günün sonu kassa xatırlatması'), `<em>${esc(sum || L('sönülü'))}</em>`)}
+      ${srow('dueTimeSet', null, '⏰', '#D97706', L('Borc xatırlatmasının saatı'), `<em>${esc((hasNative && Android.dueTime && Android.dueTime()) || '10:00')}</em>`)}
     </div>
+    ${hasNative && Android.notifAllowed && !Android.notifAllowed() ? `<div class="bad-box" style="margin:0 0 12px">🔕 ${esc(L('Bildirişlər telefonun Ayarlarında söndürülüb — xatırlatmalar gəlməyəcək.'))}<button class="btn primary" style="margin-top:8px" data-a="notifOpen">${esc(L('Bildirişləri aç'))}</button></div>` : ''}
     <div class="slabel">${esc(L('Ehtiyat nüsxə'))}</div>
     <div class="card">${sync.account ? `<b>✅ Google Drive: ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}<br>${esc(last ? L('Son uğurlu sinxron: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + '.' + last.getFullYear() + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes())) : L('Son uğurlu sinxron: hələ olmayıb'))}<br><b class="${sync.pending ? 'neg' : 'pay'}">${esc(sync.pending ? L('Göndərilməmiş dəyişiklik: {0}', sync.pending) : L('Göndərilməmiş dəyişiklik yoxdur ✓'))}</b></div>
       <button class="btn ghost" data-a="syncNow">🔄 ${esc(L('Sinxron et'))}</button>
       <button class="btn ghost" data-a="checkBackup">🔍 ${esc(L('Yedəyi yoxla'))}</button>
-      ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə tam eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var: Google-dakı surət telefondakı ilə eyni deyil.'))}<br>${esc(L('Telefon: {0} müştəri · {1} əməliyyat · {2} borc', R.a.customers, R.a.ops, R.a.debts))}<br>${esc(L('Google: {0} müştəri · {1} əməliyyat · {2} borc', R.b.customers, R.b.ops, R.b.debts))}<br>${esc(L('Telefondakını Google-a yükləmək üçün «Sinxron et» basın.'))}</div>`) : ''}
+      ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə tam eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var: Google-dakı surət telefondakı ilə eyni deyil.'))}<br>${esc(L('Telefon: {0} müştəri · {1} əməliyyat · {2} borc', R.a.customers, R.a.ops, R.a.debts))}<br>${esc(L('Google: {0} müştəri · {1} əməliyyat · {2} borc', R.b.customers, R.b.ops, R.b.debts))}${(R.diff || []).length ? '<br><br>' + R.diff.slice(0, 10).map(x => '• ' + esc(x)).join('<br>') : ''}<br><br>${esc(L('Telefondakını Google-a yükləmək üçün «Sinxron et» basın.'))}</div>`) : ''}
       <button class="btn danger" data-a="syncUnlink">${esc(L('Google hesabından ayır'))}</button>`
       : `<div class="note">${esc(L('Google hesabını qoşun: hər dəyişiklik avtomatik öz Google Drive-ınıza yazılsın. Telefon dəyişəndə eyni Gmail ilə hər şey geri gəlir.'))}</div><button class="btn primary" data-a="syncLink">${esc(L('Google Drive-a qoş'))}</button>`}</div>
     <div class="sgroup">
+      ${srow('openReport', null, '📈', '#3E63DD', L('Aylıq hesabat'), '')}
       ${srow('xlsx', null, '📊', '#16A34A', L('Excel faylı kimi yadda saxla'), '')}
       ${srow('backupFile', null, '📤', '#0090FF', L('Yedək faylı göndər (WhatsApp, Telegram…)'), '')}
       ${srow('importFile', null, '📥', '#8E4EC6', L('Yedək faylından bərpa et'), '')}
+      ${srow('noop', null, '📁', '#12A594', L('Telefona aylıq yedək (Download/MyFinance)'), `<em>${esc((() => { let t = 0; try { t = +localStorage.getItem('mfPhoneBackup') || 0; } catch (e) {} return t ? fmtShort(new Date(t).toISOString().slice(0, 10)) + '.' + new Date(t).getFullYear() : L('hələ yoxdur'); })())}</em>`)}
     </div>
     <div class="slabel">${esc(L('Təhlükəsizlik'))}</div>
     <div class="sgroup">
@@ -779,7 +893,7 @@ function trashLabel(e) {
   if (e.kind === 'debt') return L(e.debt.side === 'lend' ? 'Borc verdim' : 'Borc aldım') + ' · ' + e.debt.name + ' — ' + money(e.debt.amount);
   const o = e.op;
   let nm = '';
-  if (o.cid) nm = cname(o.cid) || ((db.trash.find(x => x.kind === 'cust' && x.cust.id === o.cid) || { cust: {} }).cust.name) || '';
+  if (o.cid) nm = opCust(o) || ((db.trash.find(x => x.kind === 'cust' && x.cust.id === o.cid) || { cust: {} }).cust.name) || '';
   else if (o.did) nm = (debtRec(o.did) || {}).name || '';
   return L(KIND[o.kind].t) + (nm ? ' · ' + nm : o.note ? ' · ' + o.note : '') + ' — ' + money(o.amount);
 }
@@ -895,7 +1009,7 @@ function renderSheet(s) {
     case 'nisye': {
       const due = o ? o.due || '' : s.due || C.addDays(today(), 7);
       return `<h2>${esc(o ? L('Düzəliş: nisyə') : L('Nisyə yaz'))}</h2>
-      ${s.cid || o ? `<div class="whofix">👤 <b>${esc(cname((o || s).cid))}</b></div>` : fWho()}
+      ${s.cid || o ? `<div class="whofix">👤 <b>${esc(o ? opCust(o) : cname(s.cid))}</b></div>` : fWho()}
       ${s.cid || o ? '' : `<label>${esc(L('Telefon (istəyə bağlı)'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="off">`}
       ${o && o.src ? fSuggest('f_src', L('Gəlir mənbəyi'), o.src, '') : ''}
       ${fAmount(o ? amountInput(o.amount) : '')}
@@ -907,11 +1021,11 @@ function renderSheet(s) {
       const cid = o ? o.cid : s.cid;
       const st = cid ? cstate(cid) : null;
       return `<h2>${esc(o ? L('Düzəliş: ödəniş') : L('Nisyədən ödəniş al'))}</h2>
-      ${cid ? `<div class="whofix">👤 <b>${esc(cname(cid))}</b>${st && !o ? ` · ${esc(L('borc'))}: <b class="debt num">${money(st.debt)}</b>${st.advance ? ` · ${esc(L('avans'))}: <b class="pay num">+${money(st.advance)}</b>` : ''}` : ''}</div>` : fWho()}
-      ${fAmount(o ? amountInput(o.amount) : '', L('Alınan məbləğ'))}
+      ${cid ? `<div class="whofix">👤 <b>${esc(o ? opCust(o) : cname(cid))}</b>${st && !o ? ` · ${esc(L('borc'))}: <b class="debt num">${money(st.debt)}</b>${st.advance ? ` · ${esc(L('avans'))}: <b class="pay num">+${money(st.advance)}</b>` : ''}` : ''}</div>` : fWho()}
+      ${fAmount(o ? amountInput(o.amount) : s.full ? amountInput(s.full) : '', L('Alınan məbləğ'))}
       ${st && st.debt > 0 && !o ? `<div class="chips" style="margin:6px 0 0"><button class="chip" data-a="fillAmt" data-v="${st.debt}">${esc(L('Tam borc: {0}', money(st.debt)))}</button></div>` : ''}
       <div class="note" id="payinfo" style="margin-top:6px"></div>
-      ${fMethod(o && o.method)}${fNote(o && o.note, L('Qeyd'), '')}${fDate(o)}
+      ${fMethod(o && o.method)}${fNote(o ? o.note : s.full ? L('Borc tam bağlandı') : '', L('Qeyd'), '')}${fDate(o)}
       ${saveBtn('savePay', L('Ödənişi yaz'), 'payb')}${delBtn}`;
     }
     case 'cust': {
@@ -922,7 +1036,22 @@ function renderSheet(s) {
       ${c ? '' : '<div class="whosug" id="whosug"></div>'}
       <label>${esc(L('Telefon'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" value="${esc(c ? c.phone || '' : '')}" autocomplete="off">
       <label>${esc(L('Qruplar'))}</label><div class="chips" style="margin:0" data-group="tags">${db.cfg.tags.map(t => `<button class="chip ${tags.includes(t) ? 'on' : ''}" data-a="tagToggle" data-v="${esc(t)}">${esc(tagName(t))}</button>`).join('')}</div>
-      ${saveBtn('saveCust')}`;
+      ${c ? '' : `<div class="card" style="margin-top:14px"><b>📝 ${esc(L('İş və borc (istəyə bağlı)'))}</b>
+        <label>${esc(L('Görülən işin dəyəri'))}</label><input class="field num" id="f_work" inputmode="decimal" placeholder="0" autocomplete="off">
+        <label>${esc(L('Ödədi'))}</label><input class="field num" id="f_paid" inputmode="decimal" placeholder="0" autocomplete="off">
+        ${fMethod('cash')}
+        <div class="note" id="f_left" style="margin-top:8px"></div>
+        <label>${esc(L('Əlavə xərc'))}</label><input class="field num" id="f_extra" inputmode="decimal" placeholder="0" autocomplete="off">
+        <div class="note">${esc(L('Bu iş üçün etdiyiniz xərc (məs. hissə) — kassadan xərc kimi çıxır.'))}</div>
+        ${fDue(C.addDays(today(), 7))}${fDate()}</div>`}
+      ${saveBtn('saveCust')}${c && db.customers.length > 1 ? `<button class="btn ghost" data-a="mergeOpen" data-v="${c.id}">🔗 ${esc(L('Başqa müştəri ilə birləşdir'))}</button>` : ''}`;
+    }
+    case 'merge': { // dublikat müştəri: hamısı seçilən müştəriyə keçir
+      const c = cust(s.id); if (!c) return '';
+      const others = db.customers.filter(x => x.id !== c.id).sort((a, b) => a.name.localeCompare(b.name, 'az'));
+      return `<h2>🔗 ${esc(L('Birləşdir: {0}', c.name))}</h2><div class="note">${esc(L('Hansı müştəri ilə birləşdirilsin? «{0}»-in bütün nisyə və ödənişləri seçdiyiniz müştəriyə keçəcək, «{0}» siyahıdan silinəcək.', c.name))}</div>
+      <input class="search" id="mq" placeholder="🔍 ${esc(L('Ad və ya nömrə…'))}" autocomplete="off" style="margin-top:10px">
+      <div class="list" id="mlist">${others.map(x => `<button class="row" data-a="mergeTo" data-v="${x.id}" data-s="${esc(fold(x.name + ' ' + (x.phone || '') + ' ' + (x.phone || '').replace(/\D/g, '')))}"><span class="avatar">${esc(initials(x.name))}</span><div class="grow"><div class="t">${esc(x.name)}</div><div class="s">${esc(x.phone || L('nömrə yoxdur'))}</div></div></button>`).join('')}</div>`;
     }
     case 'debt': { // borc verdim / aldım: yeni və ya düzəliş
       const d = s.id ? debtRec(s.id) : null, side = d ? d.side : s.side, lend = side === 'lend';
@@ -933,7 +1062,6 @@ function renderSheet(s) {
       <datalist id="dl_names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
       <label>${esc(L('Telefon (istəyə bağlı)'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" value="${esc(d ? d.phone || '' : g ? g.phone : '')}" autocomplete="off">
       ${fAmount(d ? amountInput(d.amount) : '')}
-      ${!lend ? fMethod(d ? d.method : 'cash') : ''}
       ${d && d.total ? `<div class="note" style="margin-top:6px">${esc(L('Faizlə qaytarılacaq cəmi: {0}', money(d.total)))}</div>` : ''}
       ${fDate(d)}
       ${fDue(d ? d.due : '', L('Qaytarma günü'))}
@@ -945,12 +1073,12 @@ function renderSheet(s) {
       const lend = s.side === 'lend', open = C.parties(db, s.side, today()).filter(g => g.left > 0), g = s.key && open.find(x => x.key === s.key);
       return `<h2>${esc(lend ? L('Borc qaytarıldı') : L('Borcu qaytardım'))}</h2>
       ${open.length ? `<label>${esc(lend ? L('Kim qaytardı?') : L('Kimə qaytardım?'))}</label><div class="chips" data-group="who">${open.map(x => `<button class="chip ${g && g.key === x.key ? 'on' : ''}" data-a="pickWho" data-v="${esc(x.key)}" data-left="${x.left}">${esc(x.name)} · ${money(x.left)}</button>`).join('')}</div>
-      ${fAmount(g ? amountInput(g.left) : '')}${!lend ? fMethod('cash') : ''}${fDate()}${saveBtn('saveBack', L('Yadda saxla'), 'payb')}` : `<div class="empty">${esc(L('Açıq borc yoxdur'))}</div>`}`;
+      ${fAmount(g ? amountInput(g.left) : '')}${fNote('', L('Qeyd'), '')}${fDate()}${saveBtn('saveBack', L('Yadda saxla'), 'payb')}` : `<div class="empty">${esc(L('Açıq borc yoxdur'))}</div>`}`;
     }
     case 'backEdit': { // qaytarmanı düzəltmək
       const lend = o.kind === 'lback';
       return `<h2>${esc(lend ? L('Qaytarma') : L('Qaytardığım'))} — ${esc((debtRec(o.did) || {}).name || '')}</h2>
-      ${fAmount(amountInput(o.amount))}${!lend ? fMethod(o.method) : ''}${fDate(o)}
+      ${fAmount(amountInput(o.amount))}${fNote(o.note, L('Qeyd'), '')}${fDate(o)}
       ${saveBtn('saveBackEdit')}${delBtn}`;
     }
     case 'extend': {
@@ -1006,6 +1134,17 @@ function renderSheet(s) {
       <label>${esc(L('Saat'))}</label><input class="field" id="f_sum" type="time" value="${esc(t || '21:00')}">
       ${saveBtn('saveSummary')}${t ? `<button class="btn danger" data-a="offSummary">${esc(L('Söndür'))}</button>` : ''}`;
     }
+    case 'dueTime': {
+      const t = (hasNative && Android.dueTime && Android.dueTime()) || '10:00';
+      return `<h2>${esc(L('Borc xatırlatmasının saatı'))}</h2><div class="note">${esc(L('Nisyə, borc və sabit xərclərin ödəmə gününə 3 gün qalmışdan hər gün bu saatda bildiriş gəlir.'))}</div>
+      <label>${esc(L('Saat'))}</label><input class="field" id="f_dtime" type="time" value="${esc(t)}">
+      ${saveBtn('saveDueTime')}`;
+    }
+    case 'xlsx': return `<h2>📊 ${esc(L('Excel faylı'))}</h2><div class="note">${esc(L('Hansı dövr üçün?'))}</div>
+      <div class="two" style="margin-top:10px"><button class="btn ghost" style="margin:0" data-a="xlsxGo" data-v="month">${esc(L('Bu ay'))}</button><button class="btn ghost" style="margin:0" data-a="xlsxGo" data-v="prev">${esc(L('Keçən ay'))}</button></div>
+      <button class="btn ghost" data-a="xlsxGo" data-v="all">${esc(L('Hamısı'))}</button>
+      <div class="two"><div><label>${esc(L('Tarixdən'))}</label><input class="field" id="f_xfrom" type="date" max="${today()}"></div><div><label>${esc(L('Tarixədək'))}</label><input class="field" id="f_xto" type="date" max="${today()}"></div></div>
+      <button class="btn primary" data-a="xlsxGo" data-v="range">${esc(L('Seçilən aralıq'))}</button>`;
     case 'lang': return `<h2>🌐 ${esc(L('Dil'))}</h2><div class="sgroup">${LANGS.map(([k, n, f]) => `<button class="srow" data-a="setLang" data-v="${k}"><span class="si" style="background:#0E9384;font-size:24px">${f}</span><span class="st"><span>${esc(n)}</span>${k === lang ? '<em>✓</em>' : ''}</span></button>`).join('')}</div>`;
     case 'lockType': return `<h2>🔒 ${esc(L('Giriş kilidi'))}</h2><div class="note">${esc(L('Kilidin növünü seçin:'))}</div>
       <div class="addgrid" style="margin-top:12px">${opt('lockSet', 'pin', 'var(--brand-soft)', 'var(--brand)', '🔢', L('PIN kod'), L('4 və ya 6 rəqəm'))}${opt('lockSet', 'pattern', 'var(--brand-soft)', 'var(--brand)', '⠿', L('Naxış'), L('Barmaqla çəkilən kod'))}</div>`;
@@ -1018,7 +1157,6 @@ function ask(opts) { state.confirm = opts; render(); }
 function renderConfirm(c) {
   return `<div class="cfm-shade" data-a="cfmNo"><div class="cfm ${c.danger ? 'danger' : ''}"><div class="cfm-ic">${c.icon || (c.danger ? '🗑' : '✅')}</div>
     <h3>${esc(c.title)}</h3>${c.text ? `<p>${esc(c.text)}</p>` : ''}
-    ${c.methodPick ? `<div class="seg" style="margin:0 0 12px"><button class="${state.closeMethod !== 'card' ? 'on' : ''}" data-a="cfmMethod" data-v="cash">💵 ${esc(L('Nağd'))}</button><button class="${state.closeMethod === 'card' ? 'on' : ''}" data-a="cfmMethod" data-v="card">💳 ${esc(L('Kart'))}</button></div>` : ''}
     <div class="two">${c.alt ? `<button class="btn danger" data-a="cfmAlt">${esc(c.alt)}</button>` : `<button class="btn ghost" data-a="cfmNo">${esc(L('Ləğv et'))}</button>`}<button class="btn ${c.danger ? 'dangerb' : 'payb'}" data-a="cfmOk">${esc(c.ok || L('Bəli'))}</button></div>
     ${c.alt ? `<button class="pinlink" style="margin-top:12px" data-a="cfmNo">${esc(L('Ləğv et'))}</button>` : ''}</div></div>`;
 }
@@ -1042,12 +1180,21 @@ function renderPin() {
     ${body}
     ${P.mode === 'unlock' ? `<button class="pinlink" data-a="pinForgot">${esc(pat ? L('Naxışı unutdum') : L('PIN-i unutdum'))}</button>` : `<button class="pinlink" data-a="pinCancel">${esc(L('Ləğv et'))}</button>`}</div>`;
 }
+// 5 səhv cəhddən sonra 30 saniyə gözləmə (qalan saniyə; 0 = gözləmə yoxdur)
+const pinWait = () => { let u = 0; try { u = +localStorage.getItem('mfPinUntil') || 0; } catch (e) {} return Math.max(0, Math.ceil((u - Date.now()) / 1000)); };
 function pinDone(code) {
   const P = state.pin; if (!P) return;
   if (code == null) { code = P.entered; P.entered = ''; }
   P.err = '';
   if (P.mode === 'unlock' || P.mode === 'verify') {
-    if (!Android.checkPin(code)) { P.err = P.type === 'pattern' ? L('Səhv naxış') : L('Səhv PIN kod'); return render(); }
+    const wait = pinWait();
+    if (wait) { P.err = L('Çox səhv cəhd — {0} saniyə gözləyin', wait); return render(); }
+    if (!Android.checkPin(code)) {
+      let n = 0; try { n = (+localStorage.getItem('mfPinBad') || 0) + 1; localStorage.setItem('mfPinBad', n); if (n >= 5) { localStorage.setItem('mfPinUntil', Date.now() + 30000); localStorage.setItem('mfPinBad', 0); } } catch (e) {}
+      P.err = n >= 5 ? L('Çox səhv cəhd — {0} saniyə gözləyin', 30) : (P.type === 'pattern' ? L('Səhv naxış') : L('Səhv PIN kod')) + ' (' + L('{0} cəhd qalıb', 5 - n) + ')';
+      return render();
+    }
+    try { localStorage.setItem('mfPinBad', 0); } catch (e) {}
     if (P.mode === 'unlock') { state.pin = null; render(); window.onAppResume(); return; }
     if (P.next === 'remove') { Android.clearPin(); try { localStorage.removeItem('mfLockType'); } catch (e) {} savePinCfg(); state.pin = null; toast(L('Kilid götürüldü')); return render(); }
     state.pin = null; openSheet({ kind: 'lockType' }); return;
@@ -1131,7 +1278,7 @@ function render() {
   else if (state.tab === 'debts') h = renderDebts();
   else if (state.tab === 'remind') h = renderRemind();
   else { state.tab = 'home'; h = renderHome(); }
-  const dueN = dueCustomers().length;
+  const dueN = dueCustomers().length + dueLends().length;
   h += `<nav>
     <button class="${state.tab === 'home' ? 'on' : ''}" data-a="tab" data-v="home">${I.home}${esc(L('Ana'))}</button>
     <button class="${state.tab === 'people' ? 'on' : ''}" data-a="tab" data-v="people">${I.people}${esc(L('Müştərilər'))}</button>
@@ -1139,7 +1286,7 @@ function render() {
     <button class="${state.tab === 'debts' ? 'on' : ''}" data-a="tab" data-v="debts">${I.hand}${esc(L('Borclar'))}</button>
     <button class="${state.tab === 'remind' ? 'on' : ''}" data-a="tab" data-v="remind" style="position:relative">${I.bell}${esc(L('Xatırlat'))}${dueN ? `<i class="navbadge">${dueN}</i>` : ''}</button></nav>`;
   const pg = topPage();
-  if (pg) h += ({ cust: renderCustomer, party: renderParty, kassa: renderKassa, all: renderAll, settings: renderSettings, trash: renderTrash, privacy: renderPrivacy, recs: renderRecs })[pg.kind](pg) || '';
+  if (pg) h += ({ cust: renderCustomer, party: renderParty, kassa: renderKassa, all: renderAll, settings: renderSettings, trash: renderTrash, privacy: renderPrivacy, recs: renderRecs, report: renderReport })[pg.kind](pg) || '';
   const key = state.sheet ? JSON.stringify(Object.assign({}, state.sheet, { draft: null })) : '';
   if (state.sheet) h += `<div class="shade" data-a="shade"><div class="sheet">${renderSheet(state.sheet)}</div></div>`;
   if (state.confirm) h += renderConfirm(state.confirm);
@@ -1245,17 +1392,29 @@ function newOp(o) { o.id = uid(); o.c = Date.now(); touch(o); db.ops.push(o); re
 
 // ---------- çıxarış: şəkil və PDF ----------
 function loadImg(src) { return new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+// çıxarış A4 səhifələrinə bölünür (uzun tarixçə də sığır): hər səhifə 1080×1528
 async function drawStatement(cid) {
   const c = cust(cid), s = cstate(cid), h = C.history(db, cid), shop = db.cfg.shop, req = db.cfg.req.trim();
-  const W = 1080, P = 60, F = 'system-ui, -apple-system, Roboto, sans-serif';
+  const W = 1080, PH = 1528, P = 60, F = 'system-ui, -apple-system, Roboto, sans-serif', FOOT = 70;
   const reqLines = req ? req.split('\n') : [];
-  const H = 360 + 260 + 70 + h.length * 74 + 520 + (reqLines.length ? 90 + reqLines.length * 44 : 0) + 80;
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const x = cv.getContext('2d');
-  x.fillStyle = '#FFFFFF'; x.fillRect(0, 0, W, H);
+  const logo = await loadImg(shop.logo);
+  const pages = [];
+  let x, y;
+  const newPage = () => {
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = PH;
+    x = cv.getContext('2d'); x.fillStyle = '#FFFFFF'; x.fillRect(0, 0, W, PH); pages.push(cv); y = 70;
+  };
+  const tableHead = () => {
+    x.fillStyle = '#F4F7F9'; x.fillRect(P, y, W - 2 * P, 60);
+    x.fillStyle = '#6B7785'; x.font = `700 26px ${F}`;
+    x.fillText(L('Tarix'), P + 20, y + 40); x.fillText(L('Əməliyyat'), P + 250, y + 40);
+    x.textAlign = 'right'; x.fillText(L('Məbləğ'), W - P - 230, y + 40); x.fillText(L('Qalıq'), W - P - 20, y + 40); x.textAlign = 'left';
+    y += 60;
+  };
+  const need = hgt => { if (y + hgt > PH - FOOT) { newPage(); return true; } return false; };
+  newPage();
   const gr = x.createLinearGradient(0, 0, W, 300); gr.addColorStop(0, '#14C7AF'); gr.addColorStop(1, '#0A675C');
   x.fillStyle = gr; x.fillRect(0, 0, W, 300);
-  const logo = await loadImg(shop.logo);
   let tx = P;
   if (logo) {
     x.save(); x.beginPath(); x.arc(P + 80, 150, 80, 0, Math.PI * 2); x.closePath(); x.fillStyle = '#fff'; x.fill(); x.clip();
@@ -1268,18 +1427,15 @@ async function drawStatement(cid) {
   if (shop.address) x.fillText('📍 ' + shop.address, tx, 185, W - tx - P);
   if (shop.phone) x.fillText('📞 ' + shop.phone, tx, 232, W - tx - P);
   x.globalAlpha = 1;
-  let y = 380;
+  y = 380;
   x.fillStyle = '#0F1A24'; x.font = `800 44px ${F}`; x.fillText(L('Borc çıxarışı'), P, y);
   x.font = `500 28px ${F}`; x.fillStyle = '#6B7785'; x.textAlign = 'right'; x.fillText(fmtDate(today()) + ', ' + nowHm(), W - P, y); x.textAlign = 'left';
   y += 60; x.fillStyle = '#0F1A24'; x.font = `700 36px ${F}`; x.fillText(L('Müştəri: {0}', c.name), P, y, W - 2 * P);
   if (c.phone) { y += 46; x.font = `500 30px ${F}`; x.fillStyle = '#6B7785'; x.fillText('📞 ' + c.phone, P, y); }
   y += 60;
-  x.fillStyle = '#F4F7F9'; x.fillRect(P, y, W - 2 * P, 60);
-  x.fillStyle = '#6B7785'; x.font = `700 26px ${F}`;
-  x.fillText(L('Tarix'), P + 20, y + 40); x.fillText(L('Əməliyyat'), P + 250, y + 40);
-  x.textAlign = 'right'; x.fillText(L('Məbləğ'), W - P - 230, y + 40); x.fillText(L('Qalıq'), W - P - 20, y + 40); x.textAlign = 'left';
-  y += 60;
+  tableHead();
   for (const { o, bal } of h) {
+    if (need(74)) tableHead();
     const n = o.kind === 'nisye';
     x.fillStyle = '#0F1A24'; x.font = `500 28px ${F}`;
     x.fillText(fmtShort(o.date) + '.' + o.date.slice(0, 4), P + 20, y + 46);
@@ -1291,9 +1447,10 @@ async function drawStatement(cid) {
     x.fillStyle = '#0F1A24'; x.fillText(bal < 0 ? '+' + money(-bal) : money(bal), W - P - 20, y + 46); x.textAlign = 'left';
     y += 74; x.fillStyle = '#E7ECF0'; x.fillRect(P, y - 1, W - 2 * P, 2);
   }
-  y += 40;
+  const boxH = s.debt > 0 && s.due ? 250 : 206;
+  need(40 + boxH); y += 40;
   const line = (l, v, col, big) => { x.font = `${big ? 800 : 600} ${big ? 36 : 30}px ${F}`; x.fillStyle = '#0F1A24'; x.fillText(l, P + 20, y); x.textAlign = 'right'; x.fillStyle = col; x.fillText(v, W - P - 20, y); x.textAlign = 'left'; y += big ? 64 : 52; };
-  x.fillStyle = '#F4F7F9'; x.fillRect(P, y - 10, W - 2 * P, s.debt > 0 && s.due ? 250 : 206);
+  x.fillStyle = '#F4F7F9'; x.fillRect(P, y - 10, W - 2 * P, boxH);
   y += 40;
   line(L('İlkin borc (cəmi nisyə)'), money(s.given), '#D9480F');
   line(L('Ödənilib'), money(s.paid), '#16A34A');
@@ -1301,52 +1458,64 @@ async function drawStatement(cid) {
   else line(L('Qalan borc'), money(s.debt), s.debt ? '#DC2626' : '#16A34A', true);
   if (s.debt > 0 && s.due) { y += 6; x.font = `600 28px ${F}`; x.fillStyle = s.overdue ? '#DC2626' : '#0F1A24'; x.fillText(L('Ödəmə günü: {0}', fmtDate(s.due)) + (s.overdue ? ' (' + L('{0} gün gecikir', s.overdue) + ')' : ''), P + 20, y); y += 30; }
   if (reqLines.length) {
-    y += 40; x.strokeStyle = '#0E9384'; x.lineWidth = 3; x.strokeRect(P, y, W - 2 * P, 60 + reqLines.length * 44);
+    const rh = 60 + reqLines.length * 44;
+    need(40 + rh); y += 40;
+    x.strokeStyle = '#0E9384'; x.lineWidth = 3; x.strokeRect(P, y, W - 2 * P, rh);
     x.fillStyle = '#0E9384'; x.font = `800 28px ${F}`; x.fillText(L('Ödəniş üçün'), P + 24, y + 44);
     x.fillStyle = '#0F1A24'; x.font = `600 30px ${F}`;
     reqLines.forEach((l, i) => x.fillText(l, P + 24, y + 92 + i * 44, W - 2 * P - 48));
-    y += 60 + reqLines.length * 44;
+    y += rh;
   }
-  const end = Math.min(H, y + 60);
-  const out = document.createElement('canvas'); out.width = W; out.height = end;
-  out.getContext('2d').drawImage(cv, 0, 0);
-  return out;
+  // səhifə nömrələri; tək səhifədə artıq boşluq kəsilir
+  pages.forEach((cv, i) => {
+    const g = cv.getContext('2d'); g.font = `500 22px ${F}`; g.fillStyle = '#8B8D98'; g.textAlign = 'center';
+    if (pages.length > 1) g.fillText(L('Səhifə {0} / {1}', i + 1, pages.length), W / 2, PH - 30);
+  });
+  if (pages.length === 1) {
+    const end = Math.min(PH, y + 60), out = document.createElement('canvas'); out.width = W; out.height = end;
+    out.getContext('2d').drawImage(pages[0], 0, 0); return [out];
+  }
+  return pages;
 }
 function b64ToBytes(b64) { const s = atob(b64); const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
 function bytesToB64(a) { let s = ''; for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s); }
-// JPEG şəkildən bir səhifəlik PDF
-function pdfFromJpeg(jpg, w, h) {
+// JPEG şəkillərdən PDF: hər şəkil bir səhifə (eni 595 pt = A4)
+function pdfFromJpegs(imgs) {
   const enc = new TextEncoder(), parts = [], offs = [];
   let len = 0;
   const add = p => { const b = typeof p === 'string' ? enc.encode(p) : p; parts.push(b); len += b.length; };
-  const pw = 595, ph = Math.round(595 * h / w);
-  const content = `q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
-  add('%PDF-1.4\n');
   const obj = (n, body) => { offs[n] = len; add(n + ' 0 obj\n'); if (Array.isArray(body)) body.forEach(add); else add(body); add('\nendobj\n'); };
+  const N = imgs.length, pageId = i => 3 + i * 3;
+  add('%PDF-1.4\n');
   obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-  obj(4, [`<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`, jpg, '\nendstream']);
-  obj(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  const xref = len;
-  add('xref\n0 6\n0000000000 65535 f \n' + [1, 2, 3, 4, 5].map(n => String(offs[n]).padStart(10, '0') + ' 00000 n \n').join(''));
-  add(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  obj(2, `<< /Type /Pages /Kids [${imgs.map((_, i) => pageId(i) + ' 0 R').join(' ')}] /Count ${N} >>`);
+  imgs.forEach(({ jpg, w, h }, i) => {
+    const pw = 595, ph = Math.round(595 * h / w), id = pageId(i), content = `q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
+    obj(id, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 ${id + 1} 0 R >> >> /Contents ${id + 2} 0 R >>`);
+    obj(id + 1, [`<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`, jpg, '\nendstream']);
+    obj(id + 2, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  const total = 3 + N * 3, xref = len;
+  let x = 'xref\n0 ' + total + '\n0000000000 65535 f \n';
+  for (let n = 1; n < total; n++) x += String(offs[n]).padStart(10, '0') + ' 00000 n \n';
+  add(x);
+  add(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
   const out = new Uint8Array(len); let p = 0; for (const b of parts) { out.set(b, p); p += b.length; }
   return out;
 }
 async function makeStatement(cid, kind) {
   const c = cust(cid); if (!c) return;
   toast(L('Çıxarış hazırlanır…'));
-  const cv = await drawStatement(cid);
+  const pages = await drawStatement(cid);
   const base = 'Cixaris-' + c.name.replace(/[^\wəöüğışçƏÖÜĞİŞÇ]+/g, '_') + '-' + today();
-  if (kind === 'png') {
-    const b64 = cv.toDataURL('image/png').split(',')[1];
+  if (kind === 'png' && pages.length === 1) {
+    const b64 = pages[0].toDataURL('image/png').split(',')[1];
     if (hasNative) Android.shareBase64(b64, base + '.png', 'image/png');
-  } else {
-    const jpg = b64ToBytes(cv.toDataURL('image/jpeg', 0.92).split(',')[1]);
-    const pdf = pdfFromJpeg(jpg, cv.width, cv.height);
-    if (hasNative) Android.shareBase64(bytesToB64(pdf), base + '.pdf', 'application/pdf');
+    return;
   }
+  if (kind === 'png') toast(L('Çıxarış {0} səhifədir — PDF kimi göndərilir', pages.length));
+  const pdf = pdfFromJpegs(pages.map(cv => ({ jpg: b64ToBytes(cv.toDataURL('image/jpeg', 0.92).split(',')[1]), w: cv.width, h: cv.height })));
+  if (hasNative) Android.shareBase64(bytesToB64(pdf), base + '.pdf', 'application/pdf');
 }
 
 // ---------- Excel faylı (.xlsx) ----------
@@ -1386,19 +1555,22 @@ function xlsx(sheets) {
   ].concat(sheets.map((s, i) => ['xl/worksheets/sheet' + (i + 1) + '.xml', sheetXml(s.rows)]));
   return zipStore(files);
 }
-function exportXlsx() {
+function exportXlsx(from, to) {
   const td = today(), q = v => Math.round(v) / 100;
-  const ops = allOps().sort(C.byWhen);
+  from = from || '0000-00-00'; to = to || td;
+  const ops = allOps().filter(o => o.date >= from && o.date <= to).sort(C.byWhen);
   const sign = o => o.kind === 'out' ? -1 : 1;
-  const kassa = [[L('Tarix'), L('Saat'), L('Növ'), L('Mənbə / Kateqoriya'), L('Müştəri / Qeyd'), L('Üsul'), L('Məbləğ (₼)')]].concat(ops.filter(o => ['in', 'out', 'pay'].includes(o.kind)).map(o => [o.date, o.time || '', L(KIND[o.kind].t), o.src || o.cat || '', o.cid ? cname(o.cid) + (o.note ? ' — ' + o.note : '') : o.did ? (debtRec(o.did) || {}).name || '' : (o.note || ''), o.method === 'card' ? L('Kart') : L('Nağd'), sign(o) * q(o.amount)]));
-  const B = C.balances(db, td);
-  kassa.push([], ['', '', '', '', L('Kassada nağd'), '', q(B.cash)], ['', '', '', '', L('Kartda'), '', q(B.card)], ['', '', '', '', L('Cəmi'), '', q(B.total)]);
-  const nis = [[L('Müştəri'), L('Tarix'), L('Məbləğ (₼)'), L('Ödəmə günü'), L('Qeyd'), L('Uzadılıb')]].concat(ops.filter(o => o.kind === 'nisye').map(o => [cname(o.cid), o.date, q(o.amount), o.due || '', [o.src, o.note].filter(Boolean).join(' · '), o.ext && o.ext.length ? o.ext.length : '']));
+  const kassa = [[L('Tarix'), L('Saat'), L('Növ'), L('Mənbə / Kateqoriya'), L('Müştəri / Qeyd'), L('Üsul'), L('Məbləğ (₼)')]].concat(ops.filter(o => ['in', 'out', 'pay'].includes(o.kind)).map(o => [o.date, o.time || '', L(KIND[o.kind].t), o.src || o.cat || '', o.cid ? opCust(o) + (o.note ? ' — ' + o.note : '') : o.did ? (debtRec(o.did) || {}).name || '' : (o.note || ''), o.method === 'card' ? L('Kart') : L('Nağd'), sign(o) * q(o.amount)]));
+  const B = C.balances(db, to), F = C.flow(db, from, to);
+  kassa.push([], ['', '', '', '', L('Dövr'), '', (from === '0000-00-00' ? L('hamısı') : from) + ' — ' + to],
+    ['', '', '', '', L('Dövrün gəliri'), '', q(F.income)], ['', '', '', '', L('Dövrün xərci'), '', -q(F.expense)], ['', '', '', '', L('Dövrün nəticəsi'), '', q(F.net)],
+    ['', '', '', '', L('Kassada nağd ({0})', to), '', q(B.cash)], ['', '', '', '', L('Kartda ({0})', to), '', q(B.card)], ['', '', '', '', L('Cəmi ({0})', to), '', q(B.total)]);
+  const nis = [[L('Müştəri'), L('Tarix'), L('Məbləğ (₼)'), L('Ödəmə günü'), L('Qeyd'), L('Uzadılıb')]].concat(ops.filter(o => o.kind === 'nisye').map(o => [opCust(o), o.date, q(o.amount), o.due || '', [o.src, o.note].filter(Boolean).join(' · '), o.ext && o.ext.length ? o.ext.length : '']));
   const cs = [[L('Ad'), L('Telefon'), L('Qruplar'), L('Cəmi nisyə (₼)'), L('Ödənilib (₼)'), L('Qalıq borc (₼)'), L('Avans (₼)'), L('Ödəmə günü'), L('Gecikmə (gün)')]].concat(db.customers.map(c => { const s = C.custState(db, c.id, td); return [c.name, c.phone || '', (c.tags || []).map(tagName).join(', '), q(s.given), q(s.paid), q(s.debt), q(s.advance), s.debt ? s.due : '', s.overdue || 0]; }));
   const dbt = [[L('Növ'), L('Ad'), L('Telefon'), L('Cəmi (₼)'), L('Qaytarılıb (₼)'), L('Qalıq (₼)'), L('Qaytarma günü')]];
   for (const side of ['lend', 'borrow']) for (const g of C.parties(db, side, td)) dbt.push([side === 'lend' ? L('Verdiyim') : L('Aldığım'), g.name, g.phone || '', q(g.total), q(g.back), q(g.left), g.due || '']);
   const bytes = xlsx([{ name: L('Kassa'), rows: kassa }, { name: L('Nisyə'), rows: nis }, { name: L('Müştərilər'), rows: cs }, { name: L('Borclar'), rows: dbt }]);
-  if (hasNative) Android.shareBase64(bytesToB64(bytes), 'MyFinance-' + td + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  if (hasNative) Android.shareBase64(bytesToB64(bytes), 'MyFinance-' + (from === '0000-00-00' ? td : from + '_' + to) + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   return bytes;
 }
 
@@ -1414,14 +1586,32 @@ const actions = {
   addOn(v) { openSheet({ kind: v, date: state.kday }); }, // Kassada baxılan günə yazılır
   openCust(v) { pushPage({ kind: 'cust', id: v }); },
   openKassa() { state.kday = today(); pushPage({ kind: 'kassa' }); },
-  openAll() { pushPage({ kind: 'all', k: '', m: '', q: '' }); },
+  openReport() { pushPage({ kind: 'report', m: today().slice(0, 7) }); },
+  rmon(v) { const pg = topPage(); const m = C.addMonths(pg.m + '-01', +v).slice(0, 7); if (m <= today().slice(0, 7)) { pg.m = m; render(); } },
+  xlsxMonth(v) { const [a, b] = v.split('|'); exportXlsx(a, b); },
+  openAll() { pushPage({ kind: 'all', k: '', m: '', q: '', from: '', to: '' }); },
   allF(v) { const [g, x] = v.split('|'); const pg = topPage(); pg[g] = x; pg.q = val('tq'); render(); },
   seg(v) { state.seg = v; render(); },
   tagF(v) { state.tag = v; render(); },
+  csort(v) { state.csort = v; render(); },
   side(v) { state.side = v; render(); },
   kday(v) { const d = C.addDays(state.kday, +v); if (d <= today()) { state.kday = d; render(); } },
   newCust() { openSheet({ kind: 'cust' }); },
   editCust(v) { openSheet({ kind: 'cust', id: v }); },
+  mergeOpen(v) { openSheet({ kind: 'merge', id: v }); },
+  mergeTo(v) {
+    const from = cust(state.sheet.id), to = cust(v); if (!from || !to) return;
+    const n = db.ops.filter(o => o.cid === from.id).length;
+    ask({ title: L('«{0}» → «{1}»', from.name, to.name), text: L('{0} əməliyyat «{1}»-ə keçəcək, «{2}» siyahıdan silinəcək. Hesablama dəyişmir.', n, to.name, from.name), ok: L('Birləşdir'), icon: '🔗',
+      run() {
+        for (const o of db.ops) if (o.cid === from.id) { o.cid = to.id; touch(o); }
+        if (!to.phone && from.phone) to.phone = from.phone;
+        to.tags = [...new Set((to.tags || []).concat(from.tags || []))]; touch(to);
+        db.customers = db.customers.filter(x => x.id !== from.id); db.removed[from.id] = Date.now();
+        state.sheet = null; state.pages = state.pages.filter(p => !(p.kind === 'cust' && p.id === from.id));
+        save(); pushPage({ kind: 'cust', id: to.id }); toast(L('Birləşdirildi ✓'));
+      } });
+  },
   tagToggle(v, e, el) { el.classList.toggle('on'); },
   contact() { if (hasNative) Android.pickContact(); },
   whoPick(v) { const c = cust(v); const n = document.getElementById('f_name'); if (c && n) { n.value = c.name; whoSuggest(); calcPreview(); } },
@@ -1508,7 +1698,20 @@ const actions = {
     if (same && same.id !== s.id) return toast(L('Bu adda müştəri artıq var'));
     const tags = [...app.querySelectorAll('[data-group="tags"] .on')].map(b => b.dataset.v);
     if (s.id) { const c = cust(s.id); Object.assign(touch(c), { name, phone: val('f_phone').trim(), tags }); save(); closeSheet(); }
-    else { const c = touch({ id: uid(), name, phone: val('f_phone').trim(), tags, c: Date.now() }); db.customers.push(c); save(); state.sheet = null; pushPage({ kind: 'cust', id: c.id }); }
+    else {
+      // yeni müştəri: görülən iş nisyə kimi, ödədiyi pul həmin günün gəliri kimi, əlavə xərc xərc kimi yazılır; borclu qalan = iş − ödədi
+      const amt = id => { const t = val(id).trim(); if (!t) return 0; const v = C.evalExpr(t); return v == null || isNaN(v) || v < 0 ? NaN : v; };
+      const work = amt('f_work'), paid = amt('f_paid'), extra = amt('f_extra');
+      if ([work, paid, extra].some(isNaN)) return toast(L('Məbləği düzgün yazın'));
+      const date = readDate(), time = val('f_time') || nowHm(), due = val('f_due'), method = picked('method') || 'cash';
+      if (work && due && due < date) return toast(L('Ödəmə günü nisyə günündən əvvəl ola bilməz'));
+      const c = touch({ id: uid(), name, phone: val('f_phone').trim(), tags, c: Date.now() }); db.customers.push(c);
+      if (work) newOp({ kind: 'nisye', cid: c.id, amount: work, note: L('Görülən iş'), date, time, due: work > paid ? due : '' });
+      if (paid) newOp({ kind: 'pay', cid: c.id, amount: paid, method, note: '', date, time });
+      if (extra) newOp({ kind: 'out', amount: extra, method: 'cash', cat: L('Əlavə xərc'), note: name, date, time });
+      save(); state.sheet = null; pushPage({ kind: 'cust', id: c.id });
+      if (work || paid || extra) toast(work - paid > 0 ? L('Yazıldı · borclu qaldı: {0}', money(work - paid)) : L('Yazıldı'));
+    }
   },
   editOp(v) {
     const o = db.ops.find(x => x.id === v); if (!o) return;
@@ -1523,17 +1726,13 @@ const actions = {
   delCust(v) {
     const c = cust(v); if (!c) return;
     const n = db.ops.filter(o => o.cid === v).length;
-    ask({ title: L('{0} silinsin?', c.name), text: (n ? L('{0} əməliyyatı ilə birlikdə.', n) + ' ' : '') + L('Zibil qutusundan 30 gün ərzində qaytarmaq olar.'), ok: L('Sil'), danger: true,
+    ask({ title: L('{0} silinsin?', c.name), text: (n ? L('Onun {0} əməliyyatı kassada və hesabatda qalır.', n) + ' ' : '') + L('Zibil qutusundan 30 gün ərzində qaytarmaq olar.'), ok: L('Sil'), danger: true,
       run() { trashCustomer(c); state.pages.pop(); save(); toast(L('Zibil qutusuna atıldı')); } });
   },
   payFor(v) { openSheet({ kind: 'pay', cid: v }); },
   nisyeFor(v) { openSheet({ kind: 'nisye', cid: v }); },
-  closeDebt(v) {
-    const s = cstate(v); if (!(s.debt > 0)) return;
-    state.closeMethod = 'cash';
-    ask({ title: L('Borc tam bağlansın?'), text: L('{0} — {1} tam ödəniş kimi bu günün gəlirinə yazılacaq.', cname(v), money(s.debt)), ok: L('Bağla'), icon: '✅', methodPick: true,
-      run() { newOp({ kind: 'pay', cid: v, amount: s.debt, method: state.closeMethod, note: L('Borc tam bağlandı'), date: today(), time: nowHm() }); save(); toast(L('Borc bağlandı ✓')); } });
-  },
+  // borcu tam bağla: ödəniş forması tam məbləğlə açılır — tarix, saat, nağd/kart seçilir
+  closeDebt(v) { const s = cstate(v); if (!(s.debt > 0)) return; openSheet({ kind: 'pay', cid: v, full: s.debt }); },
   extend(v) { if (!cstate(v).open.length) return toast(L('Açıq nisyə yoxdur')); openSheet({ kind: 'extend', cid: v }); },
   saveExtend() {
     const st = cstate(state.sheet.cid), it = st.open.find(x => x.n.due === st.due) || st.open[0];
@@ -1558,7 +1757,7 @@ const actions = {
   stmtGo(v) { const cid = state.sheet.cid; closeSheet(); makeStatement(cid, v); },
   // borclar
   openParty(v) { const i = v.indexOf('|'); pushPage({ kind: 'party', side: v.slice(0, i), key: v.slice(i + 1) }); },
-  openDebt(v) { const d = debtRec(String(v).slice(1)); if (d) pushPage({ kind: 'party', side: d.side, key: C.norm(d.name) }); },
+  openDebt(v) { const d = debtRec(String(v).slice(1)); if (d) pushPage({ kind: 'party', side: d.side, key: C.partyKey(d) }); },
   newDebt(v) { const i = v.indexOf('|'); openSheet({ kind: 'debt', side: v.slice(0, i), key: v.slice(i + 1) }); },
   editDebt(v) { openSheet({ kind: 'debt', id: v }); },
   saveDebt() {
@@ -1569,7 +1768,8 @@ const actions = {
     if (due && due < date) return toast(L('Qaytarma günü borc günündən əvvəl ola bilməz'));
     const n = document.getElementById('f_name');
     const data = { side, name, phone: val('f_phone').trim() || (n && n.dataset.phone) || '', amount, date, time: val('f_time') || nowHm(), due, note: val('f_note').trim() };
-    if (side === 'borrow') data.method = picked('method') || 'cash';
+    // telefon yazılmayıbsa və bu adda yalnız bir nəfər varsa, onun telefonu götürülür (eyni adam ayrı düşməsin)
+    if (!data.phone) { const same = C.parties(db, side, today()).filter(g => C.norm(g.name) === C.norm(name) && g.phone); if (same.length === 1) data.phone = same[0].phone; }
     if (d) {
       const paid = C.debtPaid(db, d);
       if (amount < paid) return toast(L('Qaytarılan məbləğdən az ola bilməz: {0}', money(paid)));
@@ -1596,8 +1796,8 @@ const actions = {
     const g = partyOf(s.side, s.key); if (!g) return;
     const amount = readAmount(); if (!amount) return;
     if (amount > g.left) return toast(L('Qalıqdan çox ola bilməz: {0}', money(g.left)));
-    const date = readDate(), time = val('f_time') || nowHm(), method = s.side === 'borrow' ? picked('method') || 'cash' : 'cash';
-    for (const x of C.allocBack(db, s.side, s.key, amount)) newOp({ kind: C.backKind(s.side), did: x.did, amount: x.amount, date, time, method });
+    const date = readDate(), time = val('f_time') || nowHm(), note = val('f_note').trim();
+    for (const x of C.allocBack(db, s.side, s.key, amount)) newOp({ kind: C.backKind(s.side), did: x.did, amount: x.amount, date, time, note });
     save(); closeSheet();
     const g2 = partyOf(s.side, s.key);
     toast(g2 && g2.left > 0 ? L('Yazıldı · qalıq: {0}', money(g2.left)) : L('Borc bağlandı ✓'));
@@ -1607,8 +1807,7 @@ const actions = {
     const amount = readAmount(); if (!amount) return;
     const d = debtRec(o.did);
     if (d) { const left = C.debtTotal(d) - C.debtPaid(db, d) + o.amount; if (amount > left) return toast(L('Qalıqdan çox ola bilməz: {0}', money(left))); }
-    Object.assign(touch(o), { amount, date: readDate(), time: val('f_time') || nowHm() });
-    if (o.kind === 'brep') o.method = picked('method') || 'cash';
+    Object.assign(touch(o), { amount, date: readDate(), time: val('f_time') || nowHm(), note: val('f_note').trim() });
     save(); closeSheet();
   },
   partyWa(v) { const i = v.indexOf('|'), side = v.slice(0, i), g = partyOf(side, v.slice(i + 1)); if (g) openUrl(waLink(g.phone, msgParty(g, side === 'lend'))); },
@@ -1616,7 +1815,6 @@ const actions = {
   cfmNo() { state.confirm = null; render(); },
   cfmOk() { const c = state.confirm; state.confirm = null; c.run(); render(); },
   cfmAlt() { const c = state.confirm; state.confirm = null; c.runAlt(); render(); },
-  cfmMethod(v, e, el) { state.closeMethod = v; el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)); },
   // ayarlar
   shop() { openSheet({ kind: 'shop', draft: Object.assign({}, db.cfg.shop) }); },
   logoPick() { keepShopDraft(); if (hasNative) Android.pickPhoto(); },
@@ -1654,12 +1852,23 @@ const actions = {
   },
   summary() { openSheet({ kind: 'summary' }); },
   saveSummary() { const t = val('f_sum'); if (!t) return; if (hasNative) Android.setSummaryTime(t); setCfg('sum', t); save(); closeSheet(); toast(L('Hər gün {0}-da xatırladılacaq', t)); },
+  dueTimeSet() { openSheet({ kind: 'dueTime' }); },
+  saveDueTime() { const t = val('f_dtime'); if (!t) return; if (hasNative && Android.setDueTime) Android.setDueTime(t); setCfg('due', t); save(); closeSheet(); toast(L('Borc xatırlatması hər gün {0}-da', t)); },
+  notifOpen() { if (hasNative && Android.openNotifSettings) Android.openNotifSettings(); },
+  eye() { hideNums = !hideNums; try { localStorage.setItem('mfHide', hideNums ? '1' : '0'); } catch (e) {} applyTheme(); setCfg('hide', hideNums); save(); render(); },
   offSummary() { if (hasNative) Android.setSummaryTime(''); setCfg('sum', ''); save(); closeSheet(); },
   syncLink() { if (hasNative) Android.syncLink(); },
   syncNow() { if (!sync.account) return; if (loadBroken) return toast(L('Məlumat faylı zədələnib — Google-a göndərilmir')); toast(L('Google-a göndərilir…')); runSync('push'); },
   checkBackup() { if (!sync.account) return; state.checkResult = null; toast(L('Yoxlanılır…')); runSync('check'); },
   syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; } }); },
-  xlsx() { exportXlsx(); },
+  xlsx() { openSheet({ kind: 'xlsx' }); },
+  xlsxGo(v) {
+    const td = today(), m0 = td.slice(0, 7) + '-01', pm = C.addMonths(m0, -1);
+    const r = { month: [m0, td], prev: [pm, C.addDays(m0, -1)], all: ['', td], range: [val('f_xfrom'), val('f_xto') || td] }[v];
+    if (v === 'range' && !r[0]) return toast(L('Başlanğıc tarixini seçin'));
+    if (r[0] && r[0] > r[1]) return toast(L('Tarixlər səhvdir'));
+    closeSheet(); exportXlsx(r[0], r[1]);
+  },
   backupFile() { if (hasNative) Android.shareFile(JSON.stringify(db), 'MyFinance-yedek-' + today() + '.json'); },
   importFile() { if (hasNative) Android.importFile(); },
   theme() { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('mfTheme', theme); } catch (e) {} applyTheme(); setCfg('theme', theme); save(); render(); },
@@ -1721,12 +1930,15 @@ app.addEventListener('click', e => {
 app.addEventListener('input', e => {
   const id = e.target.id;
   if (id === 'f_amount') return calcPreview();
+  if (id === 'f_work' || id === 'f_paid') { const w = C.evalExpr(val('f_work')) || 0, p = C.evalExpr(val('f_paid')) || 0, b = document.getElementById('f_left'); if (b) b.innerHTML = isNaN(w) || isNaN(p) ? '' : w - p > 0 ? `${esc(L('Borclu qaldı:'))} <b class="debt num">${money(w - p)}</b>` : w && w === p ? `<b class="pay">${esc(L('Tam ödədi ✓'))}</b>` : p > w ? esc(L('Artıq ödəniş avans kimi qalır: {0}', '+' + money(p - w))) : ''; return; }
   if (id === 'f_name') { delete e.target.dataset.phone; return whoSuggest(); }
   if (id === 'f_src' || id === 'f_cat') return suggest(id);
   if (id === 'q') return filterCust(e.target.value);
+  if (id === 'mq') { const q = fold(e.target.value), qd = e.target.value.replace(/\D/g, ''); app.querySelectorAll('#mlist .row').forEach(r => r.classList.toggle('hidden', !!q && !r.dataset.s.includes(q) && !(qd.length > 1 && r.dataset.s.replace(/\D/g, '').includes(qd)))); return; }
   if (id === 'tq') { const pg = topPage(); if (pg) pg.q = e.target.value; return filterAll(); }
 });
 app.addEventListener('change', e => {
+  if (e.target.id === 'tfrom' || e.target.id === 'tto') { const pg = topPage(); if (pg && pg.kind === 'all') { pg[e.target.id === 'tfrom' ? 'from' : 'to'] = e.target.value; filterAll(); } return; }
   if (e.target.id === 'kdate' && e.target.value) { state.kday = e.target.value > today() ? today() : e.target.value; render(); }
 });
 // məbləğ xanasından çıxanda ifadə nəticə ilə əvəz olunur (15+20+12,5 → 47,5)
@@ -1745,6 +1957,8 @@ if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
   state.pin = { mode: 'unlock', type: lockType(), len: Android.pinLength(), entered: '', err: '' };
   if (bioOn()) setTimeout(() => Android.bioPrompt(), 300);
 }
+queueCheck();
 render();
 pushNative();
+phoneBackup();
 if (sync.account && !state.pin && (sync.dirty || needLink())) setTimeout(() => runSync('push'), 500);

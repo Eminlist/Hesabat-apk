@@ -150,11 +150,14 @@
   const debtTotal = d => d.total || d.amount || 0;
   const backKind = side => side === 'lend' ? 'lback' : 'brep';
   function debtPaid(db, d) { let s = 0; for (const o of db.ops) if (o.did === d.id && (o.kind === 'lback' || o.kind === 'brep')) s += o.amount; return s; }
+  // eyni adlı iki fərqli adam ayrılsın: açar = ad + telefonun son 9 rəqəmi (telefon yoxdursa yalnız ad)
+  const phoneKey = p => String(p || '').replace(/\D/g, '').slice(-9);
+  const partyKey = d => norm(d.name) + (phoneKey(d.phone) ? '#' + phoneKey(d.phone) : '');
   function parties(db, side, today) {
     const m = new Map();
     const recs = (db.debts || []).filter(d => d.side === side).slice().sort(byWhen);
     for (const d of recs) {
-      const k = norm(d.name);
+      const k = partyKey(d);
       const g = m.get(k) || { key: k, side, name: d.name, phone: '', total: 0, back: 0, left: 0, due: '', first: '', recs: [] };
       const tot = debtTotal(d), paid = debtPaid(db, d), left = Math.max(0, tot - paid);
       g.total += tot; g.back += Math.min(paid, tot); g.left += left;
@@ -216,5 +219,5 @@
   // ---- WhatsApp mesaj tonu: gecikmə gününə görə ----
   const toneFor = overdue => overdue >= 15 ? 3 : overdue >= 5 ? 2 : 1;
 
-  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, payStats, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn, debtTotal, debtPaid, backKind, parties, allocBack, migrateOld };
+  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, payStats, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn, debtTotal, debtPaid, backKind, parties, partyKey, phoneKey, allocBack, migrateOld };
 })(typeof window !== 'undefined' ? window : globalThis);

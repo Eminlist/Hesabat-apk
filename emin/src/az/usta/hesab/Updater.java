@@ -82,7 +82,7 @@ public class Updater {
         // the newest release that carries this app's APK (Hesabat-*.apk).
         // Other releases are skipped. Tags are "r<versionCode>".
         JSONArray list = new JSONArray(get(RELEASES));
-        String url = null, name = null;
+        String url = null, name = null, notes = "";
         long size = -1;
         int code = -1;
         for (int r = 0; r < list.length() && url == null; r++) {
@@ -102,6 +102,7 @@ public class Updater {
                     url = a.optString("browser_download_url");
                     size = a.optLong("size", -1);
                     name = rel.optString("name", tag);
+                    notes = changes(rel.optString("body", ""));
                     break;
                 }
             }
@@ -113,20 +114,31 @@ public class Updater {
         }
         if (!(f.exists() && f.length() == size)) download(url, f);
         if (size > 0 && f.length() != size) return;
-        final String title = name;
+        final String title = name, what = notes;
         act.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                offer(title, f);
+                offer(title, what, f);
             }
         });
     }
 
-    private void offer(String name, final File f) {
+    /** Buraxılışın qeydindən yalnız «- ...» sətirləri: yeni versiyada nə dəyişdi. */
+    private static String changes(String body) {
+        StringBuilder sb = new StringBuilder();
+        for (String l : body.split("\n")) {
+            l = l.trim();
+            if (l.startsWith("- ")) sb.append("• ").append(l.substring(2)).append('\n');
+        }
+        return sb.toString().trim();
+    }
+
+    private void offer(String name, String notes, final File f) {
         if (act.isFinishing()) return;
         new AlertDialog.Builder(act)
                 .setTitle(Tr.t(act, "Yeni versiya hazırdır"))
-                .setMessage(name + Tr.t(act, "\n\nYükləndi. Quraşdırmaq üçün «Quraşdır» basın. Məlumatlarınız silinmir."))
+                .setMessage(name + (notes.isEmpty() ? "" : "\n\n" + Tr.t(act, "Nə dəyişdi:") + "\n" + notes)
+                        + Tr.t(act, "\n\nYükləndi. Quraşdırmaq üçün «Quraşdır» basın. Məlumatlarınız silinmir."))
                 .setPositiveButton(Tr.t(act, "Quraşdır"), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {

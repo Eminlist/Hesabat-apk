@@ -895,6 +895,81 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** Borc xatırlatmasının saatı. */
+        @JavascriptInterface
+        public String dueTime() {
+            return DueReceiver.time(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void setDueTime(String t) {
+            DueReceiver.setTime(MainActivity.this, t);
+        }
+
+        /** Telefonun Ayarlarında bu proqrama bildiriş icazəsi var? */
+        @JavascriptInterface
+        public boolean notifAllowed() {
+            try {
+                android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                return nm == null || nm.areNotificationsEnabled();
+            } catch (Exception e) {
+                return true;
+            }
+        }
+
+        /** Proqramın bildiriş ayarlarını açır (icazəni orada vermək olur). */
+        @JavascriptInterface
+        public void openNotifSettings() {
+            internalNav = true;
+            try {
+                Intent i = Build.VERSION.SDK_INT >= 26
+                        ? new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName())
+                        : new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception ignored) {
+            }
+        }
+
+        /** Google növbəsi: telefonda yazılıb Google-a hələ getməmiş dəyişiklik varmı, son uğurlu göndərmə vaxtı. */
+        @JavascriptInterface
+        public String queueState() {
+            try {
+                return new JSONObject().put("pending", SyncJob.pending(MainActivity.this)).put("last", SyncJob.lastUpload(MainActivity.this)).toString();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        /** Telefonun «Download/MyFinance» qovluğuna tam yedək faylı yazır (Google-dan əlavə). */
+        @JavascriptInterface
+        public boolean saveToDownloads(String json, String name) {
+            try {
+                byte[] data = json.getBytes(UTF8);
+                if (Build.VERSION.SDK_INT >= 29) {
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                    v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/MyFinance");
+                    Uri u = getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                    if (u == null) return false;
+                    java.io.OutputStream out = getContentResolver().openOutputStream(u);
+                    if (out == null) return false;
+                    out.write(data);
+                    out.close();
+                    return true;
+                }
+                // köhnə Android (9 və aşağı): proqramın öz xarici qovluğu
+                File dir = new File(getExternalFilesDir(null), "MyFinance");
+                dir.mkdirs();
+                FileOutputStream out = new FileOutputStream(new File(dir, name));
+                out.write(data);
+                out.close();
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
         /** Today's income for the home-screen widget. */
         @JavascriptInterface
         public void setWidget(String date, String label, String amount, String zero) {

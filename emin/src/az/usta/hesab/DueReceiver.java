@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Debt payment days: once a day (around 10:00) the phone shows one notification listing the
+ * Debt payment days: once a day (at the time chosen in Ayarlar, 10:00 by default) the phone shows one notification listing the
  * customers whose payment day has come or passed and who still owe. The list itself is written
  * by the app (MainActivity.setDueList) every time the data changes.
  */
@@ -36,6 +36,7 @@ public class DueReceiver extends BroadcastReceiver {
         String a = i.getAction();
         if (ACTION.equals(a)) {
             notifyDue(c);
+            schedule(c, true); // sabahkı
         } else {
             // the phone restarted or the app was updated: alarms are gone, set it again
             schedule(c, true);
@@ -43,11 +44,31 @@ public class DueReceiver extends BroadcastReceiver {
         }
     }
 
+    private static long daysBetween(String a, String b) {
+        try {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            f.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            return Math.round((f.parse(b).getTime() - f.parse(a).getTime()) / 86400000.0);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** Borc xatırlatmasının saatı ("HH:MM"), Ayarlarda seçilir; standart 10:00. */
+    static String time(Context c) {
+        return c.getSharedPreferences("due", Context.MODE_PRIVATE).getString("time", "10:00");
+    }
+
+    static void setTime(Context c, String t) {
+        c.getSharedPreferences("due", Context.MODE_PRIVATE).edit().putString("time", t == null || t.isEmpty() ? "10:00" : t).apply();
+        schedule(c, true);
+    }
+
     static void saveList(Context c, String json) {
         c.getSharedPreferences("due", Context.MODE_PRIVATE).edit().putString("list", json).apply();
     }
 
-    /** The daily check at about 10:00; force=false leaves an alarm that is already set alone. */
+    /** The daily check at the chosen time; force=false leaves an alarm that is already set alone. */
     static void schedule(Context c, boolean force) {
         Intent i = new Intent(c, DueReceiver.class).setAction(ACTION);
         if (!force && PendingIntent.getBroadcast(c, 0, i, PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE) != null) return;
@@ -55,12 +76,21 @@ public class DueReceiver extends BroadcastReceiver {
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
         Calendar cal = Calendar.getInstance();
-        cal.set(Calendar.HOUR_OF_DAY, 10);
-        cal.set(Calendar.MINUTE, 0);
+        int h = 10, m = 0;
+        try {
+            String[] t = time(c).split(":");
+            h = Integer.parseInt(t[0]);
+            m = Integer.parseInt(t[1]);
+        } catch (Exception ignored) {
+        }
+        cal.set(Calendar.HOUR_OF_DAY, h);
+        cal.set(Calendar.MINUTE, m);
         cal.set(Calendar.SECOND, 0);
         cal.set(Calendar.MILLISECOND, 0);
-        if (cal.getTimeInMillis() <= System.currentTimeMillis()) cal.add(Calendar.DAY_OF_YEAR, 1);
-        am.setInexactRepeating(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), AlarmManager.INTERVAL_DAY, pi);
+        if (cal.getTimeInMillis() <= System.currentTimeMillis() + 30000) cal.add(Calendar.DAY_OF_YEAR, 1);
+        am.cancel(pi);
+        // 5 dəqiqəlik pəncərə: seçilən saatda gəlir, xüsusi «dəqiq zəngli saat» icazəsi lazım deyil
+        am.setWindow(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), 5 * 60 * 1000L, pi);
     }
 
     static void notifyDue(Context c) {
@@ -76,7 +106,18 @@ public class DueReceiver extends BroadcastReceiver {
                 JSONObject it = items.getJSONObject(k);
                 // "u": last day to remind (e.g. a warranty that ends that day)
                 String until = it.optString("u", "");
-                if (it.optString("d", "9999").compareTo(today) <= 0 && (until.isEmpty() || today.compareTo(until) <= 0)) lines.add(it.optString("line"));
+                if (it.optString("d", "9999").compareTo(today) <= 0 && (until.isEmpty() || today.compareTo(until) <= 0)) {
+                    String line = it.optString("line");
+                    String due = it.optString("due", "");
+                    if (!due.isEmpty()) {
+                        // gün sayı bu gün hesablanır: proqram neçə gün açılmasa da düz göstərilir
+                        long days = daysBetween(today, due);
+                        String st = days > 0 ? o.optString("soon", "{0}").replace("{0}", String.valueOf(days))
+                                : days == 0 ? o.optString("today", "") : o.optString("late", "{0}").replace("{0}", String.valueOf(-days));
+                        if (!st.isEmpty()) line += " · " + st;
+                    }
+                    lines.add(line);
+                }
             }
             if (lines.isEmpty()) return;
             if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) return;

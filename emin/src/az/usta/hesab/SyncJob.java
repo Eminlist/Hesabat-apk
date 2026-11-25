@@ -41,7 +41,13 @@ public class SyncJob extends JobService {
 
     /** Google got the data as it was at change number s; if nothing changed since, the queue is empty. */
     static synchronized void uploaded(Context c, long s) {
-        if (seq(c) == s) q(c).edit().putBoolean("pending", false).commit();
+        SharedPreferences.Editor e = q(c).edit().putLong("last", System.currentTimeMillis());
+        if (seq(c) == s) e.putBoolean("pending", false);
+        e.commit();
+    }
+
+    static long lastUpload(Context c) {
+        return q(c).getLong("last", 0);
     }
 
     static boolean pending(Context c) {

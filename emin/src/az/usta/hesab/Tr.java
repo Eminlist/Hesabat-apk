@@ -15,6 +15,7 @@ final class Tr {
     }
 
     static {
+        put("Nə dəyişdi:", "Что изменилось:", "Neler değişti:", "What changed:");
         put("Google hesabı seçilməyib", "Аккаунт Google не выбран", "Google hesabı seçilmedi", "No Google account selected");
         put("Google icazə vermədi", "Google не дал разрешения", "Google izin vermedi", "Google did not grant permission");
         put("Google icazəsi verilmədi — yenidən «Sinxron et» basın və icazə verin", "Разрешение Google не получено — снова нажмите «Синхронизировать» и разрешите доступ", "Google izni verilmedi — tekrar «Senkronize et»e basın ve izin verin", "Google permission not granted — tap «Sync now» again and allow access");
