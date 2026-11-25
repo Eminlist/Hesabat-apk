@@ -64,53 +64,13 @@ class GoogleSync {
         this.prefs = c.getSharedPreferences("gsync", Context.MODE_PRIVATE);
     }
 
-    /** MD5 of what Google holds as far as this phone knows (set after every download/upload). */
-    private static String md5(byte[] b) {
-        try {
-            byte[] d = java.security.MessageDigest.getInstance("MD5").digest(b);
-            StringBuilder sb = new StringBuilder();
-            for (byte x : d) sb.append(String.format("%02x", x));
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
+    /** First link: until the Google copy has come to the phone, nothing is sent from the phone. */
+    boolean needLink() {
+        return prefs.getBoolean("needLink", false);
     }
 
-    /**
-     * Background upload (app closed, internet came back): the phone's copy goes to Google only if
-     * nobody else changed the Google copy since this phone last saw it; otherwise false and the app
-     * merges both the next time it is opened, so nothing is lost either way.
-     */
-    boolean uploadIfUnchanged(String json) throws Exception {
-        String token = token();
-        try {
-            return uploadIfUnchangedWith(token, json);
-        } catch (HttpError e) {
-            if (e.code != 401) throw explain(e);
-            token = freshToken(token);
-            try {
-                return uploadIfUnchangedWith(token, json);
-            } catch (HttpError e2) {
-                throw explain(e2);
-            }
-        }
-    }
-
-    private boolean uploadIfUnchangedWith(String token, String json) throws Exception {
-        String id = fileId(token);
-        if (id != null) {
-            String remote = "";
-            try {
-                byte[] res = http("GET", API + "/" + id + "?fields=md5Checksum", token, null, null);
-                remote = new JSONObject(new String(res, UTF8)).optString("md5Checksum", "");
-            } catch (HttpError e) {
-                if (e.code != 404) throw e;
-                prefs.edit().remove("fileId").apply();
-            }
-            if (!remote.isEmpty() && !remote.equals(prefs.getString("lastMd5", ""))) return false;
-        }
-        uploadWith(token, json);
-        return true;
+    void setNeedLink(boolean on) {
+        prefs.edit().putBoolean("needLink", on).apply();
     }
 
     /** The linked Google account (e-mail), or "" when sync is off. */
@@ -167,9 +127,7 @@ class GoogleSync {
         String id = fileId(token);
         if (id == null) return "";
         try {
-            byte[] got = http("GET", API + "/" + id + "?alt=media", token, null, null);
-            prefs.edit().putString("lastMd5", md5(got)).apply();
-            return new String(got, UTF8).trim();
+            return new String(http("GET", API + "/" + id + "?alt=media", token, null, null), UTF8).trim();
         } catch (HttpError e) {
             if (e.code != 404) throw e;
             // the file was removed on Drive: look it up again by name
@@ -185,7 +143,6 @@ class GoogleSync {
         if (id != null) {
             try {
                 http("PATCH", UPLOAD + "/" + id + "?uploadType=media", token, "application/json; charset=UTF-8", data);
-                prefs.edit().putString("lastMd5", md5(data)).apply();
                 return;
             } catch (HttpError e) {
                 if (e.code != 404) throw e;
@@ -201,7 +158,7 @@ class GoogleSync {
         body.write(("\r\n--" + boundary + "--\r\n").getBytes(UTF8));
         byte[] res = http("POST", UPLOAD + "?uploadType=multipart&fields=id", token, "multipart/related; boundary=" + boundary, body.toByteArray());
         String newId = new JSONObject(new String(res, UTF8)).optString("id", "");
-        if (!newId.isEmpty()) prefs.edit().putString("fileId", newId).putString("lastMd5", md5(data)).apply();
+        if (!newId.isEmpty()) prefs.edit().putString("fileId", newId).apply();
     }
 
     /** The sync file's id in the app folder (newest one, if two phones made one each), or null. */

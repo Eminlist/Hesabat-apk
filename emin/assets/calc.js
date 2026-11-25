@@ -1,8 +1,7 @@
 // My Finance™ — hesablamalar (məbləğlər qəpiklə, tam ədəd)
 // Kassa: gəlir (in), xərc (out), nisyədən ödəniş (pay). Nisyə (nisye) kassaya yazılmır.
-// Borclar (köhnə Emin Hesabatdakı kimi):
-//   Aldığım borc — alanda gəlirə (+), qaytaranda (brep) xərcə (−) düşür.
-//   Verdiyim borc və onun qaytarılması (lback) ümumi hesaba QATILMIR — yalnız xatırlatma.
+// Borclar: aldığım borc və onun qaytarılması (brep), verdiyim borc və onun qaytarılması (lback)
+//   gəlirə, xərcə və kassa qalığına QATILMIR — yalnız Borclar bölməsində izlənir və xatırladılır.
 (function (g) {
   'use strict';
   const pad = n => String(n).padStart(2, '0');
@@ -81,6 +80,21 @@
       age: ageDays >= 90 ? 3 : ageDays >= 60 ? 2 : ageDays >= 30 ? 1 : 0,
       hasHistory: ns.length + ps.length > 0, last: last ? when(last) : '' };
   }
+  // orta ödəmə müddəti: ödənişlər ən köhnə nisyədən bağlanır; nisyə tam bağlandığı ödənişin günü − nisyə günü
+  function payStats(db, cid) {
+    const ns = db.ops.filter(o => o.kind === 'nisye' && o.cid === cid).sort(byWhen);
+    const ps = db.ops.filter(o => o.kind === 'pay' && o.cid === cid).sort(byWhen);
+    const left = ns.map(n => n.amount), days = [];
+    let i = 0;
+    for (const p of ps) {
+      let amt = p.amount;
+      while (amt > 0 && i < ns.length) {
+        const use = Math.min(amt, left[i]); left[i] -= use; amt -= use;
+        if (left[i] === 0) { days.push(Math.max(0, daysBetween(ns[i].date, p.date))); i++; }
+      }
+    }
+    return { avg: days.length ? Math.round(days.reduce((s, d) => s + d, 0) / days.length) : null, count: days.length };
+  }
   // ümumi çöldə olan pul (aktiv nisyə)
   function outstanding(db, today) {
     let total = 0, count = 0;
@@ -96,19 +110,14 @@
 
   // ---- kassa ----
   function flow(db, from, to) {
-    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, borrowIn: 0, borrowOut: 0, count: 0 };
+    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, count: 0 };
     for (const o of db.ops) {
       if (o.date < from || o.date > to) continue;
       f.count++;
       const card = o.method === 'card';
       if (isMoneyIn(o)) { if (card) f.inCard += o.amount; else f.inCash += o.amount; if (o.kind === 'pay') f.payIn += o.amount; }
-      else if (o.kind === 'out' || o.kind === 'brep') { if (card) f.outCard += o.amount; else f.outCash += o.amount; if (o.kind === 'brep') f.borrowOut += o.amount; }
+      else if (o.kind === 'out') { if (card) f.outCard += o.amount; else f.outCash += o.amount; }
       else if (o.kind === 'nisye') f.nisye += o.amount;
-    }
-    for (const d of db.debts || []) {
-      if (d.side !== 'borrow' || d.date < from || d.date > to) continue;
-      if (d.method === 'card') f.inCard += d.amount; else f.inCash += d.amount;
-      f.borrowIn += d.amount;
     }
     f.income = f.inCash + f.inCard;
     f.expense = f.outCash + f.outCard;
@@ -207,5 +216,5 @@
   // ---- WhatsApp mesaj tonu: gecikmə gününə görə ----
   const toneFor = overdue => overdue >= 15 ? 3 : overdue >= 5 ? 2 : 1;
 
-  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn, debtTotal, debtPaid, backKind, parties, allocBack, migrateOld };
+  g.MF = { pad, norm, byWhen, when, daysBetween, addDays, addMonths, evalExpr, hasOp, custState, payStats, outstanding, history, flow, balances, recDate, recPaid, recStatus, toneFor, isMoneyIn, debtTotal, debtPaid, backKind, parties, allocBack, migrateOld };
 })(typeof window !== 'undefined' ? window : globalThis);

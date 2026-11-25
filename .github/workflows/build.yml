@@ -56,10 +56,6 @@ jobs:
             if gh release view "r$C" >/dev/null 2>&1; then echo "$PFX: r$C artıq var, yığılmır"; return 0; fi
             rm -rf "$W" && mkdir -p "$W/gen" "$W/classes" "$W/dex" && cp -r "$SRC/res" "$W/res"
             cp "$SRC/AndroidManifest.xml" "$W/AndroidManifest.xml"
-            if [ -n "$LABEL" ]; then
-              sed -i 's/az\.usta\.hesab\.share/az.usta.hesabatim.share/' "$W/AndroidManifest.xml"
-              sed -i "s|<string name=\"app_name\">[^<]*</string>|<string name=\"app_name\">$LABEL</string>|" "$W/res/values/strings.xml"
-            fi
             aapt package -f -M "$W/AndroidManifest.xml" -S "$W/res" -A "$SRC/assets" -I $AJAR $EXTRA --custom-package az.usta.hesab -J "$W/gen" -F "$W/u.apk"
             javac -Xlint:-options -source 8 -target 8 -bootclasspath $AJAR -d "$W/classes" $(find "$SRC/src" "$W/gen" -name "*.java")
             d8 --min-api 24 --lib $AJAR --output "$W/dex" $(find "$W/classes" -name "*.class")
@@ -74,9 +70,7 @@ jobs:
             echo "$C|$V|$OUT" >> out/list.txt
           }
 
-          # Akif Hesabat (Hesabatım, az.usta.hesabatim) — əsas qovluqdakı kod
-          app . Hesabatim "--rename-manifest-package az.usta.hesabatim" "Hesabatım"
-          # Emin Hesabat (Hesabat, az.usta.hesab) — emin/ qovluğundakı kod
+          # My Finance™ (az.usta.hesab) — emin/ qovluğundakı kod
           app emin Hesabat "" ""
           rm -f /tmp/release.p12
           touch out/list.txt
@@ -95,9 +89,9 @@ jobs:
         run: |
           set -eo pipefail
           git log -1 --format=%B > notes.txt
-          # hər proqramın öz release-i: Hesabatim-*.apk yalnız Akif Hesabatı, Hesabat-*.apk yalnız Emin Hesabatı yeniləyir
+          # My Finance™ release-i (tag: r<versionCode>)
           while IFS='|' read -r C V A; do
             [ -n "$C" ] || continue
-            case "$A" in out/Hesabatim-*) T="Akif Hesabat $V";; *) T="My Finance™ $V";; esac
+            T="My Finance™ $V"
             gh release create "r$C" "$A" --title "$T" --notes-file notes.txt --latest
           done < out/list.txt

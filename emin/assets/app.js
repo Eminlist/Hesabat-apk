@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev 011';
+const APP_VERSION = '3.1.3 Rev 012';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -55,7 +55,8 @@ let loadBroken = false; // fayl oxunmadısa, üstünə boş məlumat yazılması
 function load() {
   let raw = '';
   try { raw = hasNative ? Android.load() : (localStorage.getItem('myFinance') || ''); } catch (e) {}
-  if (!raw) freshInstall = true;
+  if (raw === '!BROKEN') { raw = ''; loadBroken = true; } // fayl var, amma oxunmur — üstünə yazılmır
+  else if (!raw) freshInstall = true;
   if (raw) {
     try {
       const d = JSON.parse(raw);
@@ -64,9 +65,11 @@ function load() {
     } catch (e) { loadBroken = true; alert(L('Məlumat oxunmadı: {0}', e.message)); }
   }
   fixDb();
-  purgeTrash();
+  if (loadBroken) return;
+  if (purgeTrash()) startChanged = true;
   importOldDebts();
 }
+let startChanged = false;
 // köhnə Emin Hesabatda yazılan borclar (verdiyim / aldığım) bir dəfə avtomatik köçürülür
 function importOldDebts() {
   if (db.cfg.oldDebts || !hasNative || !Android.loadOld) return;
@@ -102,9 +105,10 @@ const TRASH_DAYS = 30;
 function purgeTrash() {
   const lim = Date.now() - TRASH_DAYS * 86400000;
   const old = db.trash.filter(e => e.at < lim);
-  if (!old.length) return;
+  if (!old.length) return false;
   for (const e of old) db.removed[e.id] = Date.now();
   db.trash = db.trash.filter(e => e.at >= lim);
+  return true;
 }
 function trashOp(o) {
   db.ops = db.ops.filter(x => x.id !== o.id);
@@ -131,10 +135,11 @@ function trashDebt(d) {
 }
 
 // ---------- Google ilə sinxron (hər dəyişiklik dərhal göndərilir) ----------
-const sync = { account: '', status: 'idle', msg: '', last: 0, running: false, again: false, timer: null, dirty: false, ver: 0, sent: -1, retry: null, wait: 0, check: false, restore: false };
-try { sync.last = +localStorage.getItem('mfLastSync') || 0; sync.dirty = localStorage.getItem('mfSyncDirty') === '1'; } catch (e) {}
+const sync = { account: '', status: 'idle', msg: '', last: 0, running: false, again: false, queued: null, mode: '', timer: null, dirty: false, ver: 0, sent: -1, sentPending: 0, pending: 0, retry: null, wait: 0 };
+try { sync.last = +localStorage.getItem('mfLastSync') || 0; sync.dirty = localStorage.getItem('mfSyncDirty') === '1'; sync.pending = +localStorage.getItem('mfPending') || 0; } catch (e) {}
 function markDirty() {
-  sync.ver++;
+  sync.ver++; sync.pending++;
+  try { localStorage.setItem('mfPending', sync.pending); } catch (e) {}
   if (!sync.dirty) { sync.dirty = true; try { localStorage.setItem('mfSyncDirty', '1'); } catch (e) {} }
 }
 // ---------- ayarların sinxronu: hər ayarın öz vaxtı var, ən son dəyişən qalib gəlir ----------
@@ -173,7 +178,9 @@ function captureDeviceCfg() {
   for (const k of ['shop', 'req', 'tags']) if (db.cfg.t[k] == null) db.cfg.t[k] = db.cfg.u || 0;
   // yeni quraşdırılmış proqramın standart ayarları Google-dakıları üstələməsin (vaxt 0)
   const c = readDeviceCfg(), tt = freshInstall ? 0 : 1;
-  for (const k of Object.keys(c)) if (db.cfg.t[k] == null) { db.cfg[k] = c[k]; db.cfg.t[k] = tt; }
+  let ch = false;
+  for (const k of Object.keys(c)) if (db.cfg.t[k] == null) { db.cfg[k] = c[k]; db.cfg.t[k] = tt; ch = true; }
+  return ch;
 }
 // bazadakı ayarlar bu telefona tətbiq olunur (yeni telefon / proqram yenidən quraşdırılanda)
 function applyCfg() {
@@ -214,84 +221,115 @@ function mergeDb(a, b) {
   out.cfg = mergeCfg(a.cfg, b.cfg);
   return out;
 }
+// ---------- Google sinxronu ----------
+// link    — ilk qoşulma: Google-dakı hər şey (məlumat + ayarlar) telefona gəlir, sonra birlikdə Google-a yazılır
+// push    — telefondakı tam baza Google-a yüklənir (hər əməliyyatdan sonra avtomatik və «Sinxron et» ilə)
+// check   — yalnız müqayisə: Google və telefon eynidirmi (heç nə yükləmir, heç nə dəyişmir)
+// restore — «Google-dan geri yüklə»: Google-dakı baza telefondakını əvəz edir
+const needLink = () => { try { return !!(hasNative && Android.needLink && Android.needLink()); } catch (e) { return false; } };
 function scheduleSync() {
   if (!sync.account) return;
   clearTimeout(sync.timer);
-  sync.timer = setTimeout(runSync, 150);
+  sync.timer = setTimeout(() => runSync('push'), 150);
 }
-function runSync() {
+function runSync(kind) {
+  kind = kind || 'push';
   if (!sync.account || !hasNative) return;
+  if (kind === 'push' && needLink()) kind = 'link'; // Google-dakı hələ gəlməyib: əvvəlcə onu götür
+  if (kind === 'push' && loadBroken) return; // zədələnmiş/boş baza heç vaxt Google-un üstünə yazılmır
+  if (kind === 'link' && loadBroken) kind = 'restore';
   clearTimeout(sync.timer); clearTimeout(sync.retry);
-  if (sync.running) { sync.again = true; return; }
-  sync.running = true; sync.status = 'syncing'; refreshSettings();
-  Android.syncStart();
+  if (sync.running) { if (kind === 'push') sync.again = true; else sync.queued = kind; return; }
+  sync.running = true; sync.mode = kind; sync.status = 'syncing'; refreshSettings();
+  if (kind === 'push') upload();
+  else Android.syncStart();
 }
-// yedəyin yoxlanması: Google-dakı surət telefondakı ilə müqayisə olunur
+function upload() {
+  sync.mode = 'push'; sync.sent = sync.ver; sync.sentPending = sync.pending;
+  Android.syncUpload(JSON.stringify(db));
+}
+function nextSync() {
+  if (sync.queued) { const k = sync.queued; sync.queued = null; return runSync(k); }
+  if (sync.again) { sync.again = false; return scheduleSync(); }
+}
+// müqayisə üçün: açarları sıralanmış JSON (eyni məlumat — eyni mətn)
+const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v === undefined ? null : v);
 function brief(d) {
   const x = Object.assign({ customers: [], ops: [], debts: [], recs: [] }, d), td = today();
   const b = C.balances(x, td);
   return { customers: x.customers.length, ops: x.ops.length, debts: x.debts.length, nisye: C.outstanding(x, td).total, cash: b.cash, card: b.card,
     lend: C.parties(x, 'lend', td).reduce((s, g) => s + g.left, 0), borrow: C.parties(x, 'borrow', td).reduce((s, g) => s + g.left, 0) };
 }
+function setSynced() {
+  sync.dirty = false; sync.pending = 0; sync.last = Date.now(); sync.status = 'ok'; sync.msg = '';
+  try { localStorage.setItem('mfSyncDirty', '0'); localStorage.setItem('mfPending', '0'); localStorage.setItem('mfLastSync', sync.last); } catch (e) {}
+}
 window.onSyncRemote = function (text) {
   let remote = null;
   if (text) { try { remote = JSON.parse(text); } catch (e) { remote = null; } }
-  if (sync.check) {
-    sync.check = false;
-    const a = brief(db), b = remote && remote.mf ? brief(remote) : null;
-    state.checkResult = b ? { same: JSON.stringify(a) === JSON.stringify(b), a, b } : { none: true };
+  if (remote && !remote.mf) remote = null;
+  const mode = sync.mode;
+  if (mode === 'check') {
+    state.checkResult = remote ? { same: canon(db) === canon(remote), a: brief(db), b: brief(remote) } : { none: true };
+    sync.running = false; sync.status = sync.dirty ? 'idle' : 'ok';
+    refreshSettings(); return nextSync();
   }
-  // «Google-dan geri yüklə»: Google-dakı baza telefondakını əvəz edir (əvvəlki surət telefonda saxlanılır)
-  if (sync.restore) {
-    sync.restore = false;
-    if (remote && remote.mf) {
-      try { if (hasNative && Android.backupLocal) Android.backupLocal(); } catch (e) {}
-      db = remote; fixDb(); purgeTrash(); applyCfg();
-      try { if (hasNative) Android.save(JSON.stringify(db)); } catch (e) {}
-      markDirty(); pushNative(); state.pages = state.pages.filter(p => p.kind === 'settings'); render();
+  if (mode === 'restore') {
+    if (remote) {
+      try { if (Android.backupLocal) Android.backupLocal(); } catch (e) {}
+      db = remote; fixDb(); loadBroken = false; applyCfg();
+      try { Android.save(JSON.stringify(db)); } catch (e) {}
+      setSynced(); pushNative();
+      state.pages = state.pages.filter(p => p.kind === 'settings'); state.sheet = null;
       toast(L('Google-dakı baza telefona yükləndi'));
-    } else toast(L('Google-da hələ surət yoxdur'));
-    refreshSettings();
-    sync.sent = sync.ver;
-    return Android.syncUpload(JSON.stringify(db));
+    } else { sync.status = sync.dirty ? 'idle' : 'ok'; toast(L('Google-da hələ surət yoxdur')); }
+    sync.running = false; render(); return nextSync();
   }
-  if (remote && remote.mf) {
-    const before = JSON.stringify(db);
-    db = mergeDb(db, remote); fixDb(); applyCfg();
-    if (JSON.stringify(db) !== before) {
-      try { if (hasNative) Android.save(JSON.stringify(db)); } catch (e) {}
+  if (mode === 'link') {
+    if (remote) {
+      // məlumatlar birləşir (heç nə itmir), ayarlar isə tam Google-dakı kimi olur
+      const local = db;
+      db = mergeDb(remote, local);
+      db.cfg = Object.assign({}, remote.cfg || local.cfg, { oldDebts: (remote.cfg && remote.cfg.oldDebts) || local.cfg.oldDebts ? 1 : 0 });
+      fixDb(); loadBroken = false; applyCfg();
+      try { Android.save(JSON.stringify(db)); } catch (e) {}
       markDirty(); pushNative();
-      if (!state.sheet) render(); // açıq formada yazılan silinməsin; forma bağlananda ekran yenilənir
+      if (!state.sheet) render();
+      toast(L('Google-dakı məlumat və ayarlar telefona yükləndi'));
     }
+    try { Android.linkDone(); } catch (e) {}
+    return upload(); // birləşmiş tam baza Google-a
   }
-  refreshSettings();
-  sync.sent = sync.ver;
-  Android.syncUpload(JSON.stringify(db));
+  upload();
 };
 window.onSyncStatus = function (st, msg) {
+  const mode = sync.mode;
   sync.running = false; sync.status = st; sync.msg = msg || '';
-  if (st === 'ok') {
+  if (st === 'ok' && mode === 'push') {
     sync.last = Date.now(); sync.wait = 0;
-    if (sync.sent === sync.ver) sync.dirty = false;
-    try { localStorage.setItem('mfLastSync', sync.last); localStorage.setItem('mfSyncDirty', sync.dirty ? '1' : '0'); } catch (e) {}
+    sync.pending = Math.max(0, sync.pending - (sync.sentPending || 0));
+    if (sync.sent === sync.ver) { sync.dirty = false; sync.pending = 0; }
+    try { localStorage.setItem('mfLastSync', sync.last); localStorage.setItem('mfSyncDirty', sync.dirty ? '1' : '0'); localStorage.setItem('mfPending', sync.pending); } catch (e) {}
   }
+  if (st === 'error' && mode !== 'push' && mode !== 'link') toast(L('xəta: {0}', sync.msg));
   refreshSettings();
-  if (sync.again || (st === 'ok' && sync.dirty)) { sync.again = false; scheduleSync(); }
-  else if (st === 'error' && sync.dirty) {
+  if (sync.queued || sync.again) return nextSync();
+  if (st === 'ok' && sync.dirty) return scheduleSync();
+  if (st === 'error' && (sync.dirty || needLink())) {
     sync.wait = Math.min(sync.wait ? sync.wait * 2 : 15000, 300000);
-    clearTimeout(sync.retry); sync.retry = setTimeout(runSync, sync.wait);
+    clearTimeout(sync.retry); sync.retry = setTimeout(() => runSync('push'), sync.wait);
   }
 };
-window.onAppPause = function () { if (sync.account && sync.dirty) runSync(); };
-window.onOnline = function () { if (sync.account && (sync.dirty || sync.status === 'error')) { sync.wait = 0; runSync(); } };
-window.onSyncLinked = function (name) { sync.account = name; sync.status = 'idle'; toast(L('Google hesabı qoşuldu')); render(); runSync(); };
+window.onAppPause = function () { if (sync.account && (sync.dirty || needLink())) runSync('push'); };
+window.onOnline = function () { if (sync.account && (sync.dirty || needLink() || sync.status === 'error')) { sync.wait = 0; runSync('push'); } };
+window.onSyncLinked = function (name) { sync.account = name; sync.status = 'idle'; toast(L('Google hesabı qoşuldu')); render(); runSync('link'); };
 let openedDay = today();
 window.onAppResume = function () {
-  purgeTrash();
+  if (purgeTrash()) save();
   pushNative();
   if (openedDay !== today()) { openedDay = today(); state.kday = today(); if (!state.sheet) render(); }
-  if (!sync.account && hasNative && Android.syncLinked) { sync.account = Android.syncLinked(); if (sync.account) { render(); return runSync(); } }
-  if (sync.account && (sync.dirty || Date.now() - sync.last > 60000)) runSync();
+  if (!sync.account && hasNative && Android.syncLinked) { sync.account = Android.syncLinked(); if (sync.account) { render(); return runSync('push'); } }
+  if (sync.account && (sync.dirty || needLink())) runSync('push');
 };
 function refreshSettings() { if (topPage() && topPage().kind === 'settings' && !state.sheet && !state.confirm) render(); }
 
@@ -338,7 +376,7 @@ function applyTheme() {
 applyTheme();
 
 // ---------- vəziyyət ----------
-const state = { tab: 'home', pages: [], sheet: null, confirm: null, pin: null, kday: today(), seg: 'active', tag: '', sent: {}, side: 'lend', checkResult: null };
+const state = { trashSel: new Set(), tab: 'home', pages: [], sheet: null, confirm: null, pin: null, kday: today(), seg: 'active', tag: '', sent: {}, side: 'lend', checkResult: null };
 const topPage = () => state.pages[state.pages.length - 1];
 const app = document.getElementById('app');
 
@@ -364,8 +402,8 @@ const KIND = {
   out: { t: 'Xərc', ic: '⬆', bg: 'var(--exp-soft)', col: 'var(--exp)', sign: '−', cls: 'exp' },
   nisye: { t: 'Nisyə', ic: '📝', bg: 'var(--debt-soft)', col: 'var(--debt)', sign: '', cls: 'debt' },
   pay: { t: 'Nisyədən ödəniş', ic: '💵', bg: 'var(--pay-soft)', col: 'var(--pay)', sign: '+', cls: 'pay' },
-  bin: { t: 'Borc aldım', ic: '📥', bg: 'var(--pay-soft)', col: 'var(--pay)', sign: '+', cls: 'pay' },
-  brep: { t: 'Borcu qaytardım', ic: '📤', bg: 'var(--exp-soft)', col: 'var(--exp)', sign: '−', cls: 'exp' },
+  bin: { t: 'Borc aldım', ic: '📥', bg: 'var(--exp-soft)', col: 'var(--exp)', sign: '', cls: 'zero' },
+  brep: { t: 'Borcu qaytardım', ic: '📤', bg: 'var(--exp-soft)', col: 'var(--exp)', sign: '', cls: 'zero' },
   lout: { t: 'Borc verdim', ic: '🤝', bg: 'var(--amber-soft)', col: 'var(--amber)', sign: '', cls: 'zero' },
   lback: { t: 'Borc qaytarıldı', ic: '↩️', bg: 'var(--amber-soft)', col: 'var(--amber)', sign: '', cls: 'zero' }
 };
@@ -386,7 +424,7 @@ function opTitle(o) {
 function opRow(o, showDate) {
   const k = KIND[o.kind];
   const extra = o.kind === 'in' && o.src && o.note ? o.note : (o.kind === 'nisye' || o.kind === 'pay' || (o.kind === 'out' && o.rec)) && o.note ? o.note : '';
-  const sub = [showDate ? fmtDate(o.date) : '', o.time, methodTxt(o), extra, o.kind === 'out' && o.rec ? L('sabit xərc') : '', o.kind === 'lout' || o.kind === 'lback' ? L('hesaba qatılmır') : ''].filter(Boolean).join(' · ');
+  const sub = [showDate ? fmtDate(o.date) : '', o.time, methodTxt(o), extra, o.kind === 'out' && o.rec ? L('sabit xərc') : '', ['lout', 'lback', 'bin', 'brep'].includes(o.kind) ? L('hesaba qatılmır') : ''].filter(Boolean).join(' · ');
   return `<button class="row" data-a="${o.id[0] === 'D' && o.did && (o.kind === 'lout' || o.kind === 'bin') ? 'openDebt' : 'editOp'}" data-v="${o.id}" data-s="${esc(fold([opTitle(o), o.note, o.src, o.cat, sub, money(o.amount), String(o.amount / 100).replace('.', ','), o.date].join(' ')))}" data-k="${o.kind}" data-m="${noMethod(o.kind) ? '' : (o.method || 'cash')}">
     <span class="ic" style="background:${k.bg};color:${k.col};font-size:19px">${k.ic}</span>
     <div class="grow"><div class="t">${esc(opTitle(o))}</div><div class="s">${esc(sub)}</div></div>
@@ -427,6 +465,7 @@ function renderHome() {
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(fmtDay(td))}</span><h1>${esc(APP_NAME)}</h1></div>
     <button class="tbtn" data-a="openAll">${I.search}</button><button class="tbtn" data-a="settings">${I.gear}</button></div>
   <main style="padding-top:6px">
+    ${loadBroken ? `<div class="bad-box" style="margin-bottom:12px">⚠️ ${esc(L('Telefondakı məlumat faylı zədələnib. Köhnə məlumat itməsin deyə proqram heç nə yazmır. Ayarlar → «Google-dan geri yüklə» və ya «Yedək faylından bərpa et» ilə bərpa edin.'))}</div>` : ''}
     ${due.length ? `<div class="duebox"><div class="duehead"><b>⏰ ${esc(L('Ödəmə vaxtı çatanlar ({0})', due.length))}</b><button data-a="tab" data-v="remind">${esc(L('Xatırlat'))} ›</button></div>
       ${due.slice(0, 5).map(({ c, s }) => `<button class="duerow" data-a="openCust" data-v="${c.id}"><span class="grow"><b>${esc(c.name)}</b><small>${esc(lateTxt(s))}</small></span><em class="num">${money(s.debt)}</em></button>`).join('')}
       ${due.length > 5 ? `<button class="duemore" data-a="tab" data-v="remind">${esc(L('və daha {0} nəfər', due.length - 5))} ›</button>` : ''}</div>` : ''}
@@ -497,6 +536,10 @@ function renderCustomer(pg) {
     ${late ? `<div class="odban"><span>🔴 ${esc(late)} · ${esc(L('ödəmə günü {0}', fmtDate(s.due)))}</span></div>` : s.debt > 0 && s.due ? `<div class="odban soon" style="background:var(--brand-soft);color:var(--brand)"><span>📅 ${esc(L('Ödəmə günü: {0}', fmtDate(s.due)))}</span></div>` : ''}
     ${ext ? `<div class="extnote">↻ ${esc(L('{0} dəfə uzadılıb · köhnə: {1}', ext.length, fmtShort(ext[ext.length - 1].old)))}${ext[ext.length - 1].note ? ' · ' + esc(ext[ext.length - 1].note) : ''}</div>` : ''}
     ${s.debt > 0 && s.ageDays ? `<div class="agebar ${AGE[s.age]}b">⏳ ${esc(L('Borc {0} gündür açıqdır', s.ageDays))}</div>` : ''}
+    ${(() => { const last3 = s.items.slice().sort((a, b) => C.byWhen(b.n, a.n)).slice(0, 3), ps = C.payStats(db, c.id); return last3.length ? `<div class="card" style="margin-bottom:12px">
+      <div style="font-weight:800;margin-bottom:6px">${esc(L('Son 3 nisyə'))}</div>
+      ${last3.map(x => kv(esc(fmtDate(x.n.date) + (x.n.note || x.n.src ? ' · ' + (x.n.note || x.n.src) : '')), money(x.n.amount) + ' · ' + (x.left > 0 ? L('qalıq: {0}', money(x.left)) : L('ödənilib ✓')), x.left > 0 ? 'debt' : 'pay')).join('')}
+      ${kv(esc(L('Orta ödəmə müddəti')), esc(ps.avg == null ? L('hələ tam ödənmiş nisyə yoxdur') : L('{0} gün', ps.avg)))}</div>` : ''; })()}
     <div class="acts">
       <button data-a="call" data-v="c|${c.id}"><span style="background:#E8F1FF;color:#2563EB">${I.phone}</span>${esc(L('Zəng'))}</button>
       <button data-a="msg" data-v="${c.id}"><span style="background:#E7F8EE;color:#16A34A">${I.wa}</span>WhatsApp</button>
@@ -529,15 +572,17 @@ function renderDebts() {
   const open = all.filter(g => g.left > 0).sort((a, b) => (b.overdue - a.overdue) || (a.due || '9').localeCompare(b.due || '9') || b.left - a.left);
   const done = all.filter(g => g.left <= 0).sort((a, b) => (b.first || '').localeCompare(a.first || ''));
   const sum = open.reduce((s, g) => s + g.left, 0);
+  const totL = C.parties(db, 'lend', td).reduce((s, g) => s + g.left, 0), totB = C.parties(db, 'borrow', td).reduce((s, g) => s + g.left, 0);
   const row = g => `<button class="row" data-a="openParty" data-v="${side}|${esc(g.key)}">
     <div class="avatar" style="${side === 'lend' ? 'background:var(--amber-soft);color:var(--amber)' : 'background:var(--exp-soft);color:var(--exp)'}">${esc(initials(g.name))}</div>
     <div class="grow"><div class="t">${esc(g.name)}</div><div class="s ${g.overdue ? 'late' : ''}">${g.overdue ? '🔴 ' : g.left > 0 && g.due ? '📅 ' : ''}${esc(partyDue(g))}</div></div>
     <div class="amt num ${g.left > 0 ? (side === 'lend' ? 'debt' : 'exp') : 'zero'}">${money(g.left > 0 ? g.left : g.total)}${g.left > 0 && g.back ? `<small>${esc(L('{0}-dan', money(g.total)))}</small>` : ''}</div></button>`;
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(L('Verdiyim və aldığım borclar'))}</span><h1>${esc(L('Borclar'))}</h1></div><button class="tbtn" data-a="newDebt" data-v="${side}|">${I.plus}</button></div>
   <main style="padding-top:6px">
+    <div class="hm-card dtot"><div class="hm-3" style="grid-template-columns:1fr 1fr"><div><small>${esc(L('Ümumi verdiyim qalıq'))}</small><b class="num debt">${money(totL)}</b></div><div><small>${esc(L('Ümumi aldığım qalıq'))}</small><b class="num exp">${money(totB)}</b></div></div></div>
     <div class="seg"><button class="${side === 'lend' ? 'on' : ''}" data-a="side" data-v="lend">${esc(L('Verdiyim'))}</button><button class="${side === 'borrow' ? 'on' : ''}" data-a="side" data-v="borrow">${esc(L('Aldığım'))}</button></div>
     <div class="card" style="margin-top:12px">${kv(esc(side === 'lend' ? L('Mənə qaytarılmalıdır') : L('Mən qaytarmalıyam')), money(sum), side === 'lend' ? 'debt' : 'exp')}
-      <div class="note">${esc(side === 'lend' ? L('Ümumi hesaba (gəlir, xərc, kassa) qatılmır. Qaytarma gününə 3 gün qalmış hər gün xatırladılır.') : L('Alanda gəlirə düşür (+), qaytaranda hesabımdan çıxır (−). Qaytarma gününə 3 gün qalmış hər gün xatırladılır.'))}</div></div>
+      <div class="note">${esc(side === 'lend' ? L('Ümumi hesaba (gəlir, xərc, kassa) qatılmır. Qaytarma gününə 3 gün qalmış hər gün xatırladılır.') : L('Ümumi hesaba (gəlir, xərc, kassa) qatılmır. Qaytarma gününə 3 gün qalmış hər gün xatırladılır.'))}</div></div>
     <div class="two" style="margin-bottom:12px"><button class="btn ${side === 'lend' ? 'debtb' : 'expb'}" data-a="newDebt" data-v="${side}|">${esc(side === 'lend' ? L('Borc verdim') : L('Borc aldım'))}</button><button class="btn payb" data-a="newBack" data-v="${side}|" ${open.length ? '' : 'disabled style="opacity:.45"'}>${esc(side === 'lend' ? L('Borc qaytarıldı') : L('Borcu qaytardım'))}</button></div>
     ${open.length ? `<div class="list">${open.map(row).join('')}</div>` : `<div class="empty">${esc(L('Açıq borc yoxdur'))}</div>`}
     ${done.length ? `<div class="section-title">${esc(L('Bağlanmış'))}</div><div class="list">${done.map(row).join('')}</div>` : ''}
@@ -586,7 +631,7 @@ function msgParty(g, lend) {
 
 // ---------- KASSA (Ana ekrandan açılır) ----------
 function renderKassa() {
-  const d = state.kday, f = C.flow(db, d, d), B = C.balances(db, d), td = today();
+  const d = state.kday, f = C.flow(db, d, d), B = C.balances(db, d), B0 = C.balances(db, C.addDays(d, -1)), td = today();
   const ops = sortDesc(allOps().filter(o => o.date === d));
   return `<div class="page">${pageHead(L('Kassa'), `<button data-a="openAll">${I.search}</button>`)}
   <main style="padding-top:6px;padding-bottom:40px">
@@ -599,10 +644,12 @@ function renderKassa() {
     </div>
     <div class="card">
       <div class="ktab"><span></span><b>💵 ${esc(L('Nağd'))}</b><b>💳 ${esc(L('Kart'))}</b></div>
-      <div class="ktab"><span>${esc(L('Gəlir'))}</span><b class="num pay">${money(f.inCash)}</b><b class="num pay">${money(f.inCard)}</b></div>
-      <div class="ktab"><span>${esc(L('Xərc'))}</span><b class="num exp">${money(f.outCash)}</b><b class="num exp">${money(f.outCard)}</b></div>
-      ${kv(esc(L('Günün gəliri')), money(f.income), 'pay')}${f.payIn ? kv('&nbsp;&nbsp;' + esc(L('o cümlədən nisyədən ödəniş')), money(f.payIn), 'pay') : ''}${f.borrowIn ? kv('&nbsp;&nbsp;' + esc(L('o cümlədən aldığım borc')), money(f.borrowIn), 'pay') : ''}
-      ${kv(esc(L('Günün xərci')), money(f.expense), 'exp')}${f.borrowOut ? kv('&nbsp;&nbsp;' + esc(L('o cümlədən qaytardığım borc')), money(f.borrowOut), 'exp') : ''}
+      <div class="ktab"><span>${esc(L('Günün başlanğıcı'))}</span><b class="num">${money(B0.cash)}</b><b class="num">${money(B0.card)}</b></div>
+      <div class="ktab"><span>${esc(L('Bu gün daxil olan'))}</span><b class="num pay">${f.inCash ? '+' : ''}${money(f.inCash)}</b><b class="num pay">${f.inCard ? '+' : ''}${money(f.inCard)}</b></div>
+      <div class="ktab"><span>${esc(L('Bu gün çıxan'))}</span><b class="num exp">${f.outCash ? '−' : ''}${money(f.outCash)}</b><b class="num exp">${f.outCard ? '−' : ''}${money(f.outCard)}</b></div>
+      <div class="ktab"><span><b>${esc(L('Gün sonu qalığı'))}</b></span><b class="num ${B.cash < 0 ? 'neg' : ''}">${money(B.cash)}</b><b class="num ${B.card < 0 ? 'neg' : ''}">${money(B.card)}</b></div>
+      ${kv(esc(L('Günün gəliri')), money(f.income), 'pay')}${f.payIn ? kv('&nbsp;&nbsp;' + esc(L('o cümlədən nisyədən ödəniş')), money(f.payIn), 'pay') : ''}
+      ${kv(esc(L('Günün xərci')), money(f.expense), 'exp')}
       ${kv(esc(L('Günün nəticəsi')), money(f.net), f.net < 0 ? 'neg' : 'pay')}${f.nisye ? kv(esc(L('Verilən nisyə (kassaya yazılmır)')), money(f.nisye), 'debt') : ''}
     </div>
     <div class="two"><button class="btn payb" data-a="addOn" data-v="in">+ ${esc(L('Gəlir'))}</button><button class="btn expb" data-a="addOn" data-v="out">− ${esc(L('Xərc'))}</button></div>
@@ -712,11 +759,11 @@ function renderSettings() {
       ${srow('summary', null, '🔔', '#F76B15', L('Günün sonu kassa xatırlatması'), `<em>${esc(sum || L('sönülü'))}</em>`)}
     </div>
     <div class="slabel">${esc(L('Ehtiyat nüsxə'))}</div>
-    <div class="card">${sync.account ? `<b>✅ Google Drive: ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}${last ? '<br>' + esc(L('Son göndəriş: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes()))) : ''}</div>
-      <button class="btn ghost" data-a="syncNow">🔄 ${esc(L('İndi göndər'))}</button>
+    <div class="card">${sync.account ? `<b>✅ Google Drive: ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}<br>${esc(last ? L('Son uğurlu sinxron: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + '.' + last.getFullYear() + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes())) : L('Son uğurlu sinxron: hələ olmayıb'))}<br><b class="${sync.pending ? 'neg' : 'pay'}">${esc(sync.pending ? L('Göndərilməmiş dəyişiklik: {0}', sync.pending) : L('Göndərilməmiş dəyişiklik yoxdur ✓'))}</b></div>
+      <button class="btn ghost" data-a="syncNow">🔄 ${esc(L('Sinxron et'))}</button>
       <button class="btn ghost" data-a="checkBackup">🔍 ${esc(L('Yedəyi yoxla'))}</button>
       <button class="btn ghost" data-a="syncRestore">☁️ ${esc(L('Google-dan geri yüklə'))}</button>
-      ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var — birləşdirildi və yenidən göndərildi.'))}<br>${esc(L('Telefon: {0} əməliyyat · Google: {1} əməliyyat', R.a.ops, R.b.ops))}</div>`) : ''}
+      ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə tam eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var: Google-dakı surət telefondakı ilə eyni deyil.'))}<br>${esc(L('Telefon: {0} müştəri · {1} əməliyyat · {2} borc', R.a.customers, R.a.ops, R.a.debts))}<br>${esc(L('Google: {0} müştəri · {1} əməliyyat · {2} borc', R.b.customers, R.b.ops, R.b.debts))}<br>${esc(L('Telefondakını Google-a yükləmək üçün «Sinxron et» basın.'))}</div>`) : ''}
       <button class="btn danger" data-a="syncUnlink">${esc(L('Google hesabından ayır'))}</button>`
       : `<div class="note">${esc(L('Google hesabını qoşun: hər dəyişiklik avtomatik öz Google Drive-ınıza yazılsın. Telefon dəyişəndə eyni Gmail ilə hər şey geri gəlir.'))}</div><button class="btn primary" data-a="syncLink">${esc(L('Google Drive-a qoş'))}</button>`}</div>
     <div class="sgroup">
@@ -755,7 +802,9 @@ function renderTrash() {
   return `<div class="page">${pageHead(L('Zibil qutusu'))}
   <main style="padding-top:6px;padding-bottom:40px">
     <div class="note" style="margin:0 4px 10px">${esc(L('Silinən qeydlər burada 30 gün saxlanılır, sonra avtomatik həmişəlik silinir.'))}</div>
-    ${db.trash.length ? `<div class="list">${db.trash.map(e => `<div class="row"><div class="grow"><div class="t">${esc(trashLabel(e))}</div><div class="s">${esc(L('{0} gün qalıb', left(e)))}</div></div>
+    ${db.trash.length ? `<div class="two" style="margin-bottom:10px"><button class="btn ghost" style="margin:0" data-a="restoreSel" ${state.trashSel.size ? '' : 'disabled style="opacity:.45;margin:0"'}>${esc(L('Seçilmişləri bərpa et ({0})', state.trashSel.size))}</button><button class="btn payb" style="margin:0" data-a="restoreAll">${esc(L('Hamısını bərpa et'))}</button></div>
+      <button class="pinlink" style="margin:0 4px 8px" data-a="trashSelAll">${esc(db.trash.every(e => state.trashSel.has(e.id)) ? L('Seçimi götür') : L('Hamısını seç'))}</button>
+      <div class="list">${db.trash.map(e => `<div class="row"><input type="checkbox" class="tchk" data-a="trashSel" data-v="${e.id}" ${state.trashSel.has(e.id) ? 'checked' : ''}><div class="grow"><div class="t">${esc(trashLabel(e))}</div><div class="s">${esc(L('{0} gün qalıb', left(e)))}</div></div>
       <button class="mini" data-a="restore" data-v="${e.id}">${esc(L('Qaytar'))}</button></div>`).join('')}</div>
       <button class="btn danger" data-a="emptyTrash">${esc(L('Zibil qutusunu boşalt'))}</button>` : `<div class="empty">${esc(L('Zibil qutusu boşdur'))}</div>`}
   </main></div>`;
@@ -806,7 +855,7 @@ const fNote = (v, label, ph) => `<label>${esc(label || L('Qeyd'))}</label><input
 const saveBtn = (a, label, cls) => `<button class="btn ${cls || 'primary'}" data-a="${a}">${esc(label || L('Yadda saxla'))}</button>`;
 const fWho = () => `<label>${esc(L('Müştəri'))}</label><div style="display:flex;gap:8px"><input class="field" id="f_name" placeholder="${esc(L('Ad yazın və ya seçin'))}" autocomplete="off"><button class="iconbtn" data-a="contact">📇</button></div>
   <div class="whosug" id="whosug"></div>`;
-const dueChips = base => [[L('3 gün'), 3], [L('7 gün'), 7], [L('10 gün'), 10], [L('15 gün'), 15], [L('1 ay'), 'm']].map(([l, v]) => `<button class="chip" data-a="dueSet" data-v="${v}"${base ? ` data-base="${esc(base)}"` : ''}>${esc(l)}</button>`).join('');
+const dueChips = base => [['+' + L('{0} gün', 7), 7], ['+' + L('{0} gün', 14), 14], ['+' + L('{0} gün', 30), 30]].map(([l, v]) => `<button class="chip" data-a="dueSet" data-v="${v}"${base ? ` data-base="${esc(base)}"` : ''}>${esc(l)}</button>`).join('');
 const fDue = (due, label) => `<label>${esc(label || L('Ödəmə günü'))}</label><div class="chips" style="margin:0 0 8px">${dueChips()}</div>
   <input class="field" id="f_due" type="date" value="${esc(due || '')}">`;
 // yazdıqca hərfə uyğun təkliflər (gəlir mənbəyi, xərc kateqoriyası)
@@ -884,6 +933,7 @@ function renderSheet(s) {
       const tags = c ? c.tags || [] : [];
       return `<h2>${esc(c ? L('Müştərini düzəlt') : L('Yeni müştəri'))}</h2>
       <label>${esc(L('Ad'))}</label><div style="display:flex;gap:8px"><input class="field" id="f_name" value="${esc(c ? c.name : '')}" autocomplete="off"><button class="iconbtn" data-a="contact">📇</button></div>
+      ${c ? '' : '<div class="whosug" id="whosug"></div>'}
       <label>${esc(L('Telefon'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" value="${esc(c ? c.phone || '' : '')}" autocomplete="off">
       <label>${esc(L('Qruplar'))}</label><div class="chips" style="margin:0" data-group="tags">${db.cfg.tags.map(t => `<button class="chip ${tags.includes(t) ? 'on' : ''}" data-a="tagToggle" data-v="${esc(t)}">${esc(tagName(t))}</button>`).join('')}</div>
       ${saveBtn('saveCust')}`;
@@ -1058,6 +1108,34 @@ window.showPinLock = function (askBio) {
 window.onBioOk = function () { if (state.pin && state.pin.mode === 'unlock') { state.pin = null; render(); window.onAppResume(); } };
 window.onPinReset = function () { state.pin = null; try { localStorage.removeItem('mfLockType'); } catch (e) {} savePinCfg(); render(); toast(L('Kilid silindi. İstəsəniz, Ayarlarda yenisini qoyun.')); };
 
+// ---------- zibil qutusundan qaytarma ----------
+// bir qeydi yerinə qaytarır; alınmasa səbəbini qaytarır
+function restoreEntry(e, t) {
+  if (e.kind === 'op') {
+    if (e.op.cid && !cust(e.op.cid)) return L('Əvvəlcə müştərini qaytarın');
+    if (e.op.did && !debtRec(e.op.did)) return L('Əvvəlcə borcu qaytarın');
+    if (!db.ops.some(o => o.id === e.op.id)) { e.op.u = t; db.ops.push(e.op); }
+  } else if (e.kind === 'cust') {
+    if (!cust(e.cust.id)) { e.cust.u = t; db.customers.push(e.cust); }
+    for (const o of e.ops) if (!db.ops.some(x => x.id === o.id)) { o.u = t; db.ops.push(o); }
+  } else if (e.kind === 'debt') {
+    if (!debtRec(e.debt.id)) { e.debt.u = t; db.debts.push(e.debt); }
+    for (const o of e.ops) if (!db.ops.some(x => x.id === o.id)) { o.u = t; db.ops.push(o); }
+  } else if (e.kind === 'rec') { if (!db.recs.some(r => r.id === e.rec.id)) { e.rec.u = t; db.recs.push(e.rec); } }
+  db.trash = db.trash.filter(x => x.id !== e.id); db.removed[e.id] = t;
+  return '';
+}
+// bir neçəsi: əvvəl müştərilər, borclar və sabit xərclər, sonra onların əməliyyatları
+function restoreMany(list) {
+  if (!list.length) return toast(L('Heç nə seçilməyib'));
+  const t = Date.now(), order = e => e.kind === 'op' ? 1 : 0;
+  let ok = 0, bad = 0;
+  for (const e of list.slice().sort((a, b) => order(a) - order(b))) { if (restoreEntry(e, t)) bad++; else { ok++; state.trashSel.delete(e.id); } }
+  if (ok) save();
+  render();
+  toast(bad ? L('{0} qeyd qaytarıldı, {1} qeyd qaytarılmadı (müştərisi və ya borcu yoxdur)', ok, bad) : L('{0} qeyd qaytarıldı', ok));
+}
+
 // ---------- çəkmək ----------
 let lastKey = '';
 function render() {
@@ -1122,7 +1200,7 @@ window.onImported = function (text) {
   try { d = JSON.parse(text); } catch (e) {}
   if (!d || !d.mf) return toast(L('Bu fayl My Finance™ yedəyi deyil'));
   ask({ title: L('Yedək faylından bərpa edilsin?'), text: L('Faylda {0} müştəri və {1} əməliyyat var. Telefondakı məlumatlar silinmir — fayldakılar onlarla birləşdirilir.', (d.customers || []).length, (d.ops || []).length), ok: L('Bərpa et'), icon: '📥',
-    run() { db = mergeDb(db, d); fixDb(); applyCfg(); save(); toast(L('Bərpa olundu')); } });
+    run() { db = mergeDb(db, d); fixDb(); loadBroken = false; applyCfg(); save(); toast(L('Bərpa olundu')); } });
 };
 window.onImportedXlsx = function () { toast(L('Bərpa üçün .json yedək faylını seçin')); };
 
@@ -1130,6 +1208,12 @@ window.onImportedXlsx = function () { toast(L('Bərpa üçün .json yedək fayl�
 function whoSuggest() {
   const box = document.getElementById('whosug'), inp = document.getElementById('f_name');
   if (!box || !inp || !state.sheet) return;
+  if (state.sheet.kind === 'cust') { // yeni müştəri: «Belə müştəri var» — ad və telefon, toxunanda açılır
+    const q = fold(inp.value);
+    const list = q.length > 1 ? db.customers.filter(c => fold(c.name).includes(q)).slice(0, 5) : [];
+    box.innerHTML = list.length ? `<div class="whophone">${esc(L('Belə müştəri var:'))}</div>` + list.map(c => `<button class="whorow" data-a="openCust" data-v="${c.id}"><span class="avatar" style="width:34px;height:34px;border-radius:11px;font-size:13px">${esc(initials(c.name))}</span><span class="grow"><b>${esc(c.name)}</b><small>${esc(c.phone || L('nömrə yoxdur'))}</small></span></button>`).join('') : '';
+    return;
+  }
   const q = fold(inp.value), qd = inp.value.replace(/\D/g, '');
   const exact = db.customers.find(c => C.norm(c.name) === C.norm(inp.value));
   const list = q ? db.customers.filter(c => c !== exact && (fold(c.name).includes(q) || (qd.length > 2 && (c.phone || '').replace(/\D/g, '').includes(qd)))).slice(0, 5) : [];
@@ -1319,8 +1403,8 @@ function xlsx(sheets) {
 function exportXlsx() {
   const td = today(), q = v => Math.round(v) / 100;
   const ops = allOps().sort(C.byWhen);
-  const sign = o => (o.kind === 'out' || o.kind === 'brep') ? -1 : 1;
-  const kassa = [[L('Tarix'), L('Saat'), L('Növ'), L('Mənbə / Kateqoriya'), L('Müştəri / Qeyd'), L('Üsul'), L('Məbləğ (₼)')]].concat(ops.filter(o => !noMethod(o.kind)).map(o => [o.date, o.time || '', L(KIND[o.kind].t), o.src || o.cat || '', o.cid ? cname(o.cid) + (o.note ? ' — ' + o.note : '') : o.did ? (debtRec(o.did) || {}).name || '' : (o.note || ''), o.method === 'card' ? L('Kart') : L('Nağd'), sign(o) * q(o.amount)]));
+  const sign = o => o.kind === 'out' ? -1 : 1;
+  const kassa = [[L('Tarix'), L('Saat'), L('Növ'), L('Mənbə / Kateqoriya'), L('Müştəri / Qeyd'), L('Üsul'), L('Məbləğ (₼)')]].concat(ops.filter(o => ['in', 'out', 'pay'].includes(o.kind)).map(o => [o.date, o.time || '', L(KIND[o.kind].t), o.src || o.cat || '', o.cid ? cname(o.cid) + (o.note ? ' — ' + o.note : '') : o.did ? (debtRec(o.did) || {}).name || '' : (o.note || ''), o.method === 'card' ? L('Kart') : L('Nağd'), sign(o) * q(o.amount)]));
   const B = C.balances(db, td);
   kassa.push([], ['', '', '', '', L('Kassada nağd'), '', q(B.cash)], ['', '', '', '', L('Kartda'), '', q(B.card)], ['', '', '', '', L('Cəmi'), '', q(B.total)]);
   const nis = [[L('Müştəri'), L('Tarix'), L('Məbləğ (₼)'), L('Ödəmə günü'), L('Qeyd'), L('Uzadılıb')]].concat(ops.filter(o => o.kind === 'nisye').map(o => [cname(o.cid), o.date, q(o.amount), o.due || '', [o.src, o.note].filter(Boolean).join(' · '), o.ext && o.ext.length ? o.ext.length : '']));
@@ -1507,7 +1591,7 @@ const actions = {
     }
     else db.debts.push(touch(Object.assign({ id: uid(), c: Date.now() }, data)));
     save(); closeSheet();
-    toast(side === 'lend' ? L('Verdiyim borc yazıldı (hesaba qatılmır)') : L('Aldığım borc yazıldı'));
+    toast(side === 'lend' ? L('Verdiyim borc yazıldı (hesaba qatılmır)') : L('Aldığım borc yazıldı (hesaba qatılmır)'));
   },
   delDebt(v) {
     const d = debtRec(v); if (!d) return;
@@ -1585,13 +1669,13 @@ const actions = {
   saveSummary() { const t = val('f_sum'); if (!t) return; if (hasNative) Android.setSummaryTime(t); setCfg('sum', t); save(); closeSheet(); toast(L('Hər gün {0}-da xatırladılacaq', t)); },
   offSummary() { if (hasNative) Android.setSummaryTime(''); setCfg('sum', ''); save(); closeSheet(); },
   syncLink() { if (hasNative) Android.syncLink(); },
-  syncNow() { runSync(); },
+  syncNow() { if (!sync.account) return; if (loadBroken) return toast(L('Məlumat faylı zədələnib — Google-a göndərilmir')); toast(L('Google-a göndərilir…')); runSync('push'); },
   syncRestore() {
     if (!sync.account) return;
     ask({ title: L('Google-dakı baza telefona yüklənsin?'), text: L('Telefondakı indiki məlumat Google-dakı surətlə əvəz olunacaq. Telefondakı əvvəlki məlumatın surəti telefonda ayrıca saxlanılır.'), ok: L('Yüklə'), icon: '☁️',
-      run() { sync.restore = true; toast(L('Yüklənir…')); runSync(); } });
+      run() { toast(L('Yüklənir…')); runSync('restore'); } });
   },
-  checkBackup() { if (!sync.account) return; state.checkResult = null; sync.check = true; toast(L('Yoxlanılır…')); runSync(); },
+  checkBackup() { if (!sync.account) return; state.checkResult = null; toast(L('Yoxlanılır…')); runSync('check'); },
   syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; } }); },
   xlsx() { exportXlsx(); },
   backupFile() { if (hasNative) Android.shareFile(JSON.stringify(db), 'MyFinance-yedek-' + today() + '.json'); },
@@ -1600,25 +1684,18 @@ const actions = {
   langPick() { openSheet({ kind: 'lang' }); },
   setLang(v) { lang = v; try { localStorage.setItem('mfLang', v); } catch (e) {} if (hasNative && Android.setLang) Android.setLang(v); applyTheme(); state.sheet = null; setCfg('lang', v); save(); render(); },
   secure() { Android.setSecure(!Android.secureOn()); setCfg('secure', !!Android.secureOn()); save(); render(); },
-  openTrash() { pushPage({ kind: 'trash' }); },
+  openTrash() { state.trashSel = new Set(); pushPage({ kind: 'trash' }); },
   openPrivacy() { pushPage({ kind: 'privacy' }); },
   restore(v) {
     const e = db.trash.find(x => x.id === v); if (!e) return;
-    const t = Date.now();
-    if (e.kind === 'op') {
-      if (e.op.cid && !cust(e.op.cid)) return toast(L('Əvvəlcə müştərini qaytarın'));
-      if (e.op.did && !debtRec(e.op.did)) return toast(L('Əvvəlcə borcu qaytarın'));
-      e.op.u = t; db.ops.push(e.op);
-    } else if (e.kind === 'cust') {
-      e.cust.u = t; db.customers.push(e.cust);
-      for (const o of e.ops) { o.u = t; db.ops.push(o); }
-    } else if (e.kind === 'debt') {
-      e.debt.u = t; db.debts.push(e.debt);
-      for (const o of e.ops) { o.u = t; db.ops.push(o); }
-    } else if (e.kind === 'rec') { e.rec.u = t; db.recs.push(e.rec); }
-    db.trash = db.trash.filter(x => x.id !== v); db.removed[v] = t;
-    save(); render(); toast(L('Qaytarıldı'));
+    const err = restoreEntry(e, Date.now());
+    if (err) return toast(err);
+    state.trashSel.delete(v); save(); render(); toast(L('Qaytarıldı'));
   },
+  trashSel(v, ev, el) { if (el.checked) state.trashSel.add(v); else state.trashSel.delete(v); render(); },
+  trashSelAll() { const all = db.trash.every(e => state.trashSel.has(e.id)); state.trashSel = new Set(all ? [] : db.trash.map(e => e.id)); render(); },
+  restoreSel() { restoreMany(db.trash.filter(e => state.trashSel.has(e.id))); },
+  restoreAll() { ask({ title: L('Hamısı bərpa edilsin?'), text: L('Zibil qutusundakı {0} qeydin hamısı yerinə qaytarılacaq.', db.trash.length), ok: L('Bərpa et'), icon: '♻️', run() { restoreMany(db.trash.slice()); } }); },
   emptyTrash() {
     ask({ title: L('Zibil qutusu boşaldılsın?'), text: L('İçindəkilər həmişəlik silinəcək, geri qaytarmaq olmayacaq.'), ok: L('Boşalt'), danger: true,
       run() { const t = Date.now(); for (const e of db.trash) db.removed[e.id] = t; db.trash = []; save(); } });
@@ -1680,7 +1757,7 @@ app.addEventListener('focusout', e => {
 // ---------- başlanğıc ----------
 if (hasNative && Android.setLang) Android.setLang(lang);
 load();
-captureDeviceCfg();
+if (!loadBroken && (captureDeviceCfg() || startChanged)) save(); // telefondakı baza Google-dakı ilə tam eyni qalsın
 if (hasNative && Android.syncLinked) sync.account = Android.syncLinked();
 if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
   state.pin = { mode: 'unlock', type: lockType(), len: Android.pinLength(), entered: '', err: '' };
@@ -1688,4 +1765,4 @@ if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
 }
 render();
 pushNative();
-if (sync.account && !state.pin) setTimeout(runSync, 500);
+if (sync.account && !state.pin && (sync.dirty || needLink())) setTimeout(() => runSync('push'), 500);

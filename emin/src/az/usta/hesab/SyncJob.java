@@ -51,7 +51,8 @@ public class SyncJob extends JobService {
     /** Ask Android to run the upload as soon as there is internet (also after a restart). */
     static void schedule(Context c) {
         try {
-            if (!pending(c) || new GoogleSync(c).account().isEmpty()) return;
+            GoogleSync gs = new GoogleSync(c);
+            if (!pending(c) || gs.account().isEmpty() || gs.needLink()) return;
             JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) return;
             JobInfo job = new JobInfo.Builder(JOB_ID, new ComponentName(c, SyncJob.class))
@@ -66,7 +67,9 @@ public class SyncJob extends JobService {
 
     @Override
     public boolean onStartJob(final JobParameters params) {
-        if (appVisible || !pending(this) || new GoogleSync(this).account().isEmpty()) return false;
+        GoogleSync gs = new GoogleSync(this);
+        // ilk qoşulmada Google-dakı hələ telefona gəlməyibsə, telefondakı onun üstünə yazılmır
+        if (appVisible || !pending(this) || gs.account().isEmpty() || gs.needLink()) return false;
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -75,8 +78,8 @@ public class SyncJob extends JobService {
                     long s = seq(SyncJob.this);
                     String json = readData();
                     if (json != null) {
-                        // the Google copy was changed elsewhere: the app merges both when opened
-                        if (new GoogleSync(SyncJob.this).uploadIfUnchanged(json)) uploaded(SyncJob.this, s);
+                        new GoogleSync(SyncJob.this).upload(json); // telefondakı tam baza Google-a
+                        uploaded(SyncJob.this, s);
                     }
                 } catch (Exception e) {
                     retry = true; // no internet yet / Google busy: Android tries again later

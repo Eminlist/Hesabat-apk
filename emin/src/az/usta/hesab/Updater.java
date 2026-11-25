@@ -47,7 +47,7 @@ public class Updater {
         }
     }
 
-    /** Emin Hesabat takes only Hesabat-*.apk from the releases (Akif Hesabat's are Hesabatim-*.apk). */
+    /** My Finance™ takes only Hesabat-*.apk from the releases. */
     private String apkPrefix() {
         return "Hesabat-";
     }
@@ -79,8 +79,8 @@ public class Updater {
     }
 
     private void work() throws Exception {
-        // the newest release that carries THIS app's APK (Emin Hesabat: Hesabat-*.apk,
-        // Akif Hesabat: Hesabatim-*.apk); the other app's releases are skipped. Tags are "r<versionCode>".
+        // the newest release that carries this app's APK (Hesabat-*.apk).
+        // Other releases are skipped. Tags are "r<versionCode>".
         JSONArray list = new JSONArray(get(RELEASES));
         String url = null, name = null;
         long size = -1;

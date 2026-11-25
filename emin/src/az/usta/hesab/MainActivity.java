@@ -546,6 +546,7 @@ public class MainActivity extends Activity {
                 return;
             }
             gsync.link(name);
+            gsync.setNeedLink(true); // ilk qoşulma: əvvəlcə Google-dakı telefona gəlir
             js("window.onSyncLinked(" + JSONObject.quote(name) + ")");
             return;
         }
@@ -705,8 +706,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String load() {
             // fall back to the previous copy when the main file is missing or cut short (e.g. power lost while saving)
+            boolean any = false;
             for (File f : new File[]{dataFile(), new File(getFilesDir(), "data.prev.json"), new File(getFilesDir(), "data.json.tmp")}) {
                 if (!f.exists()) continue;
+                any = true;
                 try {
                     String s = readAll(new FileInputStream(f)).trim();
                     // only a file that reads as whole JSON; a damaged one falls back to the previous copy
@@ -717,7 +720,8 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) {
                 }
             }
-            return "";
+            // fayl var, amma heç biri oxunmur: proqram boş baza ilə başlamasın, üstünə yazmasın
+            return any ? "!BROKEN" : "";
         }
 
         @JavascriptInterface
@@ -793,6 +797,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void syncUnlink() {
             gsync.unlink();
+        }
+
+        /** İlk qoşulmadan sonra Google-dakı baza hələ telefona gəlməyibsə true. */
+        @JavascriptInterface
+        public boolean needLink() {
+            return gsync.needLink();
+        }
+
+        @JavascriptInterface
+        public void linkDone() {
+            gsync.setNeedLink(false);
         }
 
         @JavascriptInterface
