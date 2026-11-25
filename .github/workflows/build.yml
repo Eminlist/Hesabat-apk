@@ -66,7 +66,7 @@ jobs:
             (cd "$W/dex" && zip -q ../u.apk classes.dex)
             # Android 11+ quraşdırmır, əgər resources.arsc 4 bayta düzülməyibsə
             zipalign -f -p 4 "$W/u.apk" "$W/aligned.apk"
-            local OUT="out/$PFX-$(echo "$V" | sed 's/ Rev\. */-Rev/; s/ /-/g').apk"
+            local OUT="out/$PFX-$(echo "$V" | sed 's/ Rev\.\? */-Rev/; s/ /-/g').apk"
             java --add-exports java.base/sun.security.x509=ALL-UNNAMED --add-exports java.base/sun.security.pkcs=ALL-UNNAMED --add-exports java.base/sun.security.util=ALL-UNNAMED -cp "$APKSIG":build/tools Sign /tmp/release.p12 "$PW" usta "$W/aligned.apk" "$OUT"
             zipalign -c -p 4 "$OUT"
             apksigner verify --print-certs "$OUT"

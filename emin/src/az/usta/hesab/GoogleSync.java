@@ -5,6 +5,7 @@ import android.accounts.AccountManager;
 import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -53,12 +54,63 @@ class GoogleSync {
         }
     }
 
-    private final Activity activity;
+    private final Context ctx;
+    private final Activity activity; // null in the background job: then Google shows no "allow" window
     private final SharedPreferences prefs;
 
-    GoogleSync(Activity activity) {
-        this.activity = activity;
-        this.prefs = activity.getSharedPreferences("gsync", Activity.MODE_PRIVATE);
+    GoogleSync(Context c) {
+        this.ctx = c;
+        this.activity = c instanceof Activity ? (Activity) c : null;
+        this.prefs = c.getSharedPreferences("gsync", Context.MODE_PRIVATE);
+    }
+
+    /** MD5 of what Google holds as far as this phone knows (set after every download/upload). */
+    private static String md5(byte[] b) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("MD5").digest(b);
+            StringBuilder sb = new StringBuilder();
+            for (byte x : d) sb.append(String.format("%02x", x));
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * Background upload (app closed, internet came back): the phone's copy goes to Google only if
+     * nobody else changed the Google copy since this phone last saw it; otherwise false and the app
+     * merges both the next time it is opened, so nothing is lost either way.
+     */
+    boolean uploadIfUnchanged(String json) throws Exception {
+        String token = token();
+        try {
+            return uploadIfUnchangedWith(token, json);
+        } catch (HttpError e) {
+            if (e.code != 401) throw explain(e);
+            token = freshToken(token);
+            try {
+                return uploadIfUnchangedWith(token, json);
+            } catch (HttpError e2) {
+                throw explain(e2);
+            }
+        }
+    }
+
+    private boolean uploadIfUnchangedWith(String token, String json) throws Exception {
+        String id = fileId(token);
+        if (id != null) {
+            String remote = "";
+            try {
+                byte[] res = http("GET", API + "/" + id + "?fields=md5Checksum", token, null, null);
+                remote = new JSONObject(new String(res, UTF8)).optString("md5Checksum", "");
+            } catch (HttpError e) {
+                if (e.code != 404) throw e;
+                prefs.edit().remove("fileId").apply();
+            }
+            if (!remote.isEmpty() && !remote.equals(prefs.getString("lastMd5", ""))) return false;
+        }
+        uploadWith(token, json);
+        return true;
     }
 
     /** The linked Google account (e-mail), or "" when sync is off. */
@@ -115,7 +167,9 @@ class GoogleSync {
         String id = fileId(token);
         if (id == null) return "";
         try {
-            return new String(http("GET", API + "/" + id + "?alt=media", token, null, null), UTF8).trim();
+            byte[] got = http("GET", API + "/" + id + "?alt=media", token, null, null);
+            prefs.edit().putString("lastMd5", md5(got)).apply();
+            return new String(got, UTF8).trim();
         } catch (HttpError e) {
             if (e.code != 404) throw e;
             // the file was removed on Drive: look it up again by name
@@ -131,6 +185,7 @@ class GoogleSync {
         if (id != null) {
             try {
                 http("PATCH", UPLOAD + "/" + id + "?uploadType=media", token, "application/json; charset=UTF-8", data);
+                prefs.edit().putString("lastMd5", md5(data)).apply();
                 return;
             } catch (HttpError e) {
                 if (e.code != 404) throw e;
@@ -146,7 +201,7 @@ class GoogleSync {
         body.write(("\r\n--" + boundary + "--\r\n").getBytes(UTF8));
         byte[] res = http("POST", UPLOAD + "?uploadType=multipart&fields=id", token, "multipart/related; boundary=" + boundary, body.toByteArray());
         String newId = new JSONObject(new String(res, UTF8)).optString("id", "");
-        if (!newId.isEmpty()) prefs.edit().putString("fileId", newId).apply();
+        if (!newId.isEmpty()) prefs.edit().putString("fileId", newId).putString("lastMd5", md5(data)).apply();
     }
 
     /** The sync file's id in the app folder (newest one, if two phones made one each), or null. */
@@ -166,45 +221,48 @@ class GoogleSync {
 
     private String token() throws Exception {
         String name = account();
-        if (name.isEmpty()) throw new SyncError(Tr.t(activity, "Google hesabı seçilməyib"));
+        if (name.isEmpty()) throw new SyncError(Tr.t(ctx, "Google hesabı seçilməyib"));
         try {
             // with the activity given, the phone shows Google's "allow" window itself when it is needed
-            Bundle b = AccountManager.get(activity).getAuthToken(new Account(name, "com.google"), SCOPE, null, activity, null, null).getResult();
+            Account acc = new Account(name, "com.google");
+            Bundle b = activity != null
+                    ? AccountManager.get(ctx).getAuthToken(acc, SCOPE, null, activity, null, null).getResult()
+                    : AccountManager.get(ctx).getAuthToken(acc, SCOPE, null, false, null, null).getResult();
             String t = b.getString(AccountManager.KEY_AUTHTOKEN);
-            if (t == null || t.isEmpty()) throw new SyncError(Tr.t(activity, "Google icazə vermədi"));
+            if (t == null || t.isEmpty()) throw new SyncError(Tr.t(ctx, "Google icazə vermədi"));
             return t;
         } catch (OperationCanceledException e) {
-            throw new SyncError(Tr.t(activity, "Google icazəsi verilmədi — yenidən “İndi yenilə” basın və icazə verin"));
+            throw new SyncError(Tr.t(ctx, "Google icazəsi verilmədi — yenidən “İndi yenilə” basın və icazə verin"));
         } catch (AuthenticatorException e) {
             String m = String.valueOf(e.getMessage());
             if (m.contains("UNREGISTERED_ON_API_CONSOLE") || m.contains("INVALID_AUDIENCE"))
-                throw new SyncError(Tr.t(activity, "Tətbiq Google Cloud-da qeydiyyatdan keçməyib (paket adı və SHA-1 yoxlanmalıdır)"));
+                throw new SyncError(Tr.t(ctx, "Tətbiq Google Cloud-da qeydiyyatdan keçməyib (paket adı və SHA-1 yoxlanmalıdır)"));
             if (m.contains("BadAuthentication") || m.contains("NeedPermission"))
-                throw new SyncError(Tr.t(activity, "Google hesabına giriş alınmadı — telefonun Ayarlarında hesabı yoxlayın"));
-            throw new SyncError(Tr.t(activity, "Google xətası: ") + m);
+                throw new SyncError(Tr.t(ctx, "Google hesabına giriş alınmadı — telefonun Ayarlarında hesabı yoxlayın"));
+            throw new SyncError(Tr.t(ctx, "Google xətası: ") + m);
         } catch (IOException e) {
-            throw new SyncError(Tr.t(activity, "İnternet yoxdur"));
+            throw new SyncError(Tr.t(ctx, "İnternet yoxdur"));
         } catch (SecurityException e) {
-            throw new SyncError(Tr.t(activity, "Bu Google hesabına icazə yoxdur — hesabı yenidən seçin"));
+            throw new SyncError(Tr.t(ctx, "Bu Google hesabına icazə yoxdur — hesabı yenidən seçin"));
         }
     }
 
     /** The old token was refused: forget it and ask for a new one. */
     private String freshToken(String old) throws Exception {
-        AccountManager.get(activity).invalidateAuthToken("com.google", old);
+        AccountManager.get(ctx).invalidateAuthToken("com.google", old);
         return token();
     }
 
     private SyncError explain(HttpError e) {
         String b = e.body;
-        if (e.code == 401) return new SyncError(Tr.t(activity, "Google girişi alınmadı — hesabı yenidən seçin"));
+        if (e.code == 401) return new SyncError(Tr.t(ctx, "Google girişi alınmadı — hesabı yenidən seçin"));
         if (e.code == 403 && (b.contains("accessNotConfigured") || b.contains("SERVICE_DISABLED") || b.contains("has not been used")))
-            return new SyncError(Tr.t(activity, "Google Cloud-da “Google Drive API” aktiv edilməyib"));
+            return new SyncError(Tr.t(ctx, "Google Cloud-da “Google Drive API” aktiv edilməyib"));
         if (e.code == 403 && (b.contains("storageQuotaExceeded") || b.contains("quotaExceeded")))
-            return new SyncError(Tr.t(activity, "Google Drive-da yer qalmayıb"));
-        if (e.code == 403) return new SyncError(Tr.t(activity, "Google icazə vermədi (403)"));
-        if (e.code == 429 || e.code >= 500) return new SyncError(Tr.t(activity, "Google hazırda cavab vermir, bir az sonra yenə yoxlanacaq"));
-        return new SyncError(Tr.t(activity, "Google xətası (") + e.code + ")");
+            return new SyncError(Tr.t(ctx, "Google Drive-da yer qalmayıb"));
+        if (e.code == 403) return new SyncError(Tr.t(ctx, "Google icazə vermədi (403)"));
+        if (e.code == 429 || e.code >= 500) return new SyncError(Tr.t(ctx, "Google hazırda cavab vermir, bir az sonra yenə yoxlanacaq"));
+        return new SyncError(Tr.t(ctx, "Google xətası (") + e.code + ")");
     }
 
     // ---------- plain HTTPS ----------

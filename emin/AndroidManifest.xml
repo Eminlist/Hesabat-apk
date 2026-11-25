@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="az.usta.hesab"
-    android:versionCode="199"
-    android:versionName="3.1.3 Rev. 009">
+    android:versionCode="200"
+    android:versionName="3.1.3 Rev 010">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
 
@@ -72,5 +72,10 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Google növbəsi: proqram bağlı olsa da internet gələn kimi yükləyir -->
+        <service
+            android:name=".SyncJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

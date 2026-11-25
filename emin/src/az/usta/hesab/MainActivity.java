@@ -330,6 +330,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        SyncJob.appVisible = true;
         applySecure();
         shakeOnOff(appPrefs().getBoolean("shake", false));
         // back on top: a share sheet or picker we opened is gone (some never stop us, so onRestart doesn't run)
@@ -363,6 +364,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        // proqramdan çıxdı: Google-a getməmiş dəyişiklik varsa, internet olan kimi arxada yüklənir
+        SyncJob.appVisible = false;
+        SyncJob.schedule(this);
         if (internalNav) navStoppedAt = System.currentTimeMillis();
         if (unlocking || internalNav || !(pinSet() || lockOn())) return;
         bioAsked = false;
@@ -681,6 +685,23 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** «Google-dan geri yüklə»dən əvvəl telefondakı məlumatın surəti saxlanılır (data.before-restore.json). */
+        @JavascriptInterface
+        public void backupLocal() {
+            try {
+                File f = dataFile();
+                if (!f.exists()) return;
+                FileInputStream in = new FileInputStream(f);
+                FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "data.before-restore.json"));
+                byte[] b = new byte[8192];
+                int n;
+                while ((n = in.read(b)) > 0) out.write(b, 0, n);
+                in.close();
+                out.close();
+            } catch (Exception ignored) {
+            }
+        }
+
         @JavascriptInterface
         public String load() {
             // fall back to the previous copy when the main file is missing or cut short (e.g. power lost while saving)
@@ -716,6 +737,7 @@ public class MainActivity extends Activity {
                 }
                 if (!tmp.renameTo(f)) return false;
                 new BackupManager(MainActivity.this).dataChanged();
+                SyncJob.changed(MainActivity.this); // Google növbəsinə düşür
                 return true;
             } catch (Exception e) {
                 return false;
@@ -798,11 +820,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void syncUpload(final String json) {
             if (gsync.account().isEmpty()) return;
+            final long seq = SyncJob.seq(MainActivity.this);
             runSync(new Runnable() {
                 @Override
                 public void run() {
                     try {
                         gsync.upload(json);
+                        SyncJob.uploaded(MainActivity.this, seq);
                         syncStatus("ok", "");
                     } catch (Exception e) {
                         syncStatus("error", explain(e));

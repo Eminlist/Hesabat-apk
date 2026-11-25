@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 009';
+const APP_VERSION = '3.1.3 Rev 010';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -129,7 +129,7 @@ function trashDebt(d) {
 }
 
 // ---------- Google ilə sinxron (hər dəyişiklik dərhal göndərilir) ----------
-const sync = { account: '', status: 'idle', msg: '', last: 0, running: false, again: false, timer: null, dirty: false, ver: 0, sent: -1, retry: null, wait: 0, check: false };
+const sync = { account: '', status: 'idle', msg: '', last: 0, running: false, again: false, timer: null, dirty: false, ver: 0, sent: -1, retry: null, wait: 0, check: false, restore: false };
 try { sync.last = +localStorage.getItem('mfLastSync') || 0; sync.dirty = localStorage.getItem('mfSyncDirty') === '1'; } catch (e) {}
 function markDirty() {
   sync.ver++;
@@ -177,6 +177,20 @@ window.onSyncRemote = function (text) {
     sync.check = false;
     const a = brief(db), b = remote && remote.mf ? brief(remote) : null;
     state.checkResult = b ? { same: JSON.stringify(a) === JSON.stringify(b), a, b } : { none: true };
+  }
+  // «Google-dan geri yüklə»: Google-dakı baza telefondakını əvəz edir (əvvəlki surət telefonda saxlanılır)
+  if (sync.restore) {
+    sync.restore = false;
+    if (remote && remote.mf) {
+      try { if (hasNative && Android.backupLocal) Android.backupLocal(); } catch (e) {}
+      db = remote; fixDb(); purgeTrash();
+      try { if (hasNative) Android.save(JSON.stringify(db)); } catch (e) {}
+      markDirty(); pushNative(); state.pages = state.pages.filter(p => p.kind === 'settings'); render();
+      toast(L('Google-dakı baza telefona yükləndi'));
+    } else toast(L('Google-da hələ surət yoxdur'));
+    refreshSettings();
+    sync.sent = sync.ver;
+    return Android.syncUpload(JSON.stringify(db));
   }
   if (remote && remote.mf) {
     const before = JSON.stringify(db);
@@ -638,6 +652,7 @@ function renderSettings() {
     <div class="card">${sync.account ? `<b>✅ Google Drive: ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}${last ? '<br>' + esc(L('Son göndəriş: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes()))) : ''}</div>
       <button class="btn ghost" data-a="syncNow">🔄 ${esc(L('İndi göndər'))}</button>
       <button class="btn ghost" data-a="checkBackup">🔍 ${esc(L('Yedəyi yoxla'))}</button>
+      <button class="btn ghost" data-a="syncRestore">☁️ ${esc(L('Google-dan geri yüklə'))}</button>
       ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var — birləşdirildi və yenidən göndərildi.'))}<br>${esc(L('Telefon: {0} əməliyyat · Google: {1} əməliyyat', R.a.ops, R.b.ops))}</div>`) : ''}
       <button class="btn danger" data-a="syncUnlink">${esc(L('Google hesabından ayır'))}</button>`
       : `<div class="note">${esc(L('Google hesabını qoşun: hər dəyişiklik avtomatik öz Google Drive-ınıza yazılsın. Telefon dəyişəndə eyni Gmail ilə hər şey geri gəlir.'))}</div><button class="btn primary" data-a="syncLink">${esc(L('Google Drive-a qoş'))}</button>`}</div>
@@ -1508,6 +1523,11 @@ const actions = {
   offSummary() { if (hasNative) Android.setSummaryTime(''); closeSheet(); },
   syncLink() { if (hasNative) Android.syncLink(); },
   syncNow() { runSync(); },
+  syncRestore() {
+    if (!sync.account) return;
+    ask({ title: L('Google-dakı baza telefona yüklənsin?'), text: L('Telefondakı indiki məlumat Google-dakı surətlə əvəz olunacaq. Telefondakı əvvəlki məlumatın surəti telefonda ayrıca saxlanılır.'), ok: L('Yüklə'), icon: '☁️',
+      run() { sync.restore = true; toast(L('Yüklənir…')); runSync(); } });
+  },
   checkBackup() { if (!sync.account) return; state.checkResult = null; sync.check = true; toast(L('Yoxlanılır…')); runSync(); },
   syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; } }); },
   xlsx() { exportXlsx(); },
