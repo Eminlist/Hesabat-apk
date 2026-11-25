@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev 010';
+const APP_VERSION = '3.1.3 Rev 011';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -50,10 +50,12 @@ function fixDb() {
   if (!Array.isArray(db.cfg.tags)) db.cfg.tags = DEFAULT_TAGS.slice();
   db.mf = 1;
 }
+let freshInstall = false; // telefonda heç bir məlumat yox idi (yeni quraşdırma)
 let loadBroken = false; // fayl oxunmadısa, üstünə boş məlumat yazılmasın
 function load() {
   let raw = '';
   try { raw = hasNative ? Android.load() : (localStorage.getItem('myFinance') || ''); } catch (e) {}
+  if (!raw) freshInstall = true;
   if (raw) {
     try {
       const d = JSON.parse(raw);
@@ -70,7 +72,7 @@ function importOldDebts() {
   if (db.cfg.oldDebts || !hasNative || !Android.loadOld) return;
   let old = null;
   try { const s = Android.loadOld(); if (s) old = JSON.parse(s); } catch (e) { old = null; }
-  db.cfg.oldDebts = 1; touch(db.cfg);
+  db.cfg.oldDebts = 1;
   if (!old) return save();
   const r = C.migrateOld(old);
   let n = 0;
@@ -135,6 +137,67 @@ function markDirty() {
   sync.ver++;
   if (!sync.dirty) { sync.dirty = true; try { localStorage.setItem('mfSyncDirty', '1'); } catch (e) {} }
 }
+// ---------- ayarların sinxronu: hər ayarın öz vaxtı var, ən son dəyişən qalib gəlir ----------
+// shop = vizitkart, req = rekvizitlər, tags = müştəri qrupları, theme, lang, sum = günün sonu saatı,
+// secure = ekran şəkli qadağası, bio = barmaq izi, pin = giriş kilidi (PIN/naxış)
+const CFG_KEYS = ['shop', 'req', 'tags', 'theme', 'lang', 'sum', 'secure', 'bio', 'pin'];
+const cfgT = (c, k) => { if (!c) return -1; if (c.t && c.t[k] != null) return c.t[k]; if (c.t) return 0; return ['shop', 'req', 'tags'].includes(k) ? (c.u || 0) : -1; };
+function mergeCfg(a, b) {
+  if (!b) return a; if (!a) return b;
+  const out = Object.assign({}, b, a, { t: {} });
+  for (const k of CFG_KEYS) {
+    const ta = cfgT(a, k), tb = cfgT(b, k);
+    const src = tb > ta ? b : a;
+    if (k in src) out[k] = src[k]; else delete out[k];
+    out.t[k] = Math.max(ta, tb, 0);
+  }
+  out.oldDebts = a.oldDebts || b.oldDebts ? 1 : 0;
+  out.u = Math.max(a.u || 0, b.u || 0);
+  return out;
+}
+function setCfg(k, v) { db.cfg[k] = v; db.cfg.t = db.cfg.t || {}; db.cfg.t[k] = Date.now(); touch(db.cfg); }
+// telefondakı ayarlar (tema, dil, kilid və s.) bazaya yazılır; köhnə versiyadan keçəndə vaxtı 1 olur
+function readDeviceCfg() {
+  const c = {};
+  c.theme = theme; c.lang = lang;
+  if (hasNative) {
+    try { c.sum = (Android.summaryTime && Android.summaryTime()) || ''; } catch (e) {}
+    try { c.secure = !!(Android.secureOn && Android.secureOn()); } catch (e) {}
+    try { c.bio = !!(Android.bioEnabled && Android.bioEnabled()); } catch (e) {}
+    try { const pb = Android.pinBlob && Android.pinBlob(); c.pin = pb ? Object.assign(JSON.parse(pb), { type: lockType() }) : null; } catch (e) {}
+  }
+  return c;
+}
+function captureDeviceCfg() {
+  db.cfg.t = db.cfg.t || {};
+  for (const k of ['shop', 'req', 'tags']) if (db.cfg.t[k] == null) db.cfg.t[k] = db.cfg.u || 0;
+  // yeni quraşdırılmış proqramın standart ayarları Google-dakıları üstələməsin (vaxt 0)
+  const c = readDeviceCfg(), tt = freshInstall ? 0 : 1;
+  for (const k of Object.keys(c)) if (db.cfg.t[k] == null) { db.cfg[k] = c[k]; db.cfg.t[k] = tt; }
+}
+// bazadakı ayarlar bu telefona tətbiq olunur (yeni telefon / proqram yenidən quraşdırılanda)
+function applyCfg() {
+  const c = db.cfg, t = c.t || {}, d = readDeviceCfg();
+  let redraw = false;
+  if (t.theme != null && c.theme && c.theme !== theme) { theme = c.theme; try { localStorage.setItem('mfTheme', theme); } catch (e) {} redraw = true; }
+  if (t.lang != null && c.lang && c.lang !== lang && LANGS.some(l => l[0] === c.lang)) { lang = c.lang; try { localStorage.setItem('mfLang', lang); } catch (e) {} if (hasNative && Android.setLang) Android.setLang(lang); redraw = true; }
+  if (redraw) applyTheme();
+  if (!hasNative) return redraw;
+  try {
+    if (t.sum != null && (c.sum || '') !== (d.sum || '') && Android.setSummaryTime) Android.setSummaryTime(c.sum || '');
+    if (t.secure != null && !!c.secure !== !!d.secure && Android.setSecure) Android.setSecure(!!c.secure);
+    if (t.bio != null && !!c.bio !== !!d.bio && Android.setBio && (!c.bio || (Android.bioAvailable && Android.bioAvailable()))) Android.setBio(!!c.bio);
+    if (t.pin != null && Android.setPinBlob) {
+      const want = c.pin && c.pin.hash ? c.pin.hash : '', have = d.pin && d.pin.hash ? d.pin.hash : '';
+      if (want !== have) {
+        Android.setPinBlob(want ? JSON.stringify({ salt: c.pin.salt, hash: c.pin.hash, len: c.pin.len }) : '');
+        try { if (want) localStorage.setItem('mfLockType', c.pin.type || 'pin'); else localStorage.removeItem('mfLockType'); } catch (e) {}
+      } else if (want && c.pin.type && c.pin.type !== lockType()) { try { localStorage.setItem('mfLockType', c.pin.type); } catch (e) {} }
+    }
+  } catch (e) {}
+  return redraw;
+}
+const savePinCfg = () => { let v = null; try { const pb = hasNative && Android.pinBlob && Android.pinBlob(); if (pb) v = Object.assign(JSON.parse(pb), { type: lockType() }); } catch (e) {} setCfg('pin', v); save(); };
 function mergeDb(a, b) {
   const removed = Object.assign({}, a.removed);
   for (const [id, t] of Object.entries(b.removed || {})) if (!(removed[id] >= t)) removed[id] = t;
@@ -148,7 +211,7 @@ function mergeDb(a, b) {
     out[key] = [...m.values()].filter(r => !(removed[r.id] >= (r.u || 0)));
   }
   out.trash.sort((x, y) => y.at - x.at);
-  out.cfg = (b.cfg && (!a.cfg || (b.cfg.u || 0) > (a.cfg.u || 0))) ? b.cfg : a.cfg;
+  out.cfg = mergeCfg(a.cfg, b.cfg);
   return out;
 }
 function scheduleSync() {
@@ -183,7 +246,7 @@ window.onSyncRemote = function (text) {
     sync.restore = false;
     if (remote && remote.mf) {
       try { if (hasNative && Android.backupLocal) Android.backupLocal(); } catch (e) {}
-      db = remote; fixDb(); purgeTrash();
+      db = remote; fixDb(); purgeTrash(); applyCfg();
       try { if (hasNative) Android.save(JSON.stringify(db)); } catch (e) {}
       markDirty(); pushNative(); state.pages = state.pages.filter(p => p.kind === 'settings'); render();
       toast(L('Google-dakı baza telefona yükləndi'));
@@ -194,7 +257,7 @@ window.onSyncRemote = function (text) {
   }
   if (remote && remote.mf) {
     const before = JSON.stringify(db);
-    db = mergeDb(db, remote); fixDb();
+    db = mergeDb(db, remote); fixDb(); applyCfg();
     if (JSON.stringify(db) !== before) {
       try { if (hasNative) Android.save(JSON.stringify(db)); } catch (e) {}
       markDirty(); pushNative();
@@ -950,13 +1013,13 @@ function pinDone(code) {
   if (P.mode === 'unlock' || P.mode === 'verify') {
     if (!Android.checkPin(code)) { P.err = P.type === 'pattern' ? L('Səhv naxış') : L('Səhv PIN kod'); return render(); }
     if (P.mode === 'unlock') { state.pin = null; render(); window.onAppResume(); return; }
-    if (P.next === 'remove') { Android.clearPin(); try { localStorage.removeItem('mfLockType'); } catch (e) {} state.pin = null; toast(L('Kilid götürüldü')); return render(); }
+    if (P.next === 'remove') { Android.clearPin(); try { localStorage.removeItem('mfLockType'); } catch (e) {} savePinCfg(); state.pin = null; toast(L('Kilid götürüldü')); return render(); }
     state.pin = null; openSheet({ kind: 'lockType' }); return;
   } else if (P.mode === 'set1') {
     if (P.type === 'pattern' && code.length < 4) { P.err = L('Ən azı 4 nöqtəni birləşdirin'); return render(); }
     Object.assign(P, { mode: 'set2', first: code });
   } else if (code === P.first) {
-    Android.setPin(code); try { localStorage.setItem('mfLockType', P.type); } catch (e) {}
+    Android.setPin(code); try { localStorage.setItem('mfLockType', P.type); } catch (e) {} savePinCfg();
     state.pin = null; toast(P.type === 'pattern' ? L('Naxış qoyuldu') : L('PIN kod qoyuldu'));
   } else Object.assign(P, { mode: 'set1', first: '', err: P.type === 'pattern' ? L('Naxışlar eyni deyil, yenidən çəkin') : L('PIN kodlar eyni deyil, yenidən yazın') });
   render();
@@ -993,7 +1056,7 @@ window.showPinLock = function (askBio) {
   if (askBio && bioOn()) Android.bioPrompt();
 };
 window.onBioOk = function () { if (state.pin && state.pin.mode === 'unlock') { state.pin = null; render(); window.onAppResume(); } };
-window.onPinReset = function () { state.pin = null; try { localStorage.removeItem('mfLockType'); } catch (e) {} render(); toast(L('Kilid silindi. İstəsəniz, Ayarlarda yenisini qoyun.')); };
+window.onPinReset = function () { state.pin = null; try { localStorage.removeItem('mfLockType'); } catch (e) {} savePinCfg(); render(); toast(L('Kilid silindi. İstəsəniz, Ayarlarda yenisini qoyun.')); };
 
 // ---------- çəkmək ----------
 let lastKey = '';
@@ -1059,7 +1122,7 @@ window.onImported = function (text) {
   try { d = JSON.parse(text); } catch (e) {}
   if (!d || !d.mf) return toast(L('Bu fayl My Finance™ yedəyi deyil'));
   ask({ title: L('Yedək faylından bərpa edilsin?'), text: L('Faylda {0} müştəri və {1} əməliyyat var. Telefondakı məlumatlar silinmir — fayldakılar onlarla birləşdirilir.', (d.customers || []).length, (d.ops || []).length), ok: L('Bərpa et'), icon: '📥',
-    run() { db = mergeDb(db, d); fixDb(); save(); toast(L('Bərpa olundu')); } });
+    run() { db = mergeDb(db, d); fixDb(); applyCfg(); save(); toast(L('Bərpa olundu')); } });
 };
 window.onImportedXlsx = function () { toast(L('Bərpa üçün .json yedək faylını seçin')); };
 
@@ -1487,14 +1550,14 @@ const actions = {
   shop() { openSheet({ kind: 'shop', draft: Object.assign({}, db.cfg.shop) }); },
   logoPick() { keepShopDraft(); if (hasNative) Android.pickPhoto(); },
   logoDel() { keepShopDraft(); state.sheet.draft.logo = ''; render(); },
-  saveShop() { keepShopDraft(); const d = state.sheet.draft; db.cfg.shop = { name: d.name.trim(), address: d.address.trim(), phone: d.phone.trim(), logo: d.logo || '' }; touch(db.cfg); save(); closeSheet(); toast(L('Vizitkart yadda saxlandı')); },
+  saveShop() { keepShopDraft(); const d = state.sheet.draft; setCfg('shop', { name: d.name.trim(), address: d.address.trim(), phone: d.phone.trim(), logo: d.logo || '' }); save(); closeSheet(); toast(L('Vizitkart yadda saxlandı')); },
   req() { openSheet({ kind: 'req' }); },
-  saveReq() { db.cfg.req = val('f_req'); touch(db.cfg); save(); closeSheet(); toast(L('Rekvizitlər yadda saxlandı')); },
+  saveReq() { setCfg('req', val('f_req')); save(); closeSheet(); toast(L('Rekvizitlər yadda saxlandı')); },
   tags() { openSheet({ kind: 'tags' }); },
-  tagAdd() { const t = val('f_tag').trim(); if (!t) return; if (db.cfg.tags.some(x => C.norm(x) === C.norm(t))) return toast(L('Bu qrup var')); db.cfg.tags.push(t); touch(db.cfg); save(); render(); },
+  tagAdd() { const t = val('f_tag').trim(); if (!t) return; if (db.cfg.tags.some(x => C.norm(x) === C.norm(t))) return toast(L('Bu qrup var')); setCfg('tags', db.cfg.tags.concat([t])); save(); render(); },
   tagDel(v) {
     ask({ title: L('«{0}» qrupu silinsin?', tagName(v)), text: L('Müştərilər silinmir, yalnız bu qrup işarəsi götürülür.'), ok: L('Sil'), danger: true,
-      run() { db.cfg.tags = db.cfg.tags.filter(t => t !== v); touch(db.cfg); for (const c of db.customers) if ((c.tags || []).includes(v)) { c.tags = c.tags.filter(t => t !== v); touch(c); } if (state.tag === v) state.tag = ''; save(); } });
+      run() { setCfg('tags', db.cfg.tags.filter(t => t !== v)); for (const c of db.customers) if ((c.tags || []).includes(v)) { c.tags = c.tags.filter(t => t !== v); touch(c); } if (state.tag === v) state.tag = ''; save(); } });
   },
   recs() { pushPage({ kind: 'recs' }); },
   recEdit(v) { openSheet({ kind: 'rec', id: v || null }); },
@@ -1519,8 +1582,8 @@ const actions = {
       run() { newOp({ kind: 'out', amount: r.amount, method: r.method || 'cash', cat: r.name, note: '', rec: r.id, recMonth: m, date: today(), time: nowHm() }); save(); toast(L('Xərc yazıldı')); } });
   },
   summary() { openSheet({ kind: 'summary' }); },
-  saveSummary() { const t = val('f_sum'); if (!t) return; if (hasNative) Android.setSummaryTime(t); pushNative(); closeSheet(); toast(L('Hər gün {0}-da xatırladılacaq', t)); },
-  offSummary() { if (hasNative) Android.setSummaryTime(''); closeSheet(); },
+  saveSummary() { const t = val('f_sum'); if (!t) return; if (hasNative) Android.setSummaryTime(t); setCfg('sum', t); save(); closeSheet(); toast(L('Hər gün {0}-da xatırladılacaq', t)); },
+  offSummary() { if (hasNative) Android.setSummaryTime(''); setCfg('sum', ''); save(); closeSheet(); },
   syncLink() { if (hasNative) Android.syncLink(); },
   syncNow() { runSync(); },
   syncRestore() {
@@ -1533,10 +1596,10 @@ const actions = {
   xlsx() { exportXlsx(); },
   backupFile() { if (hasNative) Android.shareFile(JSON.stringify(db), 'MyFinance-yedek-' + today() + '.json'); },
   importFile() { if (hasNative) Android.importFile(); },
-  theme() { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('mfTheme', theme); } catch (e) {} applyTheme(); render(); },
+  theme() { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('mfTheme', theme); } catch (e) {} applyTheme(); setCfg('theme', theme); save(); render(); },
   langPick() { openSheet({ kind: 'lang' }); },
-  setLang(v) { lang = v; try { localStorage.setItem('mfLang', v); } catch (e) {} if (hasNative && Android.setLang) Android.setLang(v); applyTheme(); state.sheet = null; pushNative(); render(); },
-  secure() { Android.setSecure(!Android.secureOn()); render(); },
+  setLang(v) { lang = v; try { localStorage.setItem('mfLang', v); } catch (e) {} if (hasNative && Android.setLang) Android.setLang(v); applyTheme(); state.sheet = null; setCfg('lang', v); save(); render(); },
+  secure() { Android.setSecure(!Android.secureOn()); setCfg('secure', !!Android.secureOn()); save(); render(); },
   openTrash() { pushPage({ kind: 'trash' }); },
   openPrivacy() { pushPage({ kind: 'privacy' }); },
   restore(v) {
@@ -1569,7 +1632,7 @@ const actions = {
     } else openSheet({ kind: 'lockType' });
   },
   lockSet(v) { state.sheet = null; state.pin = { mode: 'set1', type: v, len: 4, entered: '', err: '' }; render(); },
-  bio() { Android.setBio(!Android.bioEnabled()); render(); },
+  bio() { Android.setBio(!Android.bioEnabled()); setCfg('bio', !!Android.bioEnabled()); save(); render(); },
   pinKey(v) {
     const P = state.pin;
     if (v === 'del') P.entered = P.entered.slice(0, -1);
@@ -1617,6 +1680,7 @@ app.addEventListener('focusout', e => {
 // ---------- başlanğıc ----------
 if (hasNative && Android.setLang) Android.setLang(lang);
 load();
+captureDeviceCfg();
 if (hasNative && Android.syncLinked) sync.account = Android.syncLinked();
 if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
   state.pin = { mode: 'unlock', type: lockType(), len: Android.pinLength(), entered: '', err: '' };

@@ -1071,6 +1071,34 @@ public class MainActivity extends Activity {
             return ok;
         }
 
+        /** Giriş kilidi Google sinxronuna gedir (yalnız duz + heş, kodun özü yox). */
+        @JavascriptInterface
+        public String pinBlob() {
+            String h = appPrefs().getString("pinHash", null);
+            if (h == null) return "";
+            try {
+                return new JSONObject().put("salt", appPrefs().getString("pinSalt", "")).put("hash", h)
+                        .put("len", appPrefs().getInt("pinLen", 4)).toString();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        /** Google-dakı kilid bu telefona qoyulur ("" = kilid götürülür). */
+        @JavascriptInterface
+        public void setPinBlob(String json) {
+            try {
+                if (json == null || json.isEmpty()) {
+                    appPrefs().edit().remove("pinHash").remove("pinSalt").remove("pinLen").apply();
+                    return;
+                }
+                JSONObject o = new JSONObject(json);
+                appPrefs().edit().putString("pinSalt", o.optString("salt", "")).putString("pinHash", o.getString("hash"))
+                        .putInt("pinLen", o.optInt("len", 4)).apply();
+            } catch (Exception ignored) {
+            }
+        }
+
         @JavascriptInterface
         public void clearPin() {
             appPrefs().edit().remove("pinHash").remove("pinSalt").remove("pinLen").apply();
