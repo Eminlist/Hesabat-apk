@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev 012';
+const APP_VERSION = '3.1.3 Rev 013';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -225,7 +225,6 @@ function mergeDb(a, b) {
 // link    — ilk qoşulma: Google-dakı hər şey (məlumat + ayarlar) telefona gəlir, sonra birlikdə Google-a yazılır
 // push    — telefondakı tam baza Google-a yüklənir (hər əməliyyatdan sonra avtomatik və «Sinxron et» ilə)
 // check   — yalnız müqayisə: Google və telefon eynidirmi (heç nə yükləmir, heç nə dəyişmir)
-// restore — «Google-dan geri yüklə»: Google-dakı baza telefondakını əvəz edir
 const needLink = () => { try { return !!(hasNative && Android.needLink && Android.needLink()); } catch (e) { return false; } };
 function scheduleSync() {
   if (!sync.account) return;
@@ -237,7 +236,6 @@ function runSync(kind) {
   if (!sync.account || !hasNative) return;
   if (kind === 'push' && needLink()) kind = 'link'; // Google-dakı hələ gəlməyib: əvvəlcə onu götür
   if (kind === 'push' && loadBroken) return; // zədələnmiş/boş baza heç vaxt Google-un üstünə yazılmır
-  if (kind === 'link' && loadBroken) kind = 'restore';
   clearTimeout(sync.timer); clearTimeout(sync.retry);
   if (sync.running) { if (kind === 'push') sync.again = true; else sync.queued = kind; return; }
   sync.running = true; sync.mode = kind; sync.status = 'syncing'; refreshSettings();
@@ -273,17 +271,6 @@ window.onSyncRemote = function (text) {
     state.checkResult = remote ? { same: canon(db) === canon(remote), a: brief(db), b: brief(remote) } : { none: true };
     sync.running = false; sync.status = sync.dirty ? 'idle' : 'ok';
     refreshSettings(); return nextSync();
-  }
-  if (mode === 'restore') {
-    if (remote) {
-      try { if (Android.backupLocal) Android.backupLocal(); } catch (e) {}
-      db = remote; fixDb(); loadBroken = false; applyCfg();
-      try { Android.save(JSON.stringify(db)); } catch (e) {}
-      setSynced(); pushNative();
-      state.pages = state.pages.filter(p => p.kind === 'settings'); state.sheet = null;
-      toast(L('Google-dakı baza telefona yükləndi'));
-    } else { sync.status = sync.dirty ? 'idle' : 'ok'; toast(L('Google-da hələ surət yoxdur')); }
-    sync.running = false; render(); return nextSync();
   }
   if (mode === 'link') {
     if (remote) {
@@ -465,7 +452,7 @@ function renderHome() {
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(fmtDay(td))}</span><h1>${esc(APP_NAME)}</h1></div>
     <button class="tbtn" data-a="openAll">${I.search}</button><button class="tbtn" data-a="settings">${I.gear}</button></div>
   <main style="padding-top:6px">
-    ${loadBroken ? `<div class="bad-box" style="margin-bottom:12px">⚠️ ${esc(L('Telefondakı məlumat faylı zədələnib. Köhnə məlumat itməsin deyə proqram heç nə yazmır. Ayarlar → «Google-dan geri yüklə» və ya «Yedək faylından bərpa et» ilə bərpa edin.'))}</div>` : ''}
+    ${loadBroken ? `<div class="bad-box" style="margin-bottom:12px">⚠️ ${esc(L('Telefondakı məlumat faylı zədələnib. Köhnə məlumat itməsin deyə proqram heç nə yazmır. Bərpa üçün: Ayarlar → «Google hesabından ayır», sonra yenidən «Google Drive-a qoş» (Google-dakı baza telefona gəlir) və ya Ayarlar → «Yedək faylından bərpa et».'))}</div>` : ''}
     ${due.length ? `<div class="duebox"><div class="duehead"><b>⏰ ${esc(L('Ödəmə vaxtı çatanlar ({0})', due.length))}</b><button data-a="tab" data-v="remind">${esc(L('Xatırlat'))} ›</button></div>
       ${due.slice(0, 5).map(({ c, s }) => `<button class="duerow" data-a="openCust" data-v="${c.id}"><span class="grow"><b>${esc(c.name)}</b><small>${esc(lateTxt(s))}</small></span><em class="num">${money(s.debt)}</em></button>`).join('')}
       ${due.length > 5 ? `<button class="duemore" data-a="tab" data-v="remind">${esc(L('və daha {0} nəfər', due.length - 5))} ›</button>` : ''}</div>` : ''}
@@ -762,7 +749,6 @@ function renderSettings() {
     <div class="card">${sync.account ? `<b>✅ Google Drive: ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}<br>${esc(last ? L('Son uğurlu sinxron: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + '.' + last.getFullYear() + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes())) : L('Son uğurlu sinxron: hələ olmayıb'))}<br><b class="${sync.pending ? 'neg' : 'pay'}">${esc(sync.pending ? L('Göndərilməmiş dəyişiklik: {0}', sync.pending) : L('Göndərilməmiş dəyişiklik yoxdur ✓'))}</b></div>
       <button class="btn ghost" data-a="syncNow">🔄 ${esc(L('Sinxron et'))}</button>
       <button class="btn ghost" data-a="checkBackup">🔍 ${esc(L('Yedəyi yoxla'))}</button>
-      <button class="btn ghost" data-a="syncRestore">☁️ ${esc(L('Google-dan geri yüklə'))}</button>
       ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə tam eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var: Google-dakı surət telefondakı ilə eyni deyil.'))}<br>${esc(L('Telefon: {0} müştəri · {1} əməliyyat · {2} borc', R.a.customers, R.a.ops, R.a.debts))}<br>${esc(L('Google: {0} müştəri · {1} əməliyyat · {2} borc', R.b.customers, R.b.ops, R.b.debts))}<br>${esc(L('Telefondakını Google-a yükləmək üçün «Sinxron et» basın.'))}</div>`) : ''}
       <button class="btn danger" data-a="syncUnlink">${esc(L('Google hesabından ayır'))}</button>`
       : `<div class="note">${esc(L('Google hesabını qoşun: hər dəyişiklik avtomatik öz Google Drive-ınıza yazılsın. Telefon dəyişəndə eyni Gmail ilə hər şey geri gəlir.'))}</div><button class="btn primary" data-a="syncLink">${esc(L('Google Drive-a qoş'))}</button>`}</div>
@@ -855,7 +841,7 @@ const fNote = (v, label, ph) => `<label>${esc(label || L('Qeyd'))}</label><input
 const saveBtn = (a, label, cls) => `<button class="btn ${cls || 'primary'}" data-a="${a}">${esc(label || L('Yadda saxla'))}</button>`;
 const fWho = () => `<label>${esc(L('Müştəri'))}</label><div style="display:flex;gap:8px"><input class="field" id="f_name" placeholder="${esc(L('Ad yazın və ya seçin'))}" autocomplete="off"><button class="iconbtn" data-a="contact">📇</button></div>
   <div class="whosug" id="whosug"></div>`;
-const dueChips = base => [['+' + L('{0} gün', 7), 7], ['+' + L('{0} gün', 14), 14], ['+' + L('{0} gün', 30), 30]].map(([l, v]) => `<button class="chip" data-a="dueSet" data-v="${v}"${base ? ` data-base="${esc(base)}"` : ''}>${esc(l)}</button>`).join('');
+const dueChips = base => [['+' + L('{0} gün', 3), 3], ['+' + L('{0} gün', 7), 7], ['✍️ ' + L('Əl ilə'), 'hand']].map(([l, v]) => `<button class="chip" data-a="dueSet" data-v="${v}"${base ? ` data-base="${esc(base)}"` : ''}>${esc(l)}</button>`).join('');
 const fDue = (due, label) => `<label>${esc(label || L('Ödəmə günü'))}</label><div class="chips" style="margin:0 0 8px">${dueChips()}</div>
   <input class="field" id="f_due" type="date" value="${esc(due || '')}">`;
 // yazdıqca hərfə uyğun təkliflər (gəlir mənbəyi, xərc kateqoriyası)
@@ -1454,9 +1440,10 @@ const actions = {
   fillAmt(v) { const e = document.getElementById('f_amount'); if (e) { e.value = amountInput(+v); calcPreview(); } },
   dueSet(v, e, el) {
     const f = document.getElementById('f_due'); if (!f) return;
-    const base = el.dataset.base || val('f_date') || today();
-    f.value = v === 'm' ? C.addMonths(base, 1) : C.addDays(base, +v);
     el.parentElement.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === el));
+    if (v === 'hand') { try { f.showPicker(); } catch (er) { f.focus(); } return; } // tarixi özü seçir
+    const base = el.dataset.base || val('f_date') || today();
+    f.value = C.addDays(base, +v);
   },
   // gəlir: nağd / kart — kassaya; nisyə — müştərinin nisyəsinə (gəlir deyil, ödənəndə gəlir olur)
   saveIn() {
@@ -1670,11 +1657,6 @@ const actions = {
   offSummary() { if (hasNative) Android.setSummaryTime(''); setCfg('sum', ''); save(); closeSheet(); },
   syncLink() { if (hasNative) Android.syncLink(); },
   syncNow() { if (!sync.account) return; if (loadBroken) return toast(L('Məlumat faylı zədələnib — Google-a göndərilmir')); toast(L('Google-a göndərilir…')); runSync('push'); },
-  syncRestore() {
-    if (!sync.account) return;
-    ask({ title: L('Google-dakı baza telefona yüklənsin?'), text: L('Telefondakı indiki məlumat Google-dakı surətlə əvəz olunacaq. Telefondakı əvvəlki məlumatın surəti telefonda ayrıca saxlanılır.'), ok: L('Yüklə'), icon: '☁️',
-      run() { toast(L('Yüklənir…')); runSync('restore'); } });
-  },
   checkBackup() { if (!sync.account) return; state.checkResult = null; toast(L('Yoxlanılır…')); runSync('check'); },
   syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; } }); },
   xlsx() { exportXlsx(); },

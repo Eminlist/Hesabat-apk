@@ -189,7 +189,7 @@ class GoogleSync {
             if (t == null || t.isEmpty()) throw new SyncError(Tr.t(ctx, "Google icazə vermədi"));
             return t;
         } catch (OperationCanceledException e) {
-            throw new SyncError(Tr.t(ctx, "Google icazəsi verilmədi — yenidən “İndi yenilə” basın və icazə verin"));
+            throw new SyncError(Tr.t(ctx, "Google icazəsi verilmədi — yenidən «Sinxron et» basın və icazə verin"));
         } catch (AuthenticatorException e) {
             String m = String.valueOf(e.getMessage());
             if (m.contains("UNREGISTERED_ON_API_CONSOLE") || m.contains("INVALID_AUDIENCE"))

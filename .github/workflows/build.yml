@@ -47,16 +47,15 @@ jobs:
           rm -rf build out && mkdir -p build/tools out
           javac -cp "$APKSIG" -d build/tools tools/Sign.java
 
-          # $1 = kod qovluğu, $2 = APK adının başı, $3 = əlavə aapt parametrləri, $4 = proqramın adı (boşsa dəyişmir)
-          # hər proqram yalnız öz release-i (r<versionCode>) hələ yoxdursa yığılır
+          # $1 = kod qovluğu, $2 = APK adının başı; yalnız öz release-i (r<versionCode>) hələ yoxdursa yığılır
           app() {
-            local SRC="$1" PFX="$2" EXTRA="$3" LABEL="$4" W="build/$2"
+            local SRC="$1" PFX="$2" W="build/$2"
             local C=$(grep -o 'versionCode="[0-9]*"' "$SRC/AndroidManifest.xml" | grep -o '[0-9]*')
             local V=$(grep -o 'versionName="[^"]*"' "$SRC/AndroidManifest.xml" | cut -d'"' -f2)
             if gh release view "r$C" >/dev/null 2>&1; then echo "$PFX: r$C artıq var, yığılmır"; return 0; fi
             rm -rf "$W" && mkdir -p "$W/gen" "$W/classes" "$W/dex" && cp -r "$SRC/res" "$W/res"
             cp "$SRC/AndroidManifest.xml" "$W/AndroidManifest.xml"
-            aapt package -f -M "$W/AndroidManifest.xml" -S "$W/res" -A "$SRC/assets" -I $AJAR $EXTRA --custom-package az.usta.hesab -J "$W/gen" -F "$W/u.apk"
+            aapt package -f -M "$W/AndroidManifest.xml" -S "$W/res" -A "$SRC/assets" -I $AJAR --custom-package az.usta.hesab -J "$W/gen" -F "$W/u.apk"
             javac -Xlint:-options -source 8 -target 8 -bootclasspath $AJAR -d "$W/classes" $(find "$SRC/src" "$W/gen" -name "*.java")
             d8 --min-api 24 --lib $AJAR --output "$W/dex" $(find "$W/classes" -name "*.class")
             (cd "$W/dex" && zip -q ../u.apk classes.dex)
@@ -71,7 +70,7 @@ jobs:
           }
 
           # My Finance™ (az.usta.hesab) — emin/ qovluğundakı kod
-          app emin Hesabat "" ""
+          app emin Hesabat
           rm -f /tmp/release.p12
           touch out/list.txt
 

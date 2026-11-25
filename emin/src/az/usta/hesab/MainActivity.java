@@ -51,9 +51,7 @@ public class MainActivity extends Activity {
     private GoogleSync gsync;
     private android.net.ConnectivityManager.NetworkCallback netCb;
     /** Kept while a printout is being prepared, so it isn't thrown away halfway. */
-    private WebView printWeb;
     /** Where a home-screen shortcut asked to go ("mine" or "cat:<id>"); handed to the page once. */
-    private String launchTarget;
     private boolean locked = true;
     private boolean unlocking;
     /** Set while a screen we opened ourselves (picker, share...) is on top, so returning doesn't lock. */
@@ -278,7 +276,9 @@ public class MainActivity extends Activity {
             }
         });
         web.addJavascriptInterface(new Bridge(), "Android");
-        launchTarget = getIntent().getStringExtra("go");
+        // ana ekran qısayolu ilə açılanda həmin bölmə açılır (səhifə hazır olanda)
+        String go0 = getIntent().getStringExtra("go");
+        if (go0 != null) js("window.onLaunchTarget && window.onLaunchTarget(" + JSONObject.quote(go0) + ")");
         web.loadUrl("file:///android_asset/index.html");
         setContentView(web);
         registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
@@ -633,21 +633,6 @@ public class MainActivity extends Activity {
     }
 
     private class Bridge {
-        /** App info page: on Android 13+ "Allow restricted settings" is in its ⋮ menu (an APK not from Play). */
-        @JavascriptInterface
-        public void openAppInfo() {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    internalNav = true;
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
-                    } catch (Exception ignored) {
-                    }
-                }
-            });
-        }
-
         /** Proqramın dili: telefon tərəfindəki mətnlər (bildiriş kanalı, yeniləmə pəncərəsi və s.) də bu dildə olur. */
         @JavascriptInterface
         public void setLang(String lang) {
@@ -677,23 +662,6 @@ public class MainActivity extends Activity {
                 if (!f.exists() || old.exists()) return;
                 FileInputStream in = new FileInputStream(f);
                 FileOutputStream out = new FileOutputStream(old);
-                byte[] b = new byte[8192];
-                int n;
-                while ((n = in.read(b)) > 0) out.write(b, 0, n);
-                in.close();
-                out.close();
-            } catch (Exception ignored) {
-            }
-        }
-
-        /** «Google-dan geri yüklə»dən əvvəl telefondakı məlumatın surəti saxlanılır (data.before-restore.json). */
-        @JavascriptInterface
-        public void backupLocal() {
-            try {
-                File f = dataFile();
-                if (!f.exists()) return;
-                FileInputStream in = new FileInputStream(f);
-                FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "data.before-restore.json"));
                 byte[] b = new byte[8192];
                 int n;
                 while ((n = in.read(b)) > 0) out.write(b, 0, n);
@@ -863,32 +831,6 @@ public class MainActivity extends Activity {
             }
         }
 
-        /** Prints an HTML page with the phone's print window (it can also save a PDF). */
-        @JavascriptInterface
-        public void printHtml(final String html, final String title) {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    final WebView pw = new WebView(MainActivity.this);
-                    printWeb = pw;
-                    pw.setWebViewClient(new WebViewClient() {
-                        private boolean done;
-
-                        @Override
-                        public void onPageFinished(WebView v, String url) {
-                            if (done) return;
-                            done = true;
-                            android.print.PrintManager pm = (android.print.PrintManager) getSystemService(PRINT_SERVICE);
-                            if (pm == null) return;
-                            internalNav = true;
-                            pm.print(title, pw.createPrintDocumentAdapter(title), new android.print.PrintAttributes.Builder().build());
-                        }
-                    });
-                    pw.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
-                }
-            });
-        }
-
         /** Shares a file made by the page (e.g. the Excel report), given as base64. */
         @JavascriptInterface
         public void shareBase64(String b64, String name, String mime) {
@@ -967,33 +909,6 @@ public class MainActivity extends Activity {
                     web.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
                 }
             });
-        }
-
-        @JavascriptInterface
-        public boolean lockAvailable() {
-            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            return km != null && km.isKeyguardSecure();
-        }
-
-        @JavascriptInterface
-        public boolean lockEnabled() {
-            return lockOn();
-        }
-
-        @JavascriptInterface
-        public boolean lockOnScreenOff() {
-            return lockOnScreen();
-        }
-
-        @JavascriptInterface
-        public void setLockOnScreenOff(boolean on) {
-            appPrefs().edit().putBoolean("lockOnScreen", on).apply();
-        }
-
-        @JavascriptInterface
-        public void setLock(boolean on) {
-            appPrefs().edit().putBoolean("lock", on).apply();
-            locked = false;
         }
 
         @JavascriptInterface
@@ -1158,13 +1073,6 @@ public class MainActivity extends Activity {
             });
         }
 
-        @JavascriptInterface
-        public String takeLaunchTarget() {
-            String t = launchTarget == null ? "" : launchTarget;
-            launchTarget = null;
-            return t;
-        }
-
         /** Long-press menu on the app icon: today's income and the starred section's spending. */
         @JavascriptInterface
         public void updateShortcuts(String income, String spent, String catId) {
@@ -1185,14 +1093,6 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
                 // launchers may rate-limit updates; the next change tries again
             }
-        }
-
-        @JavascriptInterface
-        public void shareText(String text) {
-            Intent i = new Intent(Intent.ACTION_SEND);
-            i.setType("text/plain");
-            i.putExtra(Intent.EXTRA_TEXT, text);
-            startActivity(Intent.createChooser(i, Tr.t(MainActivity.this, "Göndər")));
         }
 
         @JavascriptInterface
@@ -1217,22 +1117,6 @@ public class MainActivity extends Activity {
             return appPrefs().getBoolean("secure", false);
         }
 
-        @JavascriptInterface
-        public void setShake(final boolean on) {
-            appPrefs().edit().putBoolean("shake", on).apply();
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    shakeOnOff(on);
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public boolean shakeOn() {
-            return appPrefs().getBoolean("shake", false);
-        }
-
         /** A file sent by e-mail: Gmail opens with the address, subject and the file already in it. */
         @JavascriptInterface
         public void mailBase64(String b64, String name, String mime, String to, String subject) {
@@ -1250,69 +1134,5 @@ public class MainActivity extends Activity {
             }
         }
 
-        @JavascriptInterface
-        public void sharePdf(String json) {
-            try {
-                JSONObject o = new JSONObject(json);
-                org.json.JSONArray rows = o.optJSONArray("rows");
-                int n = rows == null ? 0 : rows.length();
-                int W = 420, H = Math.max(360, 190 + n * 26 + 60);
-                android.graphics.pdf.PdfDocument doc = new android.graphics.pdf.PdfDocument();
-                android.graphics.pdf.PdfDocument.Page page = doc.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(W, H, 1).create());
-                android.graphics.Canvas c = page.getCanvas();
-                android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-                p.setColor(Color.parseColor("#0F766E"));
-                c.drawRect(0, 0, W, 70, p);
-                p.setColor(Color.WHITE);
-                p.setTextSize(20);
-                p.setFakeBoldText(true);
-                c.drawText(o.optString("title"), 24, 34, p);
-                p.setFakeBoldText(false);
-                p.setTextSize(12);
-                c.drawText(o.optString("sub"), 24, 56, p);
-                float y = 104;
-                for (int i = 0; i < n; i++) {
-                    org.json.JSONArray r = rows.getJSONArray(i);
-                    boolean bold = r.optBoolean(2, false);
-                    p.setColor(Color.parseColor(bold ? "#111827" : "#374151"));
-                    p.setFakeBoldText(bold);
-                    p.setTextSize(bold ? 15 : 13);
-                    if (bold) {
-                        p.setStrokeWidth(1);
-                        c.drawLine(24, y - 18, W - 24, y - 18, p);
-                    }
-                    p.setTextAlign(android.graphics.Paint.Align.LEFT);
-                    c.drawText(r.optString(0), 24, y, p);
-                    p.setTextAlign(android.graphics.Paint.Align.RIGHT);
-                    c.drawText(r.optString(1), W - 24, y, p);
-                    y += 26;
-                }
-                p.setTextAlign(android.graphics.Paint.Align.LEFT);
-                p.setFakeBoldText(false);
-                p.setTextSize(11);
-                p.setColor(Color.parseColor("#6B7280"));
-                c.drawText(o.optString("foot"), 24, y + 24, p);
-                doc.finishPage(page);
-                File dir = new File(getCacheDir(), "share");
-                dir.mkdirs();
-                String name = new File(o.optString("file", "qebz.pdf")).getName();
-                FileOutputStream out = new FileOutputStream(new File(dir, name));
-                doc.writeTo(out);
-                out.close();
-                doc.close();
-                if (o.optBoolean("mail", false)) {
-                    mailFile(name, "application/pdf", o.optString("to", ""), o.optString("subject", name));
-                    return;
-                }
-                Uri uri = Uri.parse("content://" + ShareProvider.AUTHORITY + "/" + Uri.encode(name));
-                Intent i = new Intent(Intent.ACTION_SEND);
-                i.setType("application/pdf");
-                i.putExtra(Intent.EXTRA_STREAM, uri);
-                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                startActivity(Intent.createChooser(i, o.optString("share", Tr.t(MainActivity.this, "Qəbzi göndər"))));
-            } catch (Exception e) {
-                MainActivity.this.toast(Tr.t(MainActivity.this, "PDF yaradılmadı"));
-            }
-        }
     }
 }

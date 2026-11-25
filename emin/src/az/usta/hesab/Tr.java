@@ -17,7 +17,7 @@ final class Tr {
     static {
         put("Google hesabı seçilməyib", "Аккаунт Google не выбран", "Google hesabı seçilmedi", "No Google account selected");
         put("Google icazə vermədi", "Google не дал разрешения", "Google izin vermedi", "Google did not grant permission");
-        put("Google icazəsi verilmədi — yenidən “İndi yenilə” basın və icazə verin", "Разрешение Google не получено — нажмите «Отправить сейчас» и разрешите доступ", "Google izni verilmedi — tekrar «Şimdi gönder»e basın ve izin verin", "Google permission not granted — tap “Send now” again and allow access");
+        put("Google icazəsi verilmədi — yenidən «Sinxron et» basın və icazə verin", "Разрешение Google не получено — снова нажмите «Синхронизировать» и разрешите доступ", "Google izni verilmedi — tekrar «Senkronize et»e basın ve izin verin", "Google permission not granted — tap «Sync now» again and allow access");
         put("Tətbiq Google Cloud-da qeydiyyatdan keçməyib (paket adı və SHA-1 yoxlanmalıdır)", "Приложение не зарегистрировано в Google Cloud (проверьте имя пакета и SHA-1)", "Uygulama Google Cloud'da kayıtlı değil (paket adı ve SHA-1 kontrol edilmeli)", "The app is not registered in Google Cloud (check package name and SHA-1)");
         put("Google hesabına giriş alınmadı — telefonun Ayarlarında hesabı yoxlayın", "Не удалось войти в аккаунт Google — проверьте аккаунт в настройках телефона", "Google hesabına giriş yapılamadı — telefonun Ayarlarında hesabı kontrol edin", "Could not sign in to Google — check the account in phone Settings");
         put("Google xətası: ", "Ошибка Google: ", "Google hatası: ", "Google error: ");
@@ -47,8 +47,6 @@ final class Tr {
         put("Barmaq izi ilə açın", "Разблокируйте отпечатком пальца", "Parmak izi ile açın", "Unlock with fingerprint");
         put("PIN kod", "PIN-код", "PIN kodu", "PIN code");
         put("PIN-i sıfırlamaq üçün telefonun kilidini açın", "Разблокируйте телефон, чтобы сбросить PIN", "PIN'i sıfırlamak için telefonun kilidini açın", "Unlock the phone to reset the PIN");
-        put("Qəbzi göndər", "Отправить квитанцию", "Makbuzu gönder", "Send receipt");
-        put("PDF yaradılmadı", "PDF не создан", "PDF oluşturulamadı", "PDF could not be created");
         put("Bu günkü gəlir", "Доход за сегодня", "Bugünkü gelir", "Today's income");
         put("Günün xülasəsi", "Итоги дня", "Günün özeti", "Day summary");
         put("Bu gün heç nə yazılmayıb", "Сегодня ничего не записано", "Bugün hiçbir şey yazılmadı", "Nothing recorded today");
