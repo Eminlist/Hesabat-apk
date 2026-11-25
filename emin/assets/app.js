@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 006';
+const APP_VERSION = '3.1.3 Rev. 007';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -50,6 +50,7 @@ function fixDb() {
   if (!Array.isArray(db.cfg.tags)) db.cfg.tags = DEFAULT_TAGS.slice();
   db.mf = 1;
 }
+let loadBroken = false; // fayl oxunmadısa, üstünə boş məlumat yazılmasın
 function load() {
   let raw = '';
   try { raw = hasNative ? Android.load() : (localStorage.getItem('myFinance') || ''); } catch (e) {}
@@ -58,7 +59,7 @@ function load() {
       const d = JSON.parse(raw);
       if (d && d.mf) db = d;
       else if (hasNative && Android.archiveOld) Android.archiveOld(); // köhnə Hesabatın faylı ayrıca saxlanılır
-    } catch (e) { alert(L('Məlumat oxunmadı: {0}', e.message)); }
+    } catch (e) { loadBroken = true; alert(L('Məlumat oxunmadı: {0}', e.message)); }
   }
   fixDb();
   purgeTrash();
@@ -79,6 +80,7 @@ function importOldDebts() {
   if (n) setTimeout(() => toast(L('Köhnə proqramdan {0} borc köçürüldü', n)), 600);
 }
 function save() {
+  if (loadBroken) return toast(L('Yadda saxlanmadı!'));
   const json = JSON.stringify(db);
   let ok = true;
   try { ok = hasNative ? Android.save(json) : (localStorage.setItem('myFinance', json), true); } catch (e) { ok = false; }
@@ -181,7 +183,8 @@ window.onSyncRemote = function (text) {
     db = mergeDb(db, remote); fixDb();
     if (JSON.stringify(db) !== before) {
       try { if (hasNative) Android.save(JSON.stringify(db)); } catch (e) {}
-      markDirty(); pushNative(); render();
+      markDirty(); pushNative();
+      if (!state.sheet) render(); // açıq formada yazılan silinməsin; forma bağlananda ekran yenilənir
     }
   }
   refreshSettings();
@@ -209,7 +212,7 @@ let openedDay = today();
 window.onAppResume = function () {
   purgeTrash();
   pushNative();
-  if (openedDay !== today()) { openedDay = today(); state.kday = today(); render(); }
+  if (openedDay !== today()) { openedDay = today(); state.kday = today(); if (!state.sheet) render(); }
   if (!sync.account && hasNative && Android.syncLinked) { sync.account = Android.syncLinked(); if (sync.account) { render(); return runSync(); } }
   if (sync.account && (sync.dirty || Date.now() - sync.last > 60000)) runSync();
 };
@@ -525,7 +528,7 @@ function renderKassa() {
       ${kv(esc(L('Günün xərci')), money(f.expense), 'exp')}${f.borrowOut ? kv('&nbsp;&nbsp;' + esc(L('o cümlədən qaytardığım borc')), money(f.borrowOut), 'exp') : ''}
       ${kv(esc(L('Günün nəticəsi')), money(f.net), f.net < 0 ? 'neg' : 'pay')}${f.nisye ? kv(esc(L('Verilən nisyə (kassaya yazılmır)')), money(f.nisye), 'debt') : ''}
     </div>
-    <div class="two"><button class="btn payb" data-a="add" data-v="in">+ ${esc(L('Gəlir'))}</button><button class="btn expb" data-a="add" data-v="out">− ${esc(L('Xərc'))}</button></div>
+    <div class="two"><button class="btn payb" data-a="addOn" data-v="in">+ ${esc(L('Gəlir'))}</button><button class="btn expb" data-a="addOn" data-v="out">− ${esc(L('Xərc'))}</button></div>
     <div class="sec"><b>${esc(L('Əməliyyatlar'))}</b><span class="note">${ops.length}</span></div>
     ${ops.length ? `<div class="list">${ops.map(o => opRow(o)).join('')}</div>` : `<div class="empty">${esc(L('Bu gün üçün heç nə yazılmayıb'))}</div>`}
   </main></div>`;
@@ -720,7 +723,7 @@ const picked = g => { const b = app.querySelector(`[data-group="${g}"] .on`); re
 const fAmount = (v, label) => `<label>${esc(label || L('Məbləğ'))}</label><input class="field big num" id="f_amount" inputmode="decimal" placeholder="0" value="${esc(v || '')}" autocomplete="off">
   <div class="calcbar"><button data-a="calcOp" data-v="+">+</button><button data-a="calcOp" data-v="-">−</button><button data-a="calcOp" data-v="*">×</button><button data-a="calcOp" data-v="/">÷</button><span class="calcres num" id="calcres"></span></div>`;
 const fMethod = (v, withNisye) => `<label>${esc(L('Ödəniş üsulu'))}</label><div class="seg" data-group="method"><button class="${v !== 'card' && v !== 'nisye' ? 'on' : ''}" data-a="pick" data-v="method|cash">💵 ${esc(L('Nağd'))}</button><button class="${v === 'card' ? 'on' : ''}" data-a="pick" data-v="method|card">💳 ${esc(L('Kart'))}</button>${withNisye ? `<button class="debt ${v === 'nisye' ? 'on' : ''}" data-a="pick" data-v="method|nisye">📝 ${esc(L('Nisyə'))}</button>` : ''}</div>`;
-const fDate = o => `<div class="two"><div><label>${esc(L('Tarix'))}</label><input class="field" id="f_date" type="date" value="${o && o.date || today()}" max="${today()}"></div><div><label>${esc(L('Saat'))}</label><input class="field" id="f_time" type="time" value="${o && o.time || nowHm()}"></div></div>`;
+const fDate = (o, d) => `<div class="two"><div><label>${esc(L('Tarix'))}</label><input class="field" id="f_date" type="date" value="${o && o.date || d || today()}" max="${today()}"></div><div><label>${esc(L('Saat'))}</label><input class="field" id="f_time" type="time" value="${o && o.time || nowHm()}"></div></div>`;
 const fNote = (v, label, ph) => `<label>${esc(label || L('Qeyd'))}</label><input class="field" id="f_note" value="${esc(v || '')}" placeholder="${esc(ph || '')}" autocomplete="off">`;
 const saveBtn = (a, label, cls) => `<button class="btn ${cls || 'primary'}" data-a="${a}">${esc(label || L('Yadda saxla'))}</button>`;
 const fWho = () => `<label>${esc(L('Müştəri'))}</label><div style="display:flex;gap:8px"><input class="field" id="f_name" placeholder="${esc(L('Ad yazın və ya seçin'))}" autocomplete="off"><button class="iconbtn" data-a="contact">📇</button></div>
@@ -769,12 +772,12 @@ function renderSheet(s) {
       ${fAmount(o ? amountInput(o.amount) : '')}${fMethod(m, !o)}
       <div id="nisyebox" class="hidden"><div class="note" style="margin-top:8px">📝 ${esc(L('Nisyə gündəlik gəlirə yazılmır. Müştəri ödəyəndə ödənən məbləğ həmin günün gəliri olur və onun nisyəsindən çıxılır.'))}</div>
         ${fWho()}<label>${esc(L('Telefon (istəyə bağlı)'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="off">${fDue(C.addDays(today(), 7))}</div>
-      ${fNote(o && o.note, L('Qeyd'), '')}${fDate(o)}
+      ${fNote(o && o.note, L('Qeyd'), '')}${fDate(o, s.date)}
       ${saveBtn('saveIn', L('Yadda saxla'), 'payb')}${delBtn}`;
     }
     case 'out': return `<h2>${esc(o ? L('Düzəliş: xərc') : L('Xərc'))}</h2>
       ${fSuggest('f_cat', L('Kateqoriya'), o ? o.cat || '' : '', L('məs. Mal alışı, Yol, İcarə'))}
-      ${fAmount(o ? amountInput(o.amount) : '')}${fMethod(o && o.method)}${fNote(o && o.note, L('Nəyə xərcləndi'), L('məs. nahar'))}${fDate(o)}
+      ${fAmount(o ? amountInput(o.amount) : '')}${fMethod(o && o.method)}${fNote(o && o.note, L('Nəyə xərcləndi'), L('məs. nahar'))}${fDate(o, s.date)}
       ${saveBtn('saveOut', L('Yadda saxla'), 'expb')}${delBtn}`;
     case 'nisye': {
       const due = o ? o.due || '' : s.due || C.addDays(today(), 7);
@@ -1260,6 +1263,7 @@ const actions = {
   settings() { state.checkResult = null; pushPage({ kind: 'settings' }); },
   addMenu() { openSheet({ kind: 'add' }); },
   add(v) { openSheet({ kind: v }); },
+  addOn(v) { openSheet({ kind: v, date: state.kday }); }, // Kassada baxılan günə yazılır
   openCust(v) { pushPage({ kind: 'cust', id: v }); },
   openKassa() { state.kday = today(); pushPage({ kind: 'kassa' }); },
   openAll() { pushPage({ kind: 'all', k: '', m: '', q: '' }); },
@@ -1417,7 +1421,12 @@ const actions = {
     const n = document.getElementById('f_name');
     const data = { side, name, phone: val('f_phone').trim() || (n && n.dataset.phone) || '', amount, date, time: val('f_time') || nowHm(), due, note: val('f_note').trim() };
     if (side === 'borrow') data.method = picked('method') || 'cash';
-    if (d) { if (d.total && amount !== d.amount) delete d.total; Object.assign(touch(d), data); }
+    if (d) {
+      const paid = C.debtPaid(db, d);
+      if (amount < paid) return toast(L('Qaytarılan məbləğdən az ola bilməz: {0}', money(paid)));
+      if (d.total && amount !== d.amount) delete d.total;
+      Object.assign(touch(d), data);
+    }
     else db.debts.push(touch(Object.assign({ id: uid(), c: Date.now() }, data)));
     save(); closeSheet();
     toast(side === 'lend' ? L('Verdiyim borc yazıldı (hesaba qatılmır)') : L('Aldığım borc yazıldı'));

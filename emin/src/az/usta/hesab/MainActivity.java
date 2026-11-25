@@ -688,7 +688,11 @@ public class MainActivity extends Activity {
                 if (!f.exists()) continue;
                 try {
                     String s = readAll(new FileInputStream(f)).trim();
-                    if (s.startsWith("{") && s.endsWith("}")) return s;
+                    // only a file that reads as whole JSON; a damaged one falls back to the previous copy
+                    if (s.startsWith("{") && s.endsWith("}")) {
+                        new JSONObject(s);
+                        return s;
+                    }
                 } catch (Exception ignored) {
                 }
             }
