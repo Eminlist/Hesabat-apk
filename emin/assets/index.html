@@ -382,6 +382,15 @@
   .bars b { display: block; flex: 1; border-radius: 3px 3px 0 0; min-height: 0; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 8px; }
   .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
+  .sortwrap { position: relative; margin: 0 0 10px; }
+  .sortbtn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-radius: 14px; background: var(--card); color: var(--text); font: inherit; font-size: 14px; box-shadow: var(--shadow); }
+  .sortbtn b { font-weight: 800; }
+  .sortbtn .caret { transition: transform .2s; color: var(--muted); }
+  .sortbtn .caret.up { transform: rotate(180deg); }
+  .sortmenu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; background: var(--card); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.18); overflow: hidden; border: 1px solid var(--line); }
+  .sortmenu button { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; font: inherit; font-size: 15px; color: var(--text); background: none; border-bottom: 1px solid var(--line2); }
+  .sortmenu button:last-child { border-bottom: 0; }
+  .sortmenu button.on { font-weight: 800; color: var(--brand); }
   .dtot { position: sticky; top: 8px; z-index: 5; }
   .tchk { width: 22px; height: 22px; flex: none; accent-color: var(--brand); margin: 0 4px 0 0; }
   .ktab { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 6px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }

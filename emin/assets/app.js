@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev 313';
+const APP_VERSION = '3.1.3 Rev. 300';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -354,6 +354,7 @@ function phoneBackup(force) {
 }
 window.onAppResume = function () {
   queueCheck(); phoneBackup();
+  if (topPage() && topPage().kind === 'settings' && !state.sheet && !state.confirm) render(); // bildiriş icazəsi və s. yenidən yoxlanır
   if (purgeTrash()) save();
   pushNative();
   if (openedDay !== today()) { openedDay = today(); state.kday = today(); if (!state.sheet) render(); }
@@ -493,7 +494,7 @@ function dueCustomers() {
   return db.customers.map(c => ({ c, s: C.custState(db, c.id, td) })).filter(x => x.s.isDue).sort((a, b) => b.s.overdue - a.s.overdue || b.s.debt - a.s.debt);
 }
 function renderHome() {
-  const td = today(), f = C.flow(db, td, td), B = C.balances(db, td), O = C.outstanding(db, td);
+  const td = today(), f = C.flow(db, td, td), B = C.balances(db, td);
   const due = dueCustomers();
   const recs = C.recStatus(db, td).filter(x => !x.paid && x.days <= 3);
   const debts = ['lend', 'borrow'].flatMap(side => C.parties(db, side, td).filter(g => g.soon).map(g => ({ g, side })));
@@ -518,8 +519,6 @@ function renderHome() {
     <div class="hm-card"><div class="hm-title"><span>${esc(L('Bu gün'))}</span><span class="hm-link" data-a="openKassa">${esc(L('Kassa'))} ›</span></div>
       <div class="hm-3"><div><small>${esc(L('Gəlir'))}</small><b class="num pay">${money(f.income)}</b></div><div><small>${esc(L('Xərc'))}</small><b class="num exp">${money(f.expense)}</b></div><div><small>${esc(L('Nisyə'))}</small><b class="num debt">${money(f.nisye)}</b></div></div></div>
     ${(() => { const M = C.flow(db, td.slice(0, 7) + '-01', td); return `<button class="hm-card" data-a="openReport" style="display:flex;width:100%;align-items:center;gap:8px;padding:10px 14px;font-size:13px;color:var(--text)"><b style="flex:none">${esc(L('Bu ay'))}:</b><span class="grow" style="text-align:left;min-width:0">${esc(L('Gəlir'))} <b class="num pay">${money(M.income)}</b> · ${esc(L('Xərc'))} <b class="num exp">${money(M.expense)}</b> · ${esc(L('Nəticə'))} <b class="num ${M.net < 0 ? 'neg' : 'pay'}">${money(M.net)}</b></span><span class="chev">›</span></button>`; })()}
-    <button class="outcard" data-a="tab" data-v="people"><span class="ic" style="background:var(--debt-soft);color:var(--debt);font-size:22px">🤝</span>
-      <span class="grow"><small>${esc(L('Çöldə olan pul (aktiv nisyə)'))}</small><b class="num">${money(O.total)}</b><span class="s">${esc(O.count ? L('{0} müştəridə', O.count) : L('Heç kimdə borc yoxdur'))}</span></span><span class="chev">›</span></button>
     <div class="sec"><b>${esc(L('Bu günün əməliyyatları'))}</b>${ops.length ? `<button data-a="openKassa">${esc(L('Hamısı'))}</button>` : ''}</div>
     ${ops.length ? `<div class="list">${ops.slice(0, 8).map(o => opRow(o)).join('')}</div>` : `<div class="empty">${esc(L('Bu gün hələ heç nə yazılmayıb.'))}<br>${esc(L('Aşağıdakı «+» ilə əlavə edin.'))}</div>`}
   </main>`;
@@ -537,14 +536,14 @@ function renderCustomers() {
   const SORTS = { due: (a, b) => (b.s.isDue - a.s.isDue) || (b.s.overdue - a.s.overdue) || (b.s.debt - a.s.debt) || byName(a, b),
     debt: (a, b) => (b.s.debt - a.s.debt) || byName(a, b), late: (a, b) => (b.s.overdue - a.s.overdue) || (b.s.ageDays - a.s.ageDays) || byName(a, b), name: byName };
   list.sort(SORTS[state.csort] || SORTS.due);
-  const O = C.outstanding(db, td);
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(L('Nisyə dəftəri'))}</span><h1>${esc(L('Müştərilər'))}</h1></div>
     <button class="tbtn" data-a="newCust">${I.plus}</button></div>
   <main style="padding-top:6px">
-    <div class="hm-card" style="display:flex;justify-content:space-between;align-items:center"><span class="note" style="font-weight:700">${esc(L('Çöldə olan pul'))}</span><b class="num debt" style="font-size:20px">${money(O.total)}</b></div>
     <input class="search" id="q" placeholder="🔍 ${esc(L('Ad, nömrə, məbləğ və ya qeyd…'))}" autocomplete="off">
     <div class="seg" style="margin-bottom:10px"><button class="${state.seg === 'active' ? 'on' : ''}" data-a="seg" data-v="active">${esc(L('Aktiv'))} (${active.length})</button><button class="${state.seg === 'closed' ? 'on' : ''}" data-a="seg" data-v="closed">${esc(L('Bağlanmışlar'))} (${closed.length})</button></div>
-    <div class="chips" style="margin:0 0 8px">${[['due', L('Vaxtı çatanlar')], ['debt', L('Məbləğə görə')], ['late', L('Gecikməyə görə')], ['name', L('Ada görə')]].map(([k, l]) => `<button class="chip ${(state.csort || 'due') === k ? 'on' : ''}" data-a="csort" data-v="${k}">↕ ${esc(l)}</button>`).join('')}</div>
+    ${(() => { const SO = [['due', L('Vaxtı çatanlar')], ['debt', L('Məbləğə görə')], ['late', L('Gecikməyə görə')], ['name', L('Ada görə')]], cur = state.csort || 'due';
+      return `<div class="sortwrap"><button class="sortbtn" data-a="sortToggle"><span>↕ ${esc(L('Sırala'))}: <b>${esc(SO.find(x => x[0] === cur)[1])}</b></span><span class="caret ${state.sortOpen ? 'up' : ''}">▾</span></button>
+        ${state.sortOpen ? `<div class="sortmenu">${SO.map(([k, l]) => `<button data-a="csort" data-v="${k}" class="${cur === k ? 'on' : ''}"><span>${esc(l)}</span>${cur === k ? '<i>✓</i>' : ''}</button>`).join('')}</div>` : ''}</div>`; })()}
     <div class="chips" style="margin:0 0 12px"><button class="chip ${!state.tag ? 'on' : ''}" data-a="tagF" data-v="">${esc(L('Hamısı'))}</button>${db.cfg.tags.map(t => `<button class="chip ${state.tag === t ? 'on' : ''}" data-a="tagF" data-v="${esc(t)}">${esc(tagName(t))}</button>`).join('')}</div>
     ${list.length ? `<div class="list" id="plist">${list.map(({ c, s }) => custRow(c, s)).join('')}</div><div class="empty hidden" id="qempty">${esc(L('Heç nə tapılmadı'))}</div>`
       : `<div class="empty">${state.seg === 'closed' ? esc(L('Borcu bağlanmış müştəri yoxdur')) : esc(L('Hələ müştəri yoxdur.')) + '<br>' + esc(L('«+» ilə nisyə yazın və ya yeni müştəri əlavə edin.'))}</div>`}
@@ -596,6 +595,10 @@ function renderCustomer(pg) {
   </main></div>`;
 }
 function histRow(o, bal) {
+  if (o.kind === 'in') return `<button class="row" data-a="editOp" data-v="${o.id}">
+    <span class="ic" style="background:var(--pay-soft);color:var(--pay);font-size:19px">✅</span>
+    <div class="grow"><div class="t">${esc(L('İş — tam ödənildi'))}${o.note && o.note !== L('Görülən iş') ? ' — ' + esc(o.note) : ''}</div><div class="s">${esc([fmtDate(o.date) + (o.time ? ', ' + o.time : ''), methodTxt(o)].filter(Boolean).join(' · '))}</div></div>
+    <div class="amt num pay">${money(o.amount)}<small>${esc(L('qalıq: {0}', bal < 0 ? '+' + money(-bal) + ' ' + L('avans') : money(bal)))}</small></div></button>`;
   const n = o.kind === 'nisye';
   const ext = n && o.ext && o.ext.length ? '↻ ' + L('{0} dəfə uzadılıb · köhnə: {1}', o.ext.length, fmtShort(o.ext[o.ext.length - 1].old)) : '';
   const sub = [fmtDate(o.date) + (o.time ? ', ' + o.time : ''), n ? (o.due ? L('ödəmə: {0}', fmtShort(o.due)) : '') : methodTxt(o)].filter(Boolean).join(' · ');
@@ -620,12 +623,13 @@ function renderDebts() {
     <div class="amt num ${g.left > 0 ? (side === 'lend' ? 'debt' : 'exp') : 'zero'}">${money(g.left > 0 ? g.left : g.total)}${g.left > 0 && g.back ? `<small>${esc(L('{0}-dan', money(g.total)))}</small>` : ''}</div></button>`;
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(L('Verdiyim və aldığım borclar'))}</span><h1>${esc(L('Borclar'))}</h1></div><button class="tbtn" data-a="newDebt" data-v="${side}|">${I.plus}</button></div>
   <main style="padding-top:6px">
-    <div class="hm-card dtot"><div class="hm-3" style="grid-template-columns:1fr 1fr"><div><small>${esc(L('Ümumi verdiyim qalıq'))}</small><b class="num debt">${money(totL)}</b></div><div><small>${esc(L('Ümumi aldığım qalıq'))}</small><b class="num exp">${money(totB)}</b></div></div></div>
-    <div class="seg"><button class="${side === 'lend' ? 'on' : ''}" data-a="side" data-v="lend">${esc(L('Verdiyim'))}</button><button class="${side === 'borrow' ? 'on' : ''}" data-a="side" data-v="borrow">${esc(L('Aldığım'))}</button></div>
-    <div class="card" style="margin-top:12px">${kv(esc(side === 'lend' ? L('Mənə qaytarılmalıdır') : L('Mən qaytarmalıyam')), money(sum), side === 'lend' ? 'debt' : 'exp')}
-      <div class="note">${esc(side === 'lend' ? L('Ümumi hesaba (gəlir, xərc, kassa) qatılmır. Qaytarma gününə 3 gün qalmış hər gün xatırladılır.') : L('Ümumi hesaba (gəlir, xərc, kassa) qatılmır. Qaytarma gününə 3 gün qalmış hər gün xatırladılır.'))}</div></div>
-    <div class="two" style="margin-bottom:12px"><button class="btn ${side === 'lend' ? 'debtb' : 'expb'}" data-a="newDebt" data-v="${side}|">${esc(side === 'lend' ? L('Borc verdim') : L('Borc aldım'))}</button><button class="btn payb" data-a="newBack" data-v="${side}|" ${open.length ? '' : 'disabled style="opacity:.45"'}>${esc(side === 'lend' ? L('Borc qaytarıldı') : L('Borcu qaytardım'))}</button></div>
-    ${open.length ? `<div class="list">${open.map(row).join('')}</div>` : `<div class="empty">${esc(L('Açıq borc yoxdur'))}</div>`}
+    <div class="hm-card dtot"><div class="hm-3" style="grid-template-columns:1fr 1fr">
+      <button data-a="side" data-v="lend" style="all:unset;display:block;cursor:pointer;text-align:center"><small>${esc(L('Mənə qaytarılmalı'))}</small><b class="num debt">${money(totL)}</b><small style="margin:2px 0 0">${esc(L('verdiyim borclar'))}</small></button>
+      <button data-a="side" data-v="borrow" style="all:unset;display:block;cursor:pointer;text-align:center"><small>${esc(L('Mən qaytarmalıyam'))}</small><b class="num exp">${money(totB)}</b><small style="margin:2px 0 0">${esc(L('aldığım borclar'))}</small></button></div></div>
+    <div class="seg"><button class="${side === 'lend' ? 'on' : ''}" data-a="side" data-v="lend">🤝 ${esc(L('Verdiyim borclar'))}</button><button class="${side === 'borrow' ? 'on' : ''}" data-a="side" data-v="borrow">📥 ${esc(L('Aldığım borclar'))}</button></div>
+    <div class="note" style="margin:10px 4px 12px">${esc(side === 'lend' ? L('Başqalarına verdiyiniz borclar. Gəlir, xərc və kassa hesabına daxil edilmir. Qaytarma tarixinə 3 gün qalmış hər gün bildiriş göndərilir.') : L('Başqalarından götürdüyünüz borclar. Gəlir, xərc və kassa hesabına daxil edilmir. Qaytarma tarixinə 3 gün qalmış hər gün bildiriş göndərilir.'))}</div>
+    <div class="two" style="margin-bottom:12px"><button class="btn ${side === 'lend' ? 'debtb' : 'expb'}" data-a="newDebt" data-v="${side}|">${esc(side === 'lend' ? L('＋ Borc verdim') : L('＋ Borc aldım'))}</button><button class="btn payb" data-a="newBack" data-v="${side}|" ${open.length ? '' : 'disabled style="opacity:.45"'}>${esc(side === 'lend' ? L('✓ Mənə qaytarıldı') : L('✓ Borcu qaytardım'))}</button></div>
+    ${open.length ? `<div class="section-title">${esc(side === 'lend' ? L('Açıq borclar — qaytarılmalı ({0})', money(sum)) : L('Açıq borclar — qaytarmalıyam ({0})', money(sum)))}</div><div class="list">${open.map(row).join('')}</div>` : `<div class="empty">${esc(side === 'lend' ? L('Verilmiş açıq borc yoxdur') : L('Alınmış açıq borc yoxdur'))}</div>`}
     ${done.length ? `<div class="section-title">${esc(L('Bağlanmış'))}</div><div class="list">${done.map(row).join('')}</div>` : ''}
   </main>`;
 }
@@ -1036,14 +1040,16 @@ function renderSheet(s) {
       ${c ? '' : '<div class="whosug" id="whosug"></div>'}
       <label>${esc(L('Telefon'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" value="${esc(c ? c.phone || '' : '')}" autocomplete="off">
       <label>${esc(L('Qruplar'))}</label><div class="chips" style="margin:0" data-group="tags">${db.cfg.tags.map(t => `<button class="chip ${tags.includes(t) ? 'on' : ''}" data-a="tagToggle" data-v="${esc(t)}">${esc(tagName(t))}</button>`).join('')}</div>
-      ${c ? '' : `<div class="card" style="margin-top:14px"><b>📝 ${esc(L('İş və borc (istəyə bağlı)'))}</b>
+      ${c ? '' : `<div class="card" style="margin-top:14px"><b>🛠 ${esc(L('Görülən iş (istəyə bağlı)'))}</b>
         <label>${esc(L('Görülən işin dəyəri'))}</label><input class="field num" id="f_work" inputmode="decimal" placeholder="0" autocomplete="off">
-        <label>${esc(L('Ödədi'))}</label><input class="field num" id="f_paid" inputmode="decimal" placeholder="0" autocomplete="off">
-        ${fMethod('cash')}
-        <div class="note" id="f_left" style="margin-top:8px"></div>
-        <label>${esc(L('Əlavə xərc'))}</label><input class="field num" id="f_extra" inputmode="decimal" placeholder="0" autocomplete="off">
-        <div class="note">${esc(L('Bu iş üçün etdiyiniz xərc (məs. hissə) — kassadan xərc kimi çıxır.'))}</div>
-        ${fDue(C.addDays(today(), 7))}${fDate()}</div>`}
+        ${fMethod('cash', true)}
+        <div id="nisyebox" class="hidden">
+          <label>${esc(L('İlkin ödəniş (varsa)'))}</label><input class="field num" id="f_paid" inputmode="decimal" placeholder="0" autocomplete="off">
+          <div class="note" id="f_left" style="margin-top:8px"></div>
+          ${fDue(C.addDays(today(), 7))}
+        </div>
+        <label>${esc(L('Əlavə xərc (varsa)'))}</label><input class="field num" id="f_extra" inputmode="decimal" placeholder="0" autocomplete="off">
+        ${fDate()}</div>`}
       ${saveBtn('saveCust')}${c && db.customers.length > 1 ? `<button class="btn ghost" data-a="mergeOpen" data-v="${c.id}">🔗 ${esc(L('Başqa müştəri ilə birləşdir'))}</button>` : ''}`;
     }
     case 'merge': { // dublikat müştəri: hamısı seçilən müştəriyə keçir
@@ -1439,11 +1445,12 @@ async function drawStatement(cid) {
     const n = o.kind === 'nisye';
     x.fillStyle = '#0F1A24'; x.font = `500 28px ${F}`;
     x.fillText(fmtShort(o.date) + '.' + o.date.slice(0, 4), P + 20, y + 46);
-    x.font = `600 28px ${F}`; x.fillText(n ? L('Nisyə') : L('Ödəniş'), P + 250, y + 36);
+    const done = o.kind === 'in';
+    x.font = `600 28px ${F}`; x.fillText(done ? L('İş — tam ödənildi') : n ? L('Nisyə') : L('Ödəniş'), P + 250, y + 36);
     x.font = `400 22px ${F}`; x.fillStyle = '#6B7785';
     x.fillText((o.note || o.src || (n ? (o.due ? L('ödəmə günü {0}', fmtShort(o.due)) : '') : (o.method === 'card' ? L('kart') : L('nağd')))).slice(0, 34), P + 250, y + 64);
     x.textAlign = 'right'; x.font = `700 28px ${F}`; x.fillStyle = n ? '#D9480F' : '#16A34A';
-    x.fillText((n ? '+' : '−') + money(o.amount), W - P - 230, y + 46);
+    x.fillText((done ? '' : n ? '+' : '−') + money(o.amount), W - P - 230, y + 46);
     x.fillStyle = '#0F1A24'; x.fillText(bal < 0 ? '+' + money(-bal) : money(bal), W - P - 20, y + 46); x.textAlign = 'left';
     y += 74; x.fillStyle = '#E7ECF0'; x.fillRect(P, y - 1, W - 2 * P, 2);
   }
@@ -1593,7 +1600,8 @@ const actions = {
   allF(v) { const [g, x] = v.split('|'); const pg = topPage(); pg[g] = x; pg.q = val('tq'); render(); },
   seg(v) { state.seg = v; render(); },
   tagF(v) { state.tag = v; render(); },
-  csort(v) { state.csort = v; render(); },
+  csort(v) { state.csort = v; state.sortOpen = false; render(); },
+  sortToggle() { state.sortOpen = !state.sortOpen; render(); },
   side(v) { state.side = v; render(); },
   kday(v) { const d = C.addDays(state.kday, +v); if (d <= today()) { state.kday = d; render(); } },
   newCust() { openSheet({ kind: 'cust' }); },
@@ -1701,16 +1709,21 @@ const actions = {
     else {
       // yeni müştəri: görülən iş nisyə kimi, ödədiyi pul həmin günün gəliri kimi, əlavə xərc xərc kimi yazılır; borclu qalan = iş − ödədi
       const amt = id => { const t = val(id).trim(); if (!t) return 0; const v = C.evalExpr(t); return v == null || isNaN(v) || v < 0 ? NaN : v; };
-      const work = amt('f_work'), paid = amt('f_paid'), extra = amt('f_extra');
+      // Nağd / Kart: iş tam ödənilib — həmin günün gəliri. Nisyə: iş müştərinin nisyəsinə, ilkin ödəniş gəlirə yazılır.
+      const how = picked('method') || 'cash', nis = how === 'nisye';
+      const work = amt('f_work'), paid = nis ? amt('f_paid') : 0, extra = amt('f_extra');
       if ([work, paid, extra].some(isNaN)) return toast(L('Məbləği düzgün yazın'));
-      const date = readDate(), time = val('f_time') || nowHm(), due = val('f_due'), method = picked('method') || 'cash';
-      if (work && due && due < date) return toast(L('Ödəmə günü nisyə günündən əvvəl ola bilməz'));
+      if (nis && !work) return toast(L('Görülən işin dəyərini yazın'));
+      if (nis && paid > work) return toast(L('İlkin ödəniş işin dəyərindən çox ola bilməz'));
+      const date = readDate(), time = val('f_time') || nowHm(), due = nis ? val('f_due') : '';
+      if (nis && due && due < date) return toast(L('Ödəmə günü nisyə günündən əvvəl ola bilməz'));
       const c = touch({ id: uid(), name, phone: val('f_phone').trim(), tags, c: Date.now() }); db.customers.push(c);
-      if (work) newOp({ kind: 'nisye', cid: c.id, amount: work, note: L('Görülən iş'), date, time, due: work > paid ? due : '' });
-      if (paid) newOp({ kind: 'pay', cid: c.id, amount: paid, method, note: '', date, time });
+      if (work && !nis) newOp({ kind: 'in', cid: c.id, amount: work, method: how, src: name, note: L('Görülən iş'), date, time });
+      if (work && nis) newOp({ kind: 'nisye', cid: c.id, amount: work, note: L('Görülən iş'), date, time, due: work > paid ? due : '' });
+      if (paid) newOp({ kind: 'pay', cid: c.id, amount: paid, method: 'cash', note: L('İlkin ödəniş'), date, time });
       if (extra) newOp({ kind: 'out', amount: extra, method: 'cash', cat: L('Əlavə xərc'), note: name, date, time });
       save(); state.sheet = null; pushPage({ kind: 'cust', id: c.id });
-      if (work || paid || extra) toast(work - paid > 0 ? L('Yazıldı · borclu qaldı: {0}', money(work - paid)) : L('Yazıldı'));
+      if (work || extra) toast(nis && work - paid > 0 ? L('Yazıldı · borclu qaldı: {0}', money(work - paid)) : L('Yazıldı'));
     }
   },
   editOp(v) {
@@ -1930,7 +1943,7 @@ app.addEventListener('click', e => {
 app.addEventListener('input', e => {
   const id = e.target.id;
   if (id === 'f_amount') return calcPreview();
-  if (id === 'f_work' || id === 'f_paid') { const w = C.evalExpr(val('f_work')) || 0, p = C.evalExpr(val('f_paid')) || 0, b = document.getElementById('f_left'); if (b) b.innerHTML = isNaN(w) || isNaN(p) ? '' : w - p > 0 ? `${esc(L('Borclu qaldı:'))} <b class="debt num">${money(w - p)}</b>` : w && w === p ? `<b class="pay">${esc(L('Tam ödədi ✓'))}</b>` : p > w ? esc(L('Artıq ödəniş avans kimi qalır: {0}', '+' + money(p - w))) : ''; return; }
+  if (id === 'f_work' || id === 'f_paid') { if (!document.getElementById('f_left')) return; const w = C.evalExpr(val('f_work')) || 0, p = C.evalExpr(val('f_paid')) || 0, b = document.getElementById('f_left'); if (b) b.innerHTML = isNaN(w) || isNaN(p) ? '' : w - p > 0 ? `${esc(L('Borclu qaldı:'))} <b class="debt num">${money(w - p)}</b>` : w && w === p ? `<b class="pay">${esc(L('Tam ödədi ✓'))}</b>` : p > w ? esc(L('Artıq ödəniş avans kimi qalır: {0}', '+' + money(p - w))) : ''; return; }
   if (id === 'f_name') { delete e.target.dataset.phone; return whoSuggest(); }
   if (id === 'f_src' || id === 'f_cat') return suggest(id);
   if (id === 'q') return filterCust(e.target.value);

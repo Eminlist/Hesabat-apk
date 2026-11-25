@@ -103,9 +103,10 @@
   }
   // müştərinin tarixçəsi xronoloji ardıcıllıqla, hər sətirdən sonrakı qalıqla
   function history(db, cid) {
-    const list = db.ops.filter(o => (o.kind === 'nisye' || o.kind === 'pay') && o.cid === cid).sort(byWhen);
+    // 'in' + cid: dərhal (nağd/kart) ödənilmiş iş — tarixçədə görünür, borca təsir etmir
+    const list = db.ops.filter(o => (o.kind === 'nisye' || o.kind === 'pay' || o.kind === 'in') && o.cid === cid).sort(byWhen);
     let bal = 0;
-    return list.map(o => { bal += o.kind === 'nisye' ? o.amount : -o.amount; return { o, bal }; });
+    return list.map(o => { if (o.kind === 'nisye') bal += o.amount; else if (o.kind === 'pay') bal -= o.amount; return { o, bal }; });
   }
 
   // ---- kassa ----

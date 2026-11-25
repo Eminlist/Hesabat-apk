@@ -370,8 +370,6 @@ public class MainActivity extends Activity {
         if (internalNav) navStoppedAt = System.currentTimeMillis();
         if (unlocking || internalNav || !(pinSet() || lockOn())) return;
         bioAsked = false;
-        // chosen in Ayarlar: stay open until the phone itself is locked (screenOff does it then)
-        if (lockOnScreen()) return;
         // the user left the app: lock right away and draw the PIN screen while we're in the background
         locked = true;
         if (pinSet()) js("window.showPinLock && window.showPinLock(false)");
@@ -381,7 +379,7 @@ public class MainActivity extends Activity {
     protected void onRestart() {
         super.onRestart();
         // left through a picker/share screen and came back minutes later (e.g. via the launcher): lock as if the app was left
-        if (internalNav && navStoppedAt > 0 && !lockOnScreen() && System.currentTimeMillis() - navStoppedAt > 3 * 60 * 1000 && (pinSet() || lockOn())) {
+        if (internalNav && navStoppedAt > 0 && System.currentTimeMillis() - navStoppedAt > 60 * 1000 && (pinSet() || lockOn())) {
             locked = true;
             if (pinSet()) js("window.showPinLock && window.showPinLock(false)");
         }
@@ -407,10 +405,6 @@ public class MainActivity extends Activity {
 
     private boolean lockOn() {
         return appPrefs().getBoolean("lock", false);
-    }
-
-    private boolean lockOnScreen() {
-        return appPrefs().getBoolean("lockOnScreen", false);
     }
 
     private boolean pinSet() {
