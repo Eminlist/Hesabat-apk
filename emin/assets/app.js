@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 007';
+const APP_VERSION = '3.1.3 Rev. 008';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
