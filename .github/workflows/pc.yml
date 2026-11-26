@@ -54,7 +54,7 @@ jobs:
           # Google girişi (Google Cloud «Hesabat» layihəsinin «Desktop app» açarı)
           node -e 'const t=s=>String(s||"").replace(/[^A-Za-z0-9._-]/g,"");require("fs").writeFileSync("pc/config.json",JSON.stringify({clientId:t(process.env.GOOGLE_DESKTOP_ID),clientSecret:t(process.env.GOOGLE_DESKTOP_SECRET)}))'
           [ -n "$GOOGLE_DESKTOP_ID" ] || echo "::warning::GOOGLE_DESKTOP_ID secret yoxdur — Google sinxronu işləməyəcək"
-          git log -1 --format=%B > pc/build/release-notes.md
+          git log -1 --format=%B > pc/res/release-notes.md
           cd pc && npm ci --no-audit --no-fund && npm pkg set version=3.1.${{ steps.v.outputs.code }}
 
       - name: Yığ
@@ -73,7 +73,7 @@ jobs:
           T="My Finance™ PC ${{ steps.v.outputs.name }}"
           if gh release view pc >/dev/null 2>&1; then
             gh release upload pc $F --clobber
-            gh release edit pc --title "$T" --notes-file pc/build/release-notes.md --latest=false
+            gh release edit pc --title "$T" --notes-file pc/res/release-notes.md --latest=false
           else
-            gh release create pc $F --title "$T" --notes-file pc/build/release-notes.md --latest=false
+            gh release create pc $F --title "$T" --notes-file pc/res/release-notes.md --latest=false
           fi
