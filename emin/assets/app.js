@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 307';
+const APP_VERSION = '3.1.3 Rev. 308';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -1474,6 +1474,18 @@ function needPin(fn) {
   state.pin = { mode: 'verify', type: lockType(), next: 'cb', len: Android.pinLength(), entered: '', err: '' };
   render();
 }
+// silmədən əvvəl: telefonda barmaq izi (alınmasa və ya «PIN kod» basılsa — kilid kodu); barmaq izi yoxdursa — kilid kodu
+function needDel(fn) {
+  if (!(hasNative && Android.bioConfirm && Android.bioAvailable && Android.bioAvailable())) return needPin(fn);
+  state.sheet = null; state.confirm = null; state.delCb = fn; render();
+  Android.bioConfirm();
+}
+window.onBioDel = function (ok) {
+  const f = state.delCb; state.delCb = null; if (!f) return;
+  if (ok) { f(); render(); return; }
+  if (hasNative && Android.pinSet && Android.pinSet()) return needPin(f);
+  toast(L('Barmaq izi təsdiqlənmədi — silinmədi'));
+};
 function enterDecoy() {
   state.decoy = true; clearTimeout(sync.timer); clearTimeout(sync.retry);
   db = { mf: 1 }; fixDb(); db.cfg.tags = [];
@@ -2031,13 +2043,13 @@ const actions = {
   delOp(v) {
     const o = db.ops.find(x => x.id === v); if (!o) return;
     ask({ title: L('Silinsin?'), text: L('{0} — {1}. Zibil qutusundan 30 gün ərzində qaytarmaq olar.', opTitle(o), money(o.amount)), ok: L('Sil'), danger: true,
-      run() { needPin(() => { trashOp(o); state.sheet = null; save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
+      run() { needDel(() => { trashOp(o); state.sheet = null; save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
   },
   delCust(v) {
     const c = cust(v); if (!c) return;
     const n = db.ops.filter(o => o.cid === v).length;
     ask({ title: L('{0} silinsin?', c.name), text: (n ? L('Onun {0} əməliyyatı kassada və hesabatda qalır.', n) + ' ' : '') + L('Zibil qutusundan 30 gün ərzində qaytarmaq olar.'), ok: L('Sil'), danger: true,
-      run() { needPin(() => { trashCustomer(c); state.pages.pop(); save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
+      run() { needDel(() => { trashCustomer(c); state.pages.pop(); save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
   },
   payFor(v) { openSheet({ kind: 'pay', cid: v }); },
   nisyeFor(v) { openSheet({ kind: 'nisye', cid: v }); },
@@ -2093,7 +2105,7 @@ const actions = {
   delDebt(v) {
     const d = debtRec(v); if (!d) return;
     ask({ title: L('Silinsin?'), text: L('{0} — {1}. Zibil qutusundan 30 gün ərzində qaytarmaq olar.', d.name, money(d.amount)), ok: L('Sil'), danger: true,
-      run() { needPin(() => { trashDebt(d); state.sheet = null; const tp = topPage(); if (tp && tp.kind === 'party' && !partyOf(tp.side, tp.key)) state.pages.pop(); save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
+      run() { needDel(() => { trashDebt(d); state.sheet = null; const tp = topPage(); if (tp && tp.kind === 'party' && !partyOf(tp.side, tp.key)) state.pages.pop(); save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
   },
   newBack(v) { const i = v.indexOf('|'); openSheet({ kind: 'back', side: v.slice(0, i), key: v.slice(i + 1) }); },
   pickWho(v, e, el) {
@@ -2136,7 +2148,7 @@ const actions = {
   tagAdd() { const t = val('f_tag').trim(); if (!t) return; if (db.cfg.tags.some(x => C.norm(x) === C.norm(t))) return toast(L('Bu qrup var')); setCfg('tags', db.cfg.tags.concat([t])); save(); render(); },
   tagDel(v) {
     ask({ title: L('«{0}» qrupu silinsin?', tagName(v)), text: L('Müştərilər silinmir, yalnız bu qrup işarəsi götürülür.'), ok: L('Sil'), danger: true,
-      run() { setCfg('tags', db.cfg.tags.filter(t => t !== v)); for (const c of db.customers) if ((c.tags || []).includes(v)) { c.tags = c.tags.filter(t => t !== v); touch(c); } if (state.tag === v) state.tag = ''; save(); } });
+      run() { needDel(() => { setCfg('tags', db.cfg.tags.filter(t => t !== v)); for (const c of db.customers) if ((c.tags || []).includes(v)) { c.tags = c.tags.filter(t => t !== v); touch(c); } if (state.tag === v) state.tag = ''; save(); render(); }); } });
   },
   recs() { pushPage({ kind: 'recs' }); },
   recEdit(v) { openSheet({ kind: 'rec', id: v || null }); },
@@ -2151,7 +2163,7 @@ const actions = {
   delRec(v) {
     const r = db.recs.find(x => x.id === v); if (!r) return;
     ask({ title: L('{0} silinsin?', r.name), text: L('Keçmiş ödənişlər kassada qalır.'), ok: L('Sil'), danger: true,
-      run() { db.recs = db.recs.filter(x => x.id !== v); db.removed[v] = Date.now(); db.trash.unshift(touch({ id: uid(), at: Date.now(), kind: 'rec', rec: r })); state.sheet = null; save(); } });
+      run() { needDel(() => { db.recs = db.recs.filter(x => x.id !== v); db.removed[v] = Date.now(); db.trash.unshift(touch({ id: uid(), at: Date.now(), kind: 'rec', rec: r })); state.sheet = null; save(); render(); }); } });
   },
   recPay(v) {
     const r = db.recs.find(x => x.id === v); if (!r) return;
@@ -2217,9 +2229,9 @@ const actions = {
   devWipe(v) {
     const d = db.devs.find(x => x.id === v); if (!d) return;
     ask({ title: L('{0} — məlumatlar silinsin?', d.n || '?'), text: L('Cihaz itibsə: o, internetə qoşulan kimi ondakı bütün məlumatlar silinəcək və Google hesabından ayrılacaq. Google-dakı məlumatlar və bu cihaz toxunulmur.'), ok: L('Sil'), danger: true, icon: '🗑',
-      run() { needPin(() => { Object.assign(d, { cmd: 'wipe', ct: Date.now() }); touch(d); save(); render(); toast(L('Cihaz internetə qoşulan kimi məlumatları silinəcək')); }); } });
+      run() { needDel(() => { Object.assign(d, { cmd: 'wipe', ct: Date.now() }); touch(d); save(); render(); toast(L('Cihaz internetə qoşulan kimi məlumatları silinəcək')); }); } });
   },
-  devDrop(v) { db.devs = db.devs.filter(x => x.id !== v); db.removed[v] = Date.now(); save(); render(); },
+  devDrop(v) { needDel(() => { db.devs = db.devs.filter(x => x.id !== v); db.removed[v] = Date.now(); save(); render(); }); },
   syncNow() { if (!sync.account) return; if (loadBroken) return toast(L('Məlumat faylı zədələnib — Google-a göndərilmir')); toast(L('Google-a göndərilir…')); runSync('push'); },
   checkBackup() { if (!sync.account) return; state.checkResult = null; toast(L('Yoxlanılır…')); runSync('check'); },
   syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { needPin(() => { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; render(); }); } }); },
@@ -2250,7 +2262,7 @@ const actions = {
   restoreAll() { ask({ title: L('Hamısı bərpa edilsin?'), text: L('Zibil qutusundakı {0} qeydin hamısı yerinə qaytarılacaq.', db.trash.length), ok: L('Bərpa et'), icon: '♻️', run() { restoreMany(db.trash.slice()); } }); },
   emptyTrash() {
     ask({ title: L('Zibil qutusu boşaldılsın?'), text: L('İçindəkilər həmişəlik silinəcək, geri qaytarmaq olmayacaq.'), ok: L('Boşalt'), danger: true,
-      run() { needPin(() => { const t = Date.now(); for (const e of db.trash) db.removed[e.id] = t; db.trash = []; save(); render(); }); } });
+      run() { needDel(() => { const t = Date.now(); for (const e of db.trash) db.removed[e.id] = t; db.trash = []; save(); render(); }); } });
   },
   pin() {
     if (!hasNative) return;

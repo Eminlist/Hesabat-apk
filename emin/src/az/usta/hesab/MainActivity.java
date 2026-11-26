@@ -1031,6 +1031,52 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** Rev. 308: before any deletion — the fingerprint dialog; the result goes to window.onBioDel(true/false). */
+        @JavascriptInterface
+        public void bioConfirm() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (Build.VERSION.SDK_INT < 28 || bioShowing) { js("window.onBioDel && window.onBioDel(false)"); return; }
+                    final boolean[] done = {false};
+                    try {
+                        java.util.concurrent.Executor ex = getMainExecutor();
+                        final boolean hasPin = MainActivity.this.pinSet();
+                        android.hardware.biometrics.BiometricPrompt bp = new android.hardware.biometrics.BiometricPrompt.Builder(MainActivity.this)
+                                .setTitle("My Finance™")
+                                .setSubtitle(Tr.t(MainActivity.this, "Silməni barmaq izi ilə təsdiqləyin"))
+                                .setNegativeButton(Tr.t(MainActivity.this, hasPin ? "PIN kod" : "Ləğv et"), ex, new android.content.DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(android.content.DialogInterface d, int w) {
+                                        bioShowing = false;
+                                        if (!done[0]) { done[0] = true; js("window.onBioDel && window.onBioDel(false)"); }
+                                    }
+                                })
+                                .build();
+                        bioShowing = true;
+                        bp.authenticate(new android.os.CancellationSignal(), ex,
+                                new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                                    @Override
+                                    public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) {
+                                        bioShowing = false;
+                                        if (!done[0]) { done[0] = true; js("window.onBioDel && window.onBioDel(true)"); }
+                                    }
+
+                                    @Override
+                                    public void onAuthenticationError(int code, CharSequence msg) {
+                                        // closed, cancelled or locked out: nothing is deleted without the PIN
+                                        bioShowing = false;
+                                        if (!done[0]) { done[0] = true; js("window.onBioDel && window.onBioDel(false)"); }
+                                    }
+                                });
+                    } catch (Exception e) {
+                        bioShowing = false;
+                        if (!done[0]) { done[0] = true; js("window.onBioDel && window.onBioDel(false)"); }
+                    }
+                }
+            });
+        }
+
         @JavascriptInterface
         public boolean pinSet() {
             return MainActivity.this.pinSet();

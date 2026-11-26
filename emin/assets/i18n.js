@@ -1,6 +1,7 @@
 // My Finance™ — tərcümələr: Rus, Türk, İngilis (açar Azərbaycanca mətndir)
 window.I18N = {
  "ru": {
+  "Barmaq izi təsdiqlənmədi — silinmədi": "Отпечаток не подтверждён — не удалено",
   "Avtomatik kilid": "Автоблокировка",
   "Aylıq ehtiyat nüsxə": "Ежемесячная резервная копия",
   "Aç": "Открыть",
@@ -652,6 +653,7 @@ window.I18N = {
   "Riskli": "Рискованный"
  },
  "tr": {
+  "Barmaq izi təsdiqlənmədi — silinmədi": "Parmak izi onaylanmadı — silinmedi",
   "Avtomatik kilid": "Otomatik kilit",
   "Aylıq ehtiyat nüsxə": "Aylık yedek",
   "Aç": "Aç",
@@ -1303,6 +1305,7 @@ window.I18N = {
   "Riskli": "Riskli"
  },
  "en": {
+  "Barmaq izi təsdiqlənmədi — silinmədi": "Fingerprint not confirmed — nothing deleted",
   "Avtomatik kilid": "Auto-lock",
   "Aylıq ehtiyat nüsxə": "Monthly backup",
   "Aç": "Open",
@@ -2101,7 +2104,7 @@ window.I18N = {
       "Kontaktlar: yalnız istifadəçi «📇» düyməsinə basıb kontakt seçdikdə seçilən kontaktın adı və nömrəsi forma sahəsinə yazılır. Telefon kitabçasının qalan hissəsi oxunmur və heç yerə göndərilmir.",
       "Qalereya: yalnız istifadəçi dükanın loqosunu seçdikdə seçilən şəkil kiçildilərək Proqramda saxlanılır.",
       "Bildirişlər: müştərinin nisyəsinin, verilən və alınan borcların, habelə sabit aylıq xərclərin ödəmə gününə 3 gün qalmış hər gün xatırlatma üçün və istifadəçinin seçdiyi saatda «Günün sonu» xatırlatması üçün istifadə olunur.",
-      "Barmaq izi: Proqramın kilidini açmaq üçün telefonun öz sistemi vasitəsilə yoxlanılır; barmaq izi məlumatı Proqrama ötürülmür və saxlanılmır.",
+      "Barmaq izi: Proqramın kilidini açmaq və silməni təsdiqləmək üçün telefonun öz sistemi vasitəsilə yoxlanılır; barmaq izi məlumatı Proqrama ötürülmür və saxlanılmır.",
       "İnternet: yalnız Google Drive sinxronizasiyası və Proqramın yeni versiyasının yoxlanılması üçün istifadə olunur."
      ]
     ],
@@ -2192,7 +2195,7 @@ window.I18N = {
       "Контакты: только когда пользователь нажимает «📇» и выбирает контакт, имя и номер выбранного контакта вписываются в поле формы. Остальная телефонная книга не читается и никуда не отправляется.",
       "Галерея: только когда пользователь выбирает логотип магазина, выбранное изображение уменьшается и сохраняется в Приложении.",
       "Уведомления: используются для ежедневных напоминаний за 3 дня до срока оплаты долгов клиентов, выданных и полученных займов и постоянных расходов, а также для напоминания «Конец дня» в выбранное пользователем время.",
-      "Отпечаток пальца: проверяется системой телефона для разблокировки Приложения; данные отпечатка не передаются в Приложение и не хранятся.",
+      "Отпечаток пальца: проверяется системой телефона для разблокировки Приложения и подтверждения удаления; данные отпечатка не передаются в Приложение и не хранятся.",
       "Интернет: используется только для синхронизации с Google Drive и проверки новой версии Приложения."
      ]
     ],
@@ -2283,7 +2286,7 @@ window.I18N = {
       "Kişiler: yalnızca kullanıcı «📇» düğmesine basıp bir kişi seçtiğinde seçilen kişinin adı ve numarası form alanına yazılır. Rehberin geri kalanı okunmaz ve hiçbir yere gönderilmez.",
       "Galeri: yalnızca kullanıcı dükkân logosunu seçtiğinde seçilen resim küçültülerek Uygulamada saklanır.",
       "Bildirimler: müşteri veresiyelerinin, verilen ve alınan borçların ve sabit aylık giderlerin ödeme gününe 3 gün kala her gün hatırlatma ve kullanıcının seçtiği saatte «Gün sonu» hatırlatması için kullanılır.",
-      "Parmak izi: Uygulamanın kilidini açmak için telefonun kendi sistemiyle doğrulanır; parmak izi verisi Uygulamaya aktarılmaz ve saklanmaz.",
+      "Parmak izi: Uygulamanın kilidini açmak ve silmeyi onaylamak için telefonun kendi sistemiyle doğrulanır; parmak izi verisi Uygulamaya aktarılmaz ve saklanmaz.",
       "İnternet: yalnızca Google Drive senkronizasyonu ve Uygulamanın yeni sürümünün kontrolü için kullanılır."
      ]
     ],
@@ -2374,7 +2377,7 @@ window.I18N = {
       "Contacts: only when the user taps “📇” and picks a contact are that contact's name and number filled into the form. The rest of the phone book is not read and is not sent anywhere.",
       "Gallery: only when the user picks a shop logo is the chosen image reduced in size and saved in the App.",
       "Notifications: used for daily reminders from 3 days before the due date of customers' credit, money lent and borrowed and fixed monthly expenses, and for the “End of day” reminder at the time chosen by the user.",
-      "Fingerprint: checked by the phone's own system to unlock the App; fingerprint data is not passed to the App and is not stored.",
+      "Fingerprint: checked by the phone's own system to unlock the App and to confirm deletions; fingerprint data is not passed to the App and is not stored.",
       "Internet: used only for Google Drive sync and for checking for a new version of the App."
      ]
     ],

@@ -47,6 +47,8 @@ final class Tr {
         put("Faylı göndər", "Отправить файл", "Dosyayı gönder", "Send file");
         put("Barmaq izi ilə açın", "Разблокируйте отпечатком пальца", "Parmak izi ile açın", "Unlock with fingerprint");
         put("PIN kod", "PIN-код", "PIN kodu", "PIN code");
+        put("Silməni barmaq izi ilə təsdiqləyin", "Подтвердите удаление отпечатком пальца", "Silmeyi parmak izi ile onaylayın", "Confirm the deletion with your fingerprint");
+        put("Ləğv et", "Отмена", "İptal", "Cancel");
         put("PIN-i sıfırlamaq üçün telefonun kilidini açın", "Разблокируйте телефон, чтобы сбросить PIN", "PIN'i sıfırlamak için telefonun kilidini açın", "Unlock the phone to reset the PIN");
         put("Bu günkü gəlir", "Доход за сегодня", "Bugünkü gelir", "Today's income");
         put("Günün xülasəsi", "Итоги дня", "Günün özeti", "Day summary");
