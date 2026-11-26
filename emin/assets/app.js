@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 303';
+const APP_VERSION = '3.1.3 Rev. 304';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -28,6 +28,7 @@ const fmtDay = d => { const x = new Date(d + 'T12:00:00'); return WDAYS()[x.getD
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = n => String(n || '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
 const fold = s => C.norm(s).replace(/ə/g, 'e').replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ı/g, 'i');
+const moneyFmt = q => money(q);
 function money(q) {
   const neg = q < 0; q = Math.abs(Math.round(q || 0));
   const m = Math.floor(q / 100), c = q % 100;
@@ -40,8 +41,8 @@ const openUrl = url => { window.location.href = url; };
 
 // ---------- məlumatlar (telefonun yaddaşında, oflayn) ----------
 const DEFAULT_TAGS = ['Daimi', 'Qonşu', 'Topdan', 'Riskli'];
-const LISTS = ['customers', 'ops', 'recs', 'trash', 'debts'];
-let db = { mf: 1, customers: [], ops: [], recs: [], trash: [], debts: [], removed: {}, cfg: { u: 0, shop: { name: '', address: '', phone: '', logo: '' }, req: '', tags: DEFAULT_TAGS.slice() } };
+const LISTS = ['customers', 'ops', 'recs', 'trash', 'debts', 'devs']; // devs = Google bazasına qoşulu cihazlar
+let db = { mf: 1, customers: [], ops: [], recs: [], trash: [], debts: [], devs: [], removed: {}, cfg: { u: 0, shop: { name: '', address: '', phone: '', logo: '' }, req: '', tags: DEFAULT_TAGS.slice() } };
 function fixDb() {
   for (const k of LISTS) if (!Array.isArray(db[k])) db[k] = [];
   if (!db.removed || typeof db.removed !== 'object') db.removed = {};
@@ -85,6 +86,7 @@ function importOldDebts() {
   if (n) setTimeout(() => toast(L('Köhnə proqramdan {0} borc köçürüldü', n)), 600);
 }
 function save() {
+  if (state.decoy) return; // gizli PIN ilə açılıb: heç nə yazılmır
   if (loadBroken) return toast(L('Yadda saxlanmadı!'));
   const json = JSON.stringify(db);
   let ok = true;
@@ -149,7 +151,8 @@ function markDirty() {
 // ---------- ayarların sinxronu: hər ayarın öz vaxtı var, ən son dəyişən qalib gəlir ----------
 // shop = vizitkart, req = rekvizitlər, tags = müştəri qrupları, theme, lang, sum = günün sonu saatı,
 // secure = ekran şəkli qadağası, bio = barmaq izi, pin = giriş kilidi (PIN/naxış)
-const CFG_KEYS = ['shop', 'req', 'tags', 'theme', 'lang', 'sum', 'due', 'secure', 'bio', 'pin', 'hide'];
+// alock = avtomatik kilid (dəqiqə), dpin = gizli PIN, owner = kilid ekranındakı yazı, nhide = bildirişlərdə məbləğ gizli
+const CFG_KEYS = ['shop', 'req', 'tags', 'theme', 'lang', 'sum', 'due', 'secure', 'bio', 'pin', 'hide', 'alock', 'dpin', 'owner', 'nhide'];
 const cfgT = (c, k) => { if (!c) return -1; if (c.t && c.t[k] != null) return c.t[k]; if (c.t) return 0; return ['shop', 'req', 'tags'].includes(k) ? (c.u || 0) : -1; };
 function mergeCfg(a, b) {
   if (!b) return a; if (!a) return b;
@@ -242,7 +245,7 @@ function scheduleSync() {
 }
 function runSync(kind) {
   kind = kind || 'push';
-  if (!sync.account || !hasNative) return;
+  if (!sync.account || !hasNative || state.decoy) return;
   if ((kind === 'push' || kind === 'pull') && needLink()) kind = 'link'; // Google-dakı hələ gəlməyib: əvvəlcə onu götür
   if ((kind === 'push' || kind === 'pull') && loadBroken) return; // zədələnmiş/boş baza heç vaxt Google-un üstünə yazılmır
   if (kind === 'pull' && (sync.running || Date.now() - sync.pulled < 20000)) return;
@@ -255,7 +258,47 @@ function runSync(kind) {
 }
 function upload() {
   sync.mode = 'push'; sync.sent = sync.ver; sync.sentPending = sync.pending;
-  Android.syncUpload(JSON.stringify(db));
+  const json = JSON.stringify(db), pw = encPw();
+  if (!pw) return Android.syncUpload(json);
+  // Google faylı şifrəlidir: parol yalnız bu cihazdadır, Google-a getmir
+  encryptText(json, pw).then(t => Android.syncUpload(t), () => window.onSyncStatus('error', L('Şifrələmə alınmadı')));
+}
+// ---------- şifrələmə (AES-256, parol PBKDF2 ilə açara çevrilir) ----------
+const TE = new TextEncoder(), TD8 = new TextDecoder();
+async function encKey(pw, salt) {
+  const k = await crypto.subtle.importKey('raw', TE.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptText(text, pw) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await encKey(pw, salt), TE.encode(text)));
+  return JSON.stringify({ mfenc: 1, app: 'My Finance', salt: bytesToB64(salt), iv: bytesToB64(iv), data: bytesToB64(ct) });
+}
+async function decryptText(o, pw) {
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(o.iv) }, await encKey(pw, b64ToBytes(o.salt)), b64ToBytes(o.data));
+  return TD8.decode(pt);
+}
+const isEnc = t => { if (!t || String(t).trim()[0] !== '{') return null; try { const o = JSON.parse(t); return o && o.mfenc && o.data ? o : null; } catch (e) { return null; } };
+const encPw = () => { try { return localStorage.getItem('mfEncPw') || ''; } catch (e) { return ''; } };
+const canCrypto = () => !!(window.crypto && crypto.subtle);
+// kiçik SHA-256 (gizli PIN-i dərhal yoxlamaq üçün)
+function sha256hex(str) {
+  const K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const b = TE.encode(str), l = b.length, n = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(n);
+  m.set(b); m[l] = 0x80; const dv = new DataView(m.buffer); dv.setUint32(n - 4, l * 8); dv.setUint32(n - 8, Math.floor(l / 0x20000000));
+  let H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const w = new Uint32Array(64), r = (x, k) => (x >>> k) | (x << (32 - k));
+  for (let o = 0; o < n; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+    for (let i = 16; i < 64; i++) w[i] = (w[i - 16] + (r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3)) + w[i - 7] + (r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10))) >>> 0;
+    let [a, bb, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0, t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & bb) ^ (a & c) ^ (bb & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = bb; bb = a; a = (t1 + t2) >>> 0;
+    }
+    H = H.map((v, i) => (v + [a, bb, c, d, e, f, g, h][i]) >>> 0);
+  }
+  return H.map(v => v.toString(16).padStart(8, '0')).join('');
 }
 function nextSync() {
   if (sync.queued) { const k = sync.queued; sync.queued = null; return runSync(k); }
@@ -290,11 +333,27 @@ function setSynced() {
   sync.dirty = false; sync.pending = 0; sync.last = Date.now(); sync.status = 'ok'; sync.msg = '';
   try { localStorage.setItem('mfSyncDirty', '0'); localStorage.setItem('mfPending', '0'); localStorage.setItem('mfLastSync', sync.last); } catch (e) {}
 }
+// Google-dakı fayl şifrəlidirsə, əvvəlcə açılır; parol yoxdursa və ya səhvdirsə, heç nə yazılmır (üstünə də yazılmır)
+function encFail(msg) {
+  const chk = sync.mode === 'check';
+  sync.running = false; sync.status = 'error'; sync.msg = msg; sync.encNeed = true;
+  if (chk) toast(msg);
+  refreshSettings();
+}
 window.onSyncRemote = function (text) {
+  if (state.decoy) { sync.running = false; return; }
+  const o = isEnc(text);
+  if (!o) return syncRemote(text);
+  const pw = encPw();
+  if (!pw || !canCrypto()) return encFail(L('Google-dakı fayl şifrəlidir — Ayarlar → Təhlükəsizlik → «Google faylının şifrəsi» bölməsində parolu daxil edin'));
+  decryptText(o, pw).then(t => { sync.encNeed = false; syncRemote(t); }, () => encFail(L('Google faylının parolu səhvdir — Ayarlar → Təhlükəsizlik → «Google faylının şifrəsi»')));
+};
+function syncRemote(text) {
   let remote = null;
   if (text) { try { remote = JSON.parse(text); } catch (e) { remote = null; } }
   if (remote && !remote.mf) remote = null;
   const mode = sync.mode;
+  if (remote && mode !== 'check' && processDevices(remote)) return; // bu cihaz başqa cihazdan ayrılıb / silinib
   if (mode === 'check') {
     state.checkResult = remote ? { same: canon(db) === canon(remote), a: brief(db), b: brief(remote), diff: diffDb(db, remote) } : { none: true };
     sync.running = false; sync.status = sync.dirty ? 'idle' : 'ok';
@@ -306,12 +365,13 @@ window.onSyncRemote = function (text) {
       const local = db;
       db = mergeDb(remote, local);
       db.cfg = Object.assign({}, remote.cfg || local.cfg, { oldDebts: (remote.cfg && remote.cfg.oldDebts) || local.cfg.oldDebts ? 1 : 0 });
-      fixDb(); loadBroken = false; applyCfg();
+      fixDb(); loadBroken = false; applyCfg(); touchDevice();
       try { Android.save(JSON.stringify(db)); } catch (e) {}
       markDirty(); pushNative();
       if (!state.sheet) render();
       toast(L('Google-dakı məlumat və ayarlar telefona yükləndi'));
     }
+    else touchDevice();
     try { Android.linkDone(); } catch (e) {}
     return upload(); // birləşmiş tam baza Google-a
   }
@@ -330,8 +390,9 @@ window.onSyncRemote = function (text) {
       refreshSettings(); return nextSync();
     }
   }
+  if (touchDevice()) { try { Android.save(JSON.stringify(db)); } catch (e) {} }
   upload();
-};
+}
 window.onPull = function () { if (sync.account && !state.pin) runSync(sync.dirty ? 'push' : 'pull'); };
 window.onSyncStatus = function (st, msg) {
   const mode = sync.mode;
@@ -355,8 +416,54 @@ window.onSyncStatus = function (st, msg) {
 };
 window.onAppPause = function () { if (sync.account && (sync.dirty || needLink())) runSync('push'); };
 window.onOnline = function () { if (sync.account && (sync.dirty || needLink() || sync.status === 'error')) { sync.wait = 0; runSync('push'); } };
+// ---------- qoşulu cihazlar: siyahı, yeni cihaz xəbəri, uzaqdan ayırmaq / silmək ----------
+const myDev = (() => { let id = ''; try { id = localStorage.getItem('mfDev') || ''; if (!id) { id = 'd' + uid(); localStorage.setItem('mfDev', id); } } catch (e) { id = 'd' + uid(); } return id; })();
+const isPc = () => { try { return !!(hasNative && Android.isPc && Android.isPc()); } catch (e) { return false; } };
+const devName = () => { try { return (hasNative && Android.deviceName && Android.deviceName()) || (isPc() ? 'PC' : 'Android'); } catch (e) { return isPc() ? 'PC' : 'Android'; } };
+const lsNum = k => { try { return +localStorage.getItem(k) || 0; } catch (e) { return 0; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+/** Bu cihazın sətri bazada (ad, növ, son görünmə); dəyişibsə true. */
+function touchDevice() {
+  if (!sync.account || state.decoy) return false;
+  const now = Date.now(), nm = devName(), k = isPc() ? 'pc' : 'phone';
+  let d = db.devs.find(x => x.id === myDev);
+  if (d && d.cmd && (d.ct || 0) > lsNum('mfCmdDone')) return false; // gözləyən əmr var: processDevices icra edir
+  if (d && d.n === nm && d.k === k && !d.cmd && now - (d.l || 0) < 6 * 3600000) return false;
+  if (!d) { d = { id: myDev, f: now }; db.devs.push(d); }
+  Object.assign(d, { n: nm, k, l: now, cmd: '', ct: 0 }); touch(d);
+  return true;
+}
+/** Google-dan gələn bazaya baxır: bu cihaza əmr varsa icra edir (true qaytarır), yeni cihaz varsa xəbər verir. */
+function processDevices(remote) {
+  const me = (remote.devs || []).find(x => x.id === myDev);
+  if (me && me.cmd && (me.ct || 0) > lsNum('mfCmdDone')) { lsSet('mfCmdDone', me.ct); remoteCmd(me.cmd); return true; }
+  let known = null; try { known = JSON.parse(localStorage.getItem('mfKnownDevs') || 'null'); } catch (e) {}
+  const others = (remote.devs || []).filter(x => x.id !== myDev && !x.cmd);
+  if (Array.isArray(known)) for (const d of others) if (!known.includes(d.id)) {
+    const t = L('Yeni cihaz qoşuldu: {0}', d.n || '?');
+    toast(t); try { if (Android.notifyNow) Android.notifyNow(APP_NAME, t); } catch (e) {}
+  }
+  lsSet('mfKnownDevs', JSON.stringify([...new Set((known || []).concat(others.map(x => x.id)))]));
+  return false;
+}
+function remoteCmd(cmd) {
+  try { Android.syncUnlink(); } catch (e) {}
+  clearTimeout(sync.timer); clearTimeout(sync.retry);
+  Object.assign(sync, { account: '', status: 'idle', running: false, again: false, queued: null, encNeed: false });
+  if (cmd === 'wipe') {
+    db = { mf: 1 }; fixDb();
+    try { Android.save(JSON.stringify(db)); } catch (e) {}
+    try { ['mfSyncDirty', 'mfPending', 'mfLastSync', 'mfKnownDevs', 'mfPhoneBackup'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    sync.dirty = false; sync.pending = 0; sync.last = 0;
+  }
+  const t = cmd === 'wipe' ? L('Bu cihazdakı məlumatlar başqa cihazdan silindi və Google hesabından ayrıldı') : L('Bu cihaz başqa cihazdan Google hesabından ayrıldı');
+  state.sheet = null; state.confirm = null; state.pages = []; state.tab = 'home';
+  if (!state.pin) render();
+  toast(t); try { if (Android.notifyNow) Android.notifyNow(APP_NAME, t); } catch (e) {}
+}
 window.onSyncLinked = function (name) { sync.account = name; sync.status = 'idle'; toast(L('Google hesabı qoşuldu')); render(); runSync('link'); };
 let openedDay = today();
+const bkName = () => ({ az: 'MyFinance-ehtiyat', ru: 'MyFinance-rezerv', tr: 'MyFinance-yedek', en: 'MyFinance-backup' })[lang] || 'MyFinance-ehtiyat';
 // proqram bağlıykən dəyişikliklər arxa planda Google-a gedibsə, sayğac düz göstərsin
 function queueCheck() {
   if (!hasNative || !Android.queueState || !sync.dirty || loadBroken) return;
@@ -370,13 +477,16 @@ function phoneBackup(force) {
   if (!hasNative || !Android.saveToDownloads || loadBroken) return false;
   let last = 0; try { last = +localStorage.getItem('mfPhoneBackup') || 0; } catch (e) {}
   if (!force && Date.now() - last < 30 * 86400000) return false;
-  const ok = Android.saveToDownloads(JSON.stringify(db), 'MyFinance-yedek-' + today() + '.json');
+  const ok = Android.saveToDownloads(JSON.stringify(db), bkName() + '-' + today() + '.json');
   if (ok) { try { localStorage.setItem('mfPhoneBackup', Date.now()); } catch (e) {} }
   return ok;
 }
 window.onAppResume = function () {
+  if (alockDue()) return lockApp(); // uzun müddət toxunulmayıb: avtomatik kilid
+  lsSet('mfLastOpen', Date.now());
   queueCheck(); phoneBackup();
-  if (topPage() && topPage().kind === 'settings' && !state.sheet && !state.confirm) render(); // bildiriş icazəsi və s. yenidən yoxlanır
+  if (setPage() && !state.sheet && !state.confirm) render(); // bildiriş icazəsi və s. yenidən yoxlanır
+  if (touchDevice()) save();
   if (purgeTrash()) save();
   pushNative();
   if (openedDay !== today()) { openedDay = today(); state.kday = today(); if (!state.sheet) render(); }
@@ -384,12 +494,14 @@ window.onAppResume = function () {
   if (sync.account && (sync.dirty || needLink())) runSync('push');
   else if (sync.account) runSync('pull');
 };
-function refreshSettings() { if (topPage() && topPage().kind === 'settings' && !state.sheet && !state.confirm) render(); }
+const setPage = () => topPage() && ['settings', 'sync', 'security', 'devs'].includes(topPage().kind);
+function refreshSettings() { if (setPage() && !state.sheet && !state.confirm && !state.pin) render(); }
 
 // ---------- telefona: bildirişlər, vidcet, günün sonu ----------
 function pushNative() {
-  if (!hasNative) return;
+  if (!hasNative || state.decoy) return;
   const td = today(), f = C.flow(db, td, td), B = C.balances(db, td);
+  const money = v => db.cfg.nhide ? '•••' : moneyFmt(v); // bildirişlərdə məbləğ gizli (Ayarlar → Təhlükəsizlik)
   try {
     if (Android.setWidget) Android.setWidget(td, L('Bu günkü gəlir'), money(f.income), money(0));
     if (Android.updateShortcuts) Android.updateShortcuts(L('Bu gün gəlir: {0}', money(f.income)), L('Bu gün xərc: {0}', money(f.expense)), '');
@@ -525,7 +637,7 @@ function renderHome() {
   return `<div class="topbar"><div style="flex:1;min-width:0"><span class="sub">${esc(fmtDay(td))}</span><h1>${esc(APP_NAME)}</h1></div>
     <button class="tbtn" data-a="eye">${hideNums ? I.eyeOff : I.eye}</button><button class="tbtn" data-a="openAll">${I.search}</button><button class="tbtn" data-a="settings">${I.gear}</button></div>
   <main style="padding-top:6px">
-    ${loadBroken ? `<div class="bad-box" style="margin-bottom:12px">⚠️ ${esc(L('Telefondakı məlumat faylı zədələnib. Köhnə məlumat itməsin deyə proqram heç nə yazmır. Bərpa üçün: Ayarlar → «Google hesabından ayır», sonra yenidən «Google Drive-a qoş» (Google-dakı baza telefona gəlir) və ya Ayarlar → «Yedək faylından bərpa et».'))}</div>` : ''}
+    ${loadBroken ? `<div class="bad-box" style="margin-bottom:12px">⚠️ ${esc(L('Telefondakı məlumat faylı zədələnib. Köhnə məlumat itməsin deyə proqram heç nə yazmır. Bərpa üçün: Ayarlar → «Google hesabından ayır», sonra yenidən «Google Drive-a qoş» (Google-dakı baza telefona gəlir) və ya Ayarlar → «Ehtiyat nüsxə faylı» → «Bərpa et».'))}</div>` : ''}
     ${due.length ? `<div class="duebox"><div class="duehead"><b>⏰ ${esc(L('Ödəmə vaxtı çatanlar ({0})', due.length))}</b><button data-a="tab" data-v="remind">${esc(L('Xatırlat'))} ›</button></div>
       ${due.slice(0, 5).map(({ c, s }) => `<button class="duerow" data-a="openCust" data-v="${c.id}"><span class="grow"><b>${esc(c.name)}</b><small>${esc(lateTxt(s))}</small></span><em class="num">${money(s.debt)}</em></button>`).join('')}
       ${due.length > 5 ? `<button class="duemore" data-a="tab" data-v="remind">${esc(L('və daha {0} nəfər', due.length - 5))} ›</button>` : ''}</div>` : ''}
@@ -862,15 +974,11 @@ const waLink = (phone, text) => 'https://wa.me/' + (phone ? waNum(phone) : '') +
 const srow = (a, v, icon, color, label, right) => `<button class="srow" data-a="${a}" ${v != null ? `data-v="${esc(v)}"` : ''}><span class="si" style="background:${color}">${icon}</span><span class="st"><span>${esc(label)}</span>${right || ''}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></span></button>`;
 const sw = on => `<i class="switch ${on ? 'on' : ''}"></i>`;
 const lockType = () => { try { return localStorage.getItem('mfLockType') || 'pin'; } catch (e) { return 'pin'; } };
+const bkDate = () => { const t = lsNum('mfPhoneBackup'); return t ? fmtShort(new Date(t).toISOString().slice(0, 10)) + '.' + new Date(t).getFullYear() : L('hələ yoxdur'); };
 function renderSettings() {
-  const st = { idle: '', syncing: L('göndərilir…'), ok: L('hər şey göndərilib ✓'), error: L('xəta: {0}', sync.msg) }[sync.status] || '';
-  const last = sync.last ? new Date(sync.last) : null;
-  const pin = hasNative && Android.pinSet && Android.pinSet();
-  const bioOk = hasNative && Android.bioAvailable && Android.bioAvailable();
   const sum = (hasNative && Android.summaryTime && Android.summaryTime()) || '';
-  const R = state.checkResult;
   return `<div class="page">${pageHead(L('Ayarlar'))}
-  <main style="padding-top:6px;padding-bottom:40px">
+  <main style="padding-top:6px;padding-bottom:30px">
     <div class="slabel">${esc(L('Dükan'))}</div>
     <div class="sgroup">
       ${srow('shop', null, '🏪', '#3E63DD', L('Dükanın vizitkartı'), `<em>${esc(db.cfg.shop.name || L('yazılmayıb'))}</em>`)}
@@ -885,33 +993,81 @@ function renderSettings() {
     </div>
     ${hasNative && Android.notifAllowed && !Android.notifAllowed() ? `<div class="bad-box" style="margin:0 0 12px">🔕 ${esc(L('Bildirişlər telefonun Ayarlarında söndürülüb — xatırlatmalar gəlməyəcək.'))}<button class="btn primary" style="margin-top:8px" data-a="notifOpen">${esc(L('Bildirişləri aç'))}</button></div>` : ''}
     <div class="slabel">${esc(L('Ehtiyat nüsxə'))}</div>
-    <div class="card">${sync.account ? `<b>✅ Google Drive: ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}<br>${esc(last ? L('Son uğurlu sinxron: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + '.' + last.getFullYear() + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes())) : L('Son uğurlu sinxron: hələ olmayıb'))}<br><b class="${sync.pending ? 'neg' : 'pay'}">${esc(sync.pending ? L('Göndərilməmiş dəyişiklik: {0}', sync.pending) : L('Göndərilməmiş dəyişiklik yoxdur ✓'))}</b></div>
-      <button class="btn ghost" data-a="syncNow">🔄 ${esc(L('Sinxron et'))}</button>
-      <button class="btn ghost" data-a="checkBackup">🔍 ${esc(L('Yedəyi yoxla'))}</button>
-      ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə tam eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var: Google-dakı surət telefondakı ilə eyni deyil.'))}<br>${esc(L('Telefon: {0} müştəri · {1} əməliyyat · {2} borc', R.a.customers, R.a.ops, R.a.debts))}<br>${esc(L('Google: {0} müştəri · {1} əməliyyat · {2} borc', R.b.customers, R.b.ops, R.b.debts))}${(R.diff || []).length ? '<br><br>' + R.diff.slice(0, 10).map(x => '• ' + esc(x)).join('<br>') : ''}<br><br>${esc(L('Telefondakını Google-a yükləmək üçün «Sinxron et» basın.'))}</div>`) : ''}
-      <button class="btn danger" data-a="syncUnlink">${esc(L('Google hesabından ayır'))}</button>`
-      : `<div class="note">${esc(L('Google hesabını qoşun: hər dəyişiklik avtomatik öz Google Drive-ınıza yazılsın. Telefon dəyişəndə eyni Gmail ilə hər şey geri gəlir.'))}</div><button class="btn primary" data-a="syncLink">${esc(L('Google Drive-a qoş'))}</button>`}</div>
+    <div class="sgroup">
+      ${srow('openSync', null, '☁', '#0090FF', L('Google Drive'), `<em>${sync.account ? (sync.status === 'error' ? '⚠ ' : '✓ ') + esc(sync.account) : esc(L('qoşulmayıb'))}</em>`)}
+      ${srow('bkMenu', null, '🗂', '#8E4EC6', L('Ehtiyat nüsxə faylı'), '')}
+    </div>
+    <div class="slabel">${esc(L('Hesabatlar'))}</div>
     <div class="sgroup">
       ${srow('openReport', null, '📈', '#3E63DD', L('Aylıq hesabat'), '')}
       ${srow('xlsx', null, '📊', '#16A34A', L('Excel faylı kimi yadda saxla'), '')}
-      ${srow('backupFile', null, '📤', '#0090FF', L('Yedək faylı göndər (WhatsApp, Telegram…)'), '')}
-      ${srow('importFile', null, '📥', '#8E4EC6', L('Yedək faylından bərpa et'), '')}
-      ${srow('noop', null, '📁', '#12A594', L('Telefona aylıq yedək (Download/MyFinance)'), `<em>${esc((() => { let t = 0; try { t = +localStorage.getItem('mfPhoneBackup') || 0; } catch (e) {} return t ? fmtShort(new Date(t).toISOString().slice(0, 10)) + '.' + new Date(t).getFullYear() : L('hələ yoxdur'); })())}</em>`)}
-    </div>
-    <div class="slabel">${esc(L('Təhlükəsizlik'))}</div>
-    <div class="sgroup">
-      ${srow('pin', null, '🔒', '#E5484D', L('Giriş kilidi (PIN və ya naxış)'), `<em>${esc(pin ? (lockType() === 'pattern' ? L('naxış') : L('PIN kod')) : L('yoxdur'))}</em>`)}
-      ${pin && bioOk ? srow('bio', null, '☝', '#12A594', L('Barmaq izi ilə aç'), sw(Android.bioEnabled())) : ''}
-      ${hasNative && Android.secureOn ? srow('secure', null, '📵', '#F76B15', L('Ekran şəklini qadağan et'), sw(Android.secureOn())) : ''}
     </div>
     <div class="slabel">${esc(L('Digər'))}</div>
     <div class="sgroup">
+      ${srow('openSecurity', null, '🔒', '#E5484D', L('Təhlükəsizlik'), '')}
       ${srow('langPick', null, '🌐', '#0E9384', L('Dil'), `<em>${esc((LANGS.find(l => l[0] === lang) || LANGS[0])[1])}</em>`)}
       ${srow('theme', null, '🌓', '#6E56CF', L('Tema'), `<em>${esc(theme === 'dark' ? L('Gecə (qızılı)') : L('Gündüz'))}</em>`)}
       ${srow('openTrash', null, '🗑', '#8B8D98', L('Zibil qutusu (30 gün)'), `<em>${db.trash.length || ''}</em>`)}
       ${srow('openPrivacy', null, '🛡', '#30A46C', L('Məxfilik siyasəti'), '')}
-      ${srow('noop', null, 'ℹ', '#0090FF', L('Versiya'), `<em>${APP_VERSION}</em>`)}
     </div>
+    <div class="sfoot"><span>${esc(APP_NAME)} ${esc(APP_VERSION)}</span><span>${esc(L('Aylıq ehtiyat nüsxə'))}: ${esc(bkDate())}</span></div>
+  </main></div>`;
+}
+// Google Drive: vəziyyət və əməliyyatlar menyu kimi
+function renderSync() {
+  const st = { idle: '', syncing: L('göndərilir…'), ok: L('hər şey göndərilib ✓'), error: L('xəta: {0}', sync.msg) }[sync.status] || '';
+  const last = sync.last ? new Date(sync.last) : null;
+  const R = state.checkResult;
+  return `<div class="page">${pageHead(L('Google Drive'))}
+  <main style="padding-top:6px;padding-bottom:30px">
+    ${sync.account ? `<div class="card"><b>✅ ${esc(sync.account)}</b><div class="note">${esc(L('Hər dəyişiklik avtomatik Google Drive-a göndərilir'))}${st ? ' · ' + esc(st) : ''}<br>${esc(last ? L('Son uğurlu sinxron: {0}', pad(last.getDate()) + '.' + pad(last.getMonth() + 1) + '.' + last.getFullYear() + ' ' + pad(last.getHours()) + ':' + pad(last.getMinutes())) : L('Son uğurlu sinxron: hələ olmayıb'))}<br><b class="${sync.pending ? 'neg' : 'pay'}">${esc(sync.pending ? L('Göndərilməmiş dəyişiklik: {0}', sync.pending) : L('Göndərilməmiş dəyişiklik yoxdur ✓'))}</b></div></div>
+      ${R ? (R.none ? `<div class="bad-box">${esc(L('Google-da hələ surət yoxdur'))}</div>` : R.same ? `<div class="ok-box">✓ ${esc(L('Google-dakı surət telefondakı ilə tam eynidir'))}</div>` : `<div class="bad-box">${esc(L('Fərq var: Google-dakı surət telefondakı ilə eyni deyil.'))}<br>${esc(L('Telefon: {0} müştəri · {1} əməliyyat · {2} borc', R.a.customers, R.a.ops, R.a.debts))}<br>${esc(L('Google: {0} müştəri · {1} əməliyyat · {2} borc', R.b.customers, R.b.ops, R.b.debts))}${(R.diff || []).length ? '<br><br>' + R.diff.slice(0, 10).map(x => '• ' + esc(x)).join('<br>') : ''}<br><br>${esc(L('Telefondakını Google-a yükləmək üçün «Sinxron et» basın.'))}</div>`) : ''}
+      <div class="sgroup">
+        ${srow('syncNow', null, '🔄', '#0090FF', L('Sinxron et'), '')}
+        ${srow('checkBackup', null, '🔍', '#12A594', L('Ehtiyat nüsxəni yoxla'), '')}
+        ${srow('syncUnlink', null, '⛓', '#E5484D', L('Google hesabından ayır'), '')}
+      </div>`
+    : `<div class="card"><div class="note" style="margin:0">${esc(L('Google hesabını qoşun: hər dəyişiklik avtomatik öz Google Drive-ınıza yazılsın. Telefon dəyişəndə eyni Gmail ilə hər şey geri gəlir.'))}</div></div>
+      <div class="sgroup">${srow('syncLink', null, '☁', '#0090FF', L('Google Drive-a qoş'), '')}</div>`}
+  </main></div>`;
+}
+// Təhlükəsizlik: hamısı bir menyuda
+function renderSecurity() {
+  const pin = hasNative && Android.pinSet && Android.pinSet();
+  const bioOk = hasNative && Android.bioAvailable && Android.bioAvailable();
+  const al = +(db.cfg.alock || 0);
+  return `<div class="page">${pageHead(L('Təhlükəsizlik'))}
+  <main style="padding-top:6px;padding-bottom:30px">
+    <div class="slabel">${esc(L('Kilid'))}</div>
+    <div class="sgroup">
+      ${srow('pin', null, '🔒', '#E5484D', L('Giriş kilidi (PIN və ya naxış)'), `<em>${esc(pin ? (lockType() === 'pattern' ? L('naxış') : L('PIN kod') + ' · ' + L('{0} rəqəm', Android.pinLength())) : L('yoxdur'))}</em>`)}
+      ${pin && bioOk ? srow('bio', null, '☝', '#12A594', L('Barmaq izi ilə aç'), sw(Android.bioEnabled())) : ''}
+      ${srow('alock', null, '⏱', '#6E56CF', L('Avtomatik kilid'), `<em>${esc(al ? L('{0} dəqiqə', al) : L('heç vaxt'))}</em>`)}
+      ${state.decoy ? '' : srow('dpin', null, '🕶', '#3E63DD', L('Gizli PIN'), `<em>${esc(db.cfg.dpin ? L('qoyulub') : L('yoxdur'))}</em>`)}
+      ${srow('owner', null, '📞', '#0E9384', L('Kilid ekranında yazı'), `<em>${esc(db.cfg.owner ? L('var') : L('yoxdur'))}</em>`)}
+    </div>
+    <div class="slabel">${esc(L('Məxfilik'))}</div>
+    <div class="sgroup">
+      ${hasNative && Android.secureOn ? srow('secure', null, '📵', '#F76B15', L('Ekran şəklini qadağan et'), sw(Android.secureOn())) : ''}
+      ${srow('nhide', null, '🔕', '#D97706', L('Bildirişlərdə məbləği gizlət'), sw(!!db.cfg.nhide))}
+      ${srow('gpw', null, '🔐', '#0090FF', L('Google faylının şifrəsi'), `<em>${sync.encNeed ? '⚠ ' : ''}${esc(encPw() ? L('açıq') : L('sönülü'))}</em>`)}
+      ${srow('openDevs', null, '🖥', '#12A594', L('Qoşulu cihazlar'), `<em>${sync.account ? db.devs.filter(d => !d.cmd).length : ''}</em>`)}
+    </div>
+    ${isPc() ? `<div class="note" style="margin:0 6px">${esc(L('«Ekran şəklini qadağan et» açıq olanda ekran paylaşılanda (Zoom, Teams, AnyDesk…) proqramın pəncərəsi görünmür.'))}</div>` : ''}
+  </main></div>`;
+}
+const fmtTs = t => { const d = new Date(t); return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+function renderDevs() {
+  const list = db.devs.slice().sort((a, b) => (a.id === myDev ? -1 : b.id === myDev ? 1 : (b.l || 0) - (a.l || 0)));
+  return `<div class="page">${pageHead(L('Qoşulu cihazlar'))}
+  <main style="padding-top:6px;padding-bottom:30px">
+    ${!sync.account ? `<div class="card"><div class="note" style="margin:0">${esc(L('Google hesabı qoşulmayıb'))}</div></div>` : `
+    <div class="note" style="margin:0 6px 10px">${esc(L('Bu Google bazasına qoşulu telefon və kompüterlər. Lazımsız cihazı ayıra və ya ondakı məlumatları silə bilərsiniz (Google-dakı məlumatlar qalır).'))}</div>
+    ${list.map(d => {
+      const me = d.id === myDev, st = d.cmd === 'wipe' ? L('məlumatları silinir / silinib') : d.cmd === 'unlink' ? L('ayrılır / ayrılıb') : '';
+      return `<div class="card devcard"><div class="devrow"><span class="devic">${d.k === 'pc' ? '💻' : '📱'}</span><span class="grow"><b>${esc(d.n || '?')}</b>${me ? ` <i class="tagme">${esc(L('bu cihaz'))}</i>` : ''}<small>${esc(st || L('Son: {0}', fmtTs(d.l || d.u || 0)))}</small></span></div>
+        ${me ? '' : d.cmd ? `<button class="btn ghost" data-a="devDrop" data-v="${d.id}">✕ ${esc(L('Siyahıdan çıxar'))}</button>` : `<div class="two"><button class="btn ghost" data-a="devUnlink" data-v="${d.id}">⛓ ${esc(L('Ayır'))}</button><button class="btn danger" data-a="devWipe" data-v="${d.id}">🗑 ${esc(L('Məlumatları sil'))}</button></div>`}</div>`;
+    }).join('')}`}
   </main></div>`;
 }
 function trashLabel(e) {
@@ -1174,6 +1330,29 @@ function renderSheet(s) {
       <button class="btn ghost" data-a="xlsxGo" data-v="all">${esc(L('Hamısı'))}</button>
       <div class="two"><div><label>${esc(L('Tarixdən'))}</label><input class="field" id="f_xfrom" type="date" max="${today()}"></div><div><label>${esc(L('Tarixədək'))}</label><input class="field" id="f_xto" type="date" max="${today()}"></div></div>
       <button class="btn primary" data-a="xlsxGo" data-v="range">${esc(L('Seçilən aralıq'))}</button>`;
+    case 'bk': return `<h2>🗂 ${esc(L('Ehtiyat nüsxə faylı'))}</h2><div class="sgroup">
+      ${srow('bkSendOpen', null, '📤', '#0090FF', L('Ehtiyat nüsxə faylını göndər (WhatsApp, Telegram…)'), '')}
+      ${srow('importFile', null, '📥', '#8E4EC6', L('Ehtiyat nüsxə faylından bərpa et'), '')}</div>`;
+    case 'bkpw': return `<h2>📤 ${esc(L('Ehtiyat nüsxə faylı'))}</h2><div class="note">${esc(L('Fayl parolla şifrələnir — parolu bilməyən onu aça bilməz. Bərpa edəndə bu parol soruşulacaq, unutmayın.'))}</div>
+      <label>${esc(L('Parol'))}</label><input class="field" id="f_pw1" type="password" autocomplete="off">
+      <label>${esc(L('Parolu təkrar yazın'))}</label><input class="field" id="f_pw2" type="password" autocomplete="off">
+      ${saveBtn('bkSend', L('Göndər'))}`;
+    case 'bkopen': return `<h2>📥 ${esc(L('Şifrəli ehtiyat nüsxə'))}</h2><div class="note">${esc(L('Fayl parolla şifrələnib. Göndərəndə yazdığınız parolu daxil edin.'))}</div>
+      <label>${esc(L('Parol'))}</label><input class="field" id="f_pw1" type="password" autocomplete="off">
+      ${saveBtn('bkOpen', L('Aç'))}`;
+    case 'gpw': return encPw() ? `<h2>🔐 ${esc(L('Google faylının şifrəsi'))}</h2><div class="ok-box">✓ ${esc(L('Google Drive-dakı fayl bu cihazda parolla şifrələnir.'))}</div>
+      <div class="note">${esc(L('Bütün cihazlarda (telefon və kompüter) eyni parol yazılmalıdır. Parolu unutsanız, Google-dakı faylı açmaq olmaz.'))}</div>
+      <button class="btn ghost" data-a="gpwChange">${esc(L('Parolu dəyiş'))}</button><button class="btn danger" data-a="gpwOff">${esc(L('Şifrələməni söndür'))}</button>`
+      : `<h2>🔐 ${esc(L('Google faylının şifrəsi'))}</h2>${sync.encNeed ? `<div class="bad-box">${esc(L('Google-dakı fayl başqa cihazda şifrələnib — eyni parolu yazın.'))}</div>` : ''}
+      <div class="note">${esc(L('Google Drive-dakı fayl ayrıca parolla şifrələnir: Google hesabınıza girən başqası belə onu oxuya bilməz. Bütün cihazlarda (telefon və kompüter) eyni parol yazılmalıdır. Parolu unutsanız, Google-dakı faylı açmaq olmaz.'))}</div>
+      <label>${esc(L('Parol'))}</label><input class="field" id="f_pw1" type="password" autocomplete="off">
+      <label>${esc(L('Parolu təkrar yazın'))}</label><input class="field" id="f_pw2" type="password" autocomplete="off">
+      ${saveBtn('gpwSave')}`;
+    case 'alock': return `<h2>⏱ ${esc(L('Avtomatik kilid'))}</h2><div class="note">${esc(L('Proqram seçilən müddət toxunulmadan qalanda özü kilidlənir.'))}</div><div class="sgroup">
+      ${[0, 1, 5, 15].map(m => `<button class="srow" data-a="alockSet" data-v="${m}"><span class="si" style="background:#6E56CF">⏱</span><span class="st"><span>${esc(m ? L('{0} dəqiqə', m) : L('heç vaxt'))}</span>${+(db.cfg.alock || 0) === m ? '<em>✓</em>' : ''}</span></button>`).join('')}</div>`;
+    case 'owner': return `<h2>📞 ${esc(L('Kilid ekranında yazı'))}</h2><div class="note">${esc(L('Telefon itəndə tapan görsün deyə kilid ekranında göstərilir. Məsələn: «Tapan zəng etsin: 050 000 00 00». Boş qoysanız, heç nə göstərilmir.'))}</div>
+      <input class="field" id="f_owner" maxlength="80" value="${esc(db.cfg.owner || '')}">
+      ${saveBtn('saveOwner')}`;
     case 'lang': return `<h2>🌐 ${esc(L('Dil'))}</h2><div class="sgroup">${LANGS.map(([k, n, f]) => `<button class="srow" data-a="setLang" data-v="${k}"><span class="si" style="background:#0E9384;font-size:24px">${f}</span><span class="st"><span>${esc(n)}</span>${k === lang ? '<em>✓</em>' : ''}</span></button>`).join('')}</div>`;
     case 'lockType': return `<h2>🔒 ${esc(L('Giriş kilidi'))}</h2><div class="note">${esc(L('Kilidin növünü seçin:'))}</div>
       <div class="addgrid" style="margin-top:12px">${opt('lockSet', 'pin', 'var(--brand-soft)', 'var(--brand)', '🔢', L('PIN kod'), L('4 və ya 6 rəqəm'))}${opt('lockSet', 'pattern', 'var(--brand-soft)', 'var(--brand)', '⠿', L('Naxış'), L('Barmaqla çəkilən kod'))}</div>`;
@@ -1186,7 +1365,7 @@ function ask(opts) { state.confirm = opts; render(); }
 function renderConfirm(c) {
   return `<div class="cfm-shade" data-a="cfmNo"><div class="cfm ${c.danger ? 'danger' : ''}"><div class="cfm-ic">${c.icon || (c.danger ? '🗑' : '✅')}</div>
     <h3>${esc(c.title)}</h3>${c.text ? `<p>${esc(c.text)}</p>` : ''}
-    <div class="two">${c.alt ? `<button class="btn danger" data-a="cfmAlt">${esc(c.alt)}</button>` : `<button class="btn ghost" data-a="cfmNo">${esc(L('Ləğv et'))}</button>`}<button class="btn ${c.danger ? 'dangerb' : 'payb'}" data-a="cfmOk">${esc(c.ok || L('Bəli'))}</button></div>
+    <div class="two">${c.alt ? `<button class="btn ${c.altCls || 'danger'}" data-a="cfmAlt">${esc(c.alt)}</button>` : `<button class="btn ghost" data-a="cfmNo">${esc(L('Ləğv et'))}</button>`}<button class="btn ${c.danger ? 'dangerb' : 'payb'}" data-a="cfmOk">${esc(c.ok || L('Bəli'))}</button></div>
     ${c.alt ? `<button class="pinlink" style="margin-top:12px" data-a="cfmNo">${esc(L('Ləğv et'))}</button>` : ''}</div></div>`;
 }
 
@@ -1194,7 +1373,7 @@ function renderConfirm(c) {
 const bioOn = () => hasNative && Android.bioEnabled && Android.bioEnabled() && Android.bioAvailable();
 function renderPin() {
   const P = state.pin, pat = P.type === 'pattern';
-  const title = pat
+  const title = P.duress ? (P.mode === 'set2' ? L('Gizli PIN-i təkrar yazın') : L('Gizli PIN (əsl koddan fərqli)')) : pat
     ? { unlock: L('Naxışı çəkin'), verify: L('Hazırkı kilidi daxil edin'), set1: L('Yeni naxış çəkin (ən azı 4 nöqtə)'), set2: L('Naxışı təkrar çəkin') }[P.mode]
     : { unlock: L('PIN kodu daxil edin'), verify: L('Hazırkı kilidi daxil edin'), set1: L('Yeni PIN kod'), set2: L('PIN kodu təkrar yazın') }[P.mode];
   const body = pat ? `<div class="patbox" id="patbox">${Array.from({ length: 9 }, (_, i) => `<i data-n="${i + 1}"></i>`).join('')}<svg id="patsvg"><polyline id="patline" points=""/></svg></div>
@@ -1204,9 +1383,10 @@ function renderPin() {
       + (P.mode === 'unlock' && bioOn() ? `<button class="ic" data-a="bioAsk">${I.finger}</button>` : '<span></span>')
       + `<button data-a="pinKey" data-v="0">0</button><button class="ic" data-a="pinKey" data-v="del">${I.del}</button>`}</div>`;
   return `<div class="pinpage"><img class="logo" src="icon.png" alt=""><h1>${esc(APP_NAME)}</h1><h2>${esc(title)}</h2>
-    ${P.mode === 'set1' && !pat ? `<div class="seg" style="width:220px;margin:0 auto 6px"><button class="pay ${P.len === 4 ? 'on' : ''}" data-a="pinLen" data-v="4">${esc(L('4 rəqəm'))}</button><button class="pay ${P.len === 6 ? 'on' : ''}" data-a="pinLen" data-v="6">${esc(L('6 rəqəm'))}</button></div>` : ''}
+    ${P.mode === 'set1' && !pat && !P.duress ? `<div class="seg" style="width:220px;margin:0 auto 6px"><button class="pay ${P.len === 4 ? 'on' : ''}" data-a="pinLen" data-v="4">${esc(L('4 rəqəm'))}</button><button class="pay ${P.len === 6 ? 'on' : ''}" data-a="pinLen" data-v="6">${esc(L('6 rəqəm'))}</button></div>` : ''}
     ${pat ? `<div class="pinerr ${P.err ? 'shake' : ''}" id="pinErr">${esc(P.err || '')}</div>` : ''}
     ${body}
+    ${P.mode === 'unlock' && db.cfg.owner && !state.decoy ? `<div class="pinowner">${esc(db.cfg.owner)}</div>` : ''}
     ${P.mode === 'unlock' ? `<button class="pinlink" data-a="pinForgot">${esc(pat ? L('Naxışı unutdum') : L('PIN-i unutdum'))}</button>` : `<button class="pinlink" data-a="pinCancel">${esc(L('Ləğv et'))}</button>`}</div>`;
 }
 // 5 səhv cəhddən sonra 30 saniyə gözləmə (qalan saniyə; 0 = gözləmə yoxdur)
@@ -1219,23 +1399,59 @@ function pinDone(code) {
     const wait = pinWait();
     if (wait) { P.err = L('Çox səhv cəhd — {0} saniyə gözləyin', wait); return render(); }
     if (!Android.checkPin(code)) {
+      // gizli PIN: proqram boş açılır (heç nə yazılmır, Google-a getmir)
+      if (P.mode === 'unlock' && db.cfg.dpin && db.cfg.dpin.hash && sha256hex(db.cfg.dpin.salt + code) === db.cfg.dpin.hash) { try { localStorage.setItem('mfPinBad', 0); } catch (e) {} return enterDecoy(); }
       let n = 0; try { n = (+localStorage.getItem('mfPinBad') || 0) + 1; localStorage.setItem('mfPinBad', n); if (n >= 5) { localStorage.setItem('mfPinUntil', Date.now() + 30000); localStorage.setItem('mfPinBad', 0); } } catch (e) {}
       P.err = n >= 5 ? L('Çox səhv cəhd — {0} saniyə gözləyin', 30) : (P.type === 'pattern' ? L('Səhv naxış') : L('Səhv PIN kod')) + ' (' + L('{0} cəhd qalıb', 5 - n) + ')';
       return render();
     }
     try { localStorage.setItem('mfPinBad', 0); } catch (e) {}
     if (P.mode === 'unlock') { state.pin = null; render(); window.onAppResume(); return; }
-    if (P.next === 'remove') { Android.clearPin(); try { localStorage.removeItem('mfLockType'); } catch (e) {} savePinCfg(); state.pin = null; toast(L('Kilid götürüldü')); return render(); }
+    if (P.next === 'cb') { const f = state.pinCb; state.pinCb = null; state.pin = null; render(); if (f) f(); return; }
+    if (P.next === 'remove') { dropDpin(); Android.clearPin(); try { localStorage.removeItem('mfLockType'); } catch (e) {} savePinCfg(); state.pin = null; toast(L('Kilid götürüldü')); return render(); }
     state.pin = null; openSheet({ kind: 'lockType' }); return;
   } else if (P.mode === 'set1') {
     if (P.type === 'pattern' && code.length < 4) { P.err = L('Ən azı 4 nöqtəni birləşdirin'); return render(); }
     Object.assign(P, { mode: 'set2', first: code });
+  } else if (code === P.first && P.duress) {
+    if (Android.checkPin(code)) { Object.assign(P, { mode: 'set1', first: '', err: L('Gizli PIN əsl koddan fərqli olmalıdır') }); return render(); }
+    const salt = uid(); setCfg('dpin', { salt, hash: sha256hex(salt + code) }); save();
+    state.pin = null; toast(L('Gizli PIN qoyuldu'));
   } else if (code === P.first) {
+    dropDpin();
     Android.setPin(code); try { localStorage.setItem('mfLockType', P.type); } catch (e) {} savePinCfg();
     state.pin = null; toast(P.type === 'pattern' ? L('Naxış qoyuldu') : L('PIN kod qoyuldu'));
   } else Object.assign(P, { mode: 'set1', first: '', err: P.type === 'pattern' ? L('Naxışlar eyni deyil, yenidən çəkin') : L('PIN kodlar eyni deyil, yenidən yazın') });
   render();
 }
+// əsl kod dəyişəndə / götürüləndə gizli PIN də götürülür (uzunluğu uyğun gəlməyə bilər)
+function dropDpin() { if (db.cfg.dpin) { setCfg('dpin', null); setTimeout(() => toast(L('Gizli PIN də götürüldü — istəsəniz, yenidən qoyun')), 1800); } }
+// əməliyyatdan əvvəl kilid kodu (kod qoyulmayıbsa, dərhal icra olunur)
+function needPin(fn) {
+  if (!(hasNative && Android.pinSet && Android.pinSet())) return fn();
+  state.sheet = null; state.confirm = null; state.pinCb = fn;
+  state.pin = { mode: 'verify', type: lockType(), next: 'cb', len: Android.pinLength(), entered: '', err: '' };
+  render();
+}
+function enterDecoy() {
+  state.decoy = true; clearTimeout(sync.timer); clearTimeout(sync.retry);
+  db = { mf: 1 }; fixDb(); db.cfg.tags = [];
+  Object.assign(sync, { account: '', status: 'idle', dirty: false, pending: 0, last: 0, running: false, encNeed: false });
+  try { if (Android.markUnlocked) Android.markUnlocked(); } catch (e) {}
+  state.pin = null; state.pinCb = null; state.pages = []; state.sheet = null; state.tab = 'home';
+  render();
+}
+// avtomatik kilid: seçilən müddət toxunulmadan keçəndə
+let lastAct = Date.now();
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(ev => document.addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true, capture: true }));
+const alockDue = () => { const m = +(db.cfg.alock || 0); return !!(m && !state.pin && !state.decoy && hasNative && Android.pinSet && Android.pinSet() && Date.now() - lastAct > m * 60000); };
+function lockApp() {
+  state.sheet = null; state.confirm = null; state.pinCb = null;
+  try { if (Android.lockNow) Android.lockNow(); } catch (e) {}
+  state.pin = { mode: 'unlock', type: lockType(), len: Android.pinLength(), entered: '', err: '' };
+  render();
+}
+setInterval(() => { if (alockDue()) lockApp(); }, 15000);
 // naxış: 3×3 nöqtə üzərində barmaqla çəkilir
 function bindPattern() {
   const box = document.getElementById('patbox'); if (!box || !state.pin) return;
@@ -1301,21 +1517,21 @@ function restoreMany(list) {
 // ---------- çəkmək ----------
 let lastKey = '';
 function render() {
-  if (state.pin) { app.innerHTML = renderPin(); bindPattern(); return; }
+  if (state.pin) { app.innerHTML = renderPin() + (state.confirm ? renderConfirm(state.confirm) : ''); bindPattern(); return; }
   let h = '';
   if (state.tab === 'people') h = renderCustomers();
   else if (state.tab === 'debts') h = renderDebts();
   else if (state.tab === 'remind') h = renderRemind();
   else { state.tab = 'home'; h = renderHome(); }
   const dueN = dueCustomers().length + dueLends().length;
-  h += `<nav>
+  h += `<nav>${isPc() ? `<div class="nbrand"><img src="icon.png" alt=""><b>${esc(APP_NAME)}</b></div>` : ''}
     <button class="${state.tab === 'home' ? 'on' : ''}" data-a="tab" data-v="home">${I.home}${esc(L('Ana'))}</button>
     <button class="${state.tab === 'people' ? 'on' : ''}" data-a="tab" data-v="people">${I.people}${esc(L('Müştərilər'))}</button>
-    <button class="navplus" data-a="addMenu"><span>${I.plus}</span></button>
+    <button class="navplus" data-a="addMenu"><span>${I.plus}${isPc() ? esc(L('Yeni əməliyyat')) : ''}</span></button>
     <button class="${state.tab === 'debts' ? 'on' : ''}" data-a="tab" data-v="debts">${I.hand}${esc(L('Borclar'))}</button>
-    <button class="${state.tab === 'remind' ? 'on' : ''}" data-a="tab" data-v="remind" style="position:relative">${I.bell}${esc(L('Xatırlat'))}${dueN ? `<i class="navbadge">${dueN}</i>` : ''}</button></nav>`;
+    <button class="${state.tab === 'remind' ? 'on' : ''}" data-a="tab" data-v="remind" style="position:relative">${I.bell}${esc(L('Xatırlat'))}${dueN ? `<i class="navbadge">${dueN}</i>` : ''}</button>${isPc() ? `<button class="nset ${setPage() ? 'on' : ''}" data-a="mfMenu" data-v="settings">${I.gear}${esc(L('Ayarlar'))}</button><div class="nver">${esc(APP_VERSION)}</div>` : ''}</nav>`;
   const pg = topPage();
-  if (pg) h += ({ cust: renderCustomer, party: renderParty, kassa: renderKassa, all: renderAll, settings: renderSettings, trash: renderTrash, privacy: renderPrivacy, recs: renderRecs, report: renderReport })[pg.kind](pg) || '';
+  if (pg) h += ({ cust: renderCustomer, party: renderParty, kassa: renderKassa, all: renderAll, settings: renderSettings, sync: renderSync, security: renderSecurity, devs: renderDevs, trash: renderTrash, privacy: renderPrivacy, recs: renderRecs, report: renderReport })[pg.kind](pg) || '';
   const key = state.sheet ? JSON.stringify(Object.assign({}, state.sheet, { draft: null })) : '';
   if (state.sheet) h += `<div class="shade" data-a="shade"><div class="sheet">${renderSheet(state.sheet)}</div></div>`;
   if (state.confirm) h += renderConfirm(state.confirm);
@@ -1358,13 +1574,15 @@ window.onPhotoPicked = function (url) {
   if (state.sheet && state.sheet.kind === 'shop' && url) { keepShopDraft(); state.sheet.draft.logo = url; render(); }
 };
 window.onImported = function (text) {
+  const enc = isEnc(text);
+  if (enc) { if (!canCrypto()) return toast(L('Bu cihazda şifrələmə dəstəklənmir')); state.impEnc = enc; return openSheet({ kind: 'bkopen' }); }
   let d = null;
   try { d = JSON.parse(text); } catch (e) {}
-  if (!d || !d.mf) return toast(L('Bu fayl My Finance™ yedəyi deyil'));
-  ask({ title: L('Yedək faylından bərpa edilsin?'), text: L('Faylda {0} müştəri və {1} əməliyyat var. Telefondakı məlumatlar silinmir — fayldakılar onlarla birləşdirilir.', (d.customers || []).length, (d.ops || []).length), ok: L('Bərpa et'), icon: '📥',
+  if (!d || !d.mf) return toast(L('Bu fayl My Finance™ ehtiyat nüsxəsi deyil'));
+  ask({ title: L('Ehtiyat nüsxə faylından bərpa edilsin?'), text: L('Faylda {0} müştəri və {1} əməliyyat var. Telefondakı məlumatlar silinmir — fayldakılar onlarla birləşdirilir.', (d.customers || []).length, (d.ops || []).length), ok: L('Bərpa et'), icon: '📥',
     run() { db = mergeDb(db, d); fixDb(); loadBroken = false; applyCfg(); save(); toast(L('Bərpa olundu')); } });
 };
-window.onImportedXlsx = function () { toast(L('Bərpa üçün .json yedək faylını seçin')); };
+window.onImportedXlsx = function () { toast(L('Bərpa üçün .json ehtiyat nüsxə faylını seçin')); };
 
 // müştəri təklifləri: ad yazdıqca
 function whoSuggest() {
@@ -1497,6 +1715,13 @@ async function drawStatement(cid) {
     y += rh;
   }
   // səhifə nömrələri; tək səhifədə artıq boşluq kəsilir
+  // su nişanı: dükanın adı və tarix (saxtalaşdırmaq çətinləşsin)
+  const wm = (shop.name || APP_NAME) + ' · ' + fmtDate(today());
+  pages.forEach(cv => {
+    const g = cv.getContext('2d'); g.save(); g.globalAlpha = 0.07; g.fillStyle = '#0F1A24'; g.font = `800 54px ${F}`; g.textAlign = 'center';
+    for (let yy = 260; yy < cv.height; yy += 420) { g.save(); g.translate(W / 2, yy); g.rotate(-Math.PI / 7); g.fillText(wm, 0, 0); g.restore(); }
+    g.restore();
+  });
   pages.forEach((cv, i) => {
     const g = cv.getContext('2d'); g.font = `500 22px ${F}`; g.fillStyle = '#8B8D98'; g.textAlign = 'center';
     if (pages.length > 1) g.fillText(L('Səhifə {0} / {1}', i + 1, pages.length), W / 2, PH - 30);
@@ -1618,7 +1843,7 @@ const actions = {
   openKassa() { state.kday = today(); pushPage({ kind: 'kassa' }); },
   openReport() { pushPage({ kind: 'report', m: today().slice(0, 7) }); },
   rmon(v) { const pg = topPage(); const m = C.addMonths(pg.m + '-01', +v).slice(0, 7); if (m <= today().slice(0, 7)) { pg.m = m; render(); } },
-  xlsxMonth(v) { const [a, b] = v.split('|'); exportXlsx(a, b); },
+  xlsxMonth(v) { const [a, b] = v.split('|'); needPin(() => exportXlsx(a, b)); },
   openAll() { pushPage({ kind: 'all', k: '', m: '', q: '', from: '', to: '' }); },
   allF(v) { const [g, x] = v.split('|'); const pg = topPage(); pg[g] = x; pg.q = val('tq'); render(); },
   seg(v) { state.seg = v; render(); },
@@ -1757,13 +1982,13 @@ const actions = {
   delOp(v) {
     const o = db.ops.find(x => x.id === v); if (!o) return;
     ask({ title: L('Silinsin?'), text: L('{0} — {1}. Zibil qutusundan 30 gün ərzində qaytarmaq olar.', opTitle(o), money(o.amount)), ok: L('Sil'), danger: true,
-      run() { trashOp(o); state.sheet = null; save(); toast(L('Zibil qutusuna atıldı')); } });
+      run() { needPin(() => { trashOp(o); state.sheet = null; save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
   },
   delCust(v) {
     const c = cust(v); if (!c) return;
     const n = db.ops.filter(o => o.cid === v).length;
     ask({ title: L('{0} silinsin?', c.name), text: (n ? L('Onun {0} əməliyyatı kassada və hesabatda qalır.', n) + ' ' : '') + L('Zibil qutusundan 30 gün ərzində qaytarmaq olar.'), ok: L('Sil'), danger: true,
-      run() { trashCustomer(c); state.pages.pop(); save(); toast(L('Zibil qutusuna atıldı')); } });
+      run() { needPin(() => { trashCustomer(c); state.pages.pop(); save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
   },
   payFor(v) { openSheet({ kind: 'pay', cid: v }); },
   nisyeFor(v) { openSheet({ kind: 'nisye', cid: v }); },
@@ -1790,7 +2015,7 @@ const actions = {
   sendWa(v) { const c = cust(v); state.sent[v] = true; openUrl(waLink(c.phone, val('f_msg'))); closeSheet(); },
   quickWa(v) { const c = cust(v); if (!c) return; state.sent[v] = true; render(); openUrl(waLink(c.phone, waMessage(c, C.toneFor(cstate(v).overdue)))); },
   stmt(v) { if (!C.history(db, v).length) return toast(L('Tarixçə boşdur')); openSheet({ kind: 'stmt', cid: v }); },
-  stmtGo(v) { const cid = state.sheet.cid; closeSheet(); makeStatement(cid, v); },
+  stmtGo(v) { const cid = state.sheet.cid; closeSheet(); needPin(() => makeStatement(cid, v)); },
   // borclar
   openParty(v) { const i = v.indexOf('|'); pushPage({ kind: 'party', side: v.slice(0, i), key: v.slice(i + 1) }); },
   openDebt(v) { const d = debtRec(String(v).slice(1)); if (d) pushPage({ kind: 'party', side: d.side, key: C.partyKey(d) }); },
@@ -1819,7 +2044,7 @@ const actions = {
   delDebt(v) {
     const d = debtRec(v); if (!d) return;
     ask({ title: L('Silinsin?'), text: L('{0} — {1}. Zibil qutusundan 30 gün ərzində qaytarmaq olar.', d.name, money(d.amount)), ok: L('Sil'), danger: true,
-      run() { trashDebt(d); state.sheet = null; const tp = topPage(); if (tp && tp.kind === 'party' && !partyOf(tp.side, tp.key)) state.pages.pop(); save(); toast(L('Zibil qutusuna atıldı')); } });
+      run() { needPin(() => { trashDebt(d); state.sheet = null; const tp = topPage(); if (tp && tp.kind === 'party' && !partyOf(tp.side, tp.key)) state.pages.pop(); save(); render(); toast(L('Zibil qutusuna atıldı')); }); } });
   },
   newBack(v) { const i = v.indexOf('|'); openSheet({ kind: 'back', side: v.slice(0, i), key: v.slice(i + 1) }); },
   pickWho(v, e, el) {
@@ -1893,20 +2118,71 @@ const actions = {
   notifOpen() { if (hasNative && Android.openNotifSettings) Android.openNotifSettings(); },
   eye() { hideNums = !hideNums; try { localStorage.setItem('mfHide', hideNums ? '1' : '0'); } catch (e) {} applyTheme(); setCfg('hide', hideNums); save(); render(); },
   offSummary() { if (hasNative) Android.setSummaryTime(''); setCfg('sum', ''); save(); closeSheet(); },
-  syncLink() { if (hasNative) Android.syncLink(); },
+  syncLink() { if (hasNative && !state.decoy) Android.syncLink(); },
+  openSync() { state.checkResult = null; pushPage({ kind: 'sync' }); },
+  openSecurity() { pushPage({ kind: 'security' }); },
+  openDevs() { pushPage({ kind: 'devs' }); },
+  bkMenu() { openSheet({ kind: 'bk' }); },
+  bkSendOpen() { if (!canCrypto()) return toast(L('Bu cihazda şifrələmə dəstəklənmir')); openSheet({ kind: 'bkpw' }); },
+  bkSend() {
+    const a = val('f_pw1'), b = val('f_pw2');
+    if (a.length < 4) return toast(L('Parol ən azı 4 simvol olmalıdır'));
+    if (a !== b) return toast(L('Parollar eyni deyil'));
+    closeSheet(); toast(L('Hazırlanır…'));
+    encryptText(JSON.stringify(db), a).then(t => Android.shareFile(t, bkName() + '-' + today() + '.json'), () => toast(L('Şifrələmə alınmadı')));
+  },
+  bkOpen() {
+    const pw = val('f_pw1'), o = state.impEnc; if (!o || !pw) return;
+    decryptText(o, pw).then(t => { state.impEnc = null; closeSheet(); window.onImported(t); }, () => toast(L('Parol səhvdir')));
+  },
+  gpw() { if (!canCrypto()) return toast(L('Bu cihazda şifrələmə dəstəklənmir')); openSheet({ kind: 'gpw' }); },
+  gpwSave() {
+    const a = val('f_pw1'), b = val('f_pw2');
+    if (a.length < 6) return toast(L('Parol ən azı 6 simvol olmalıdır'));
+    if (a !== b) return toast(L('Parollar eyni deyil'));
+    lsSet('mfEncPw', a); sync.encNeed = false; closeSheet(); toast(L('Google faylı şifrələnir'));
+    if (sync.account) runSync('push');
+  },
+  gpwChange() { needPin(() => { try { localStorage.removeItem('mfEncPw'); } catch (e) {} openSheet({ kind: 'gpw' }); }); },
+  gpwOff() {
+    ask({ title: L('Şifrələmə söndürülsün?'), text: L('Google-dakı fayl yenidən parolsuz yazılacaq. Digər cihazlarda da söndürün.'), ok: L('Söndür'), danger: true, icon: '🔐',
+      run() { needPin(() => { try { localStorage.removeItem('mfEncPw'); } catch (e) {} state.sheet = null; render(); if (sync.account) runSync('push'); }); } });
+  },
+  nhide() { setCfg('nhide', !db.cfg.nhide); save(); pushNative(); render(); },
+  alock() { openSheet({ kind: 'alock' }); },
+  alockSet(v) { if (+v && !(hasNative && Android.pinSet && Android.pinSet())) return toast(L('Əvvəlcə giriş kilidini qoyun')); setCfg('alock', +v); save(); closeSheet(); },
+  owner() { openSheet({ kind: 'owner' }); },
+  saveOwner() { setCfg('owner', val('f_owner').trim()); save(); closeSheet(); toast(L('Yadda saxlandı')); },
+  dpin() {
+    if (!(hasNative && Android.pinSet && Android.pinSet())) return toast(L('Əvvəlcə giriş kilidini qoyun'));
+    const set = () => { state.pin = { mode: 'set1', type: lockType(), len: Android.pinLength(), entered: '', err: '', duress: true }; render(); };
+    if (db.cfg.dpin) return ask({ title: L('Gizli PIN'), text: L('Gizli PIN-i dəyişmək və ya götürmək istəyirsiniz?'), ok: L('Dəyiş'), icon: '🕶', alt: L('Götür'),
+      run() { needPin(set); }, runAlt() { needPin(() => { setCfg('dpin', null); save(); render(); toast(L('Gizli PIN götürüldü')); }); } });
+    ask({ title: L('Gizli PIN'), text: L('Bu kod yazılanda proqram boş açılır və əsl məlumatlar görünmür (heç nə yazılmır). Proqram bağlanıb əsl kodla açılanda hər şey yerindədir. Kod əsl koddan fərqli olmalıdır.'), ok: L('Qoy'), icon: '🕶', run() { needPin(set); } });
+  },
+  devUnlink(v) {
+    const d = db.devs.find(x => x.id === v); if (!d) return;
+    ask({ title: L('{0} ayrılsın?', d.n || '?'), text: L('Bu cihaz Google hesabından ayrılacaq və bazaya bir daha yazmayacaq. Ondakı məlumatlar qalır.'), ok: L('Ayır'), danger: true, icon: '⛓',
+      run() { needPin(() => { Object.assign(d, { cmd: 'unlink', ct: Date.now() }); touch(d); save(); render(); toast(L('Cihaz internetə qoşulan kimi ayrılacaq')); }); } });
+  },
+  devWipe(v) {
+    const d = db.devs.find(x => x.id === v); if (!d) return;
+    ask({ title: L('{0} — məlumatlar silinsin?', d.n || '?'), text: L('Cihaz itibsə: o, internetə qoşulan kimi ondakı bütün məlumatlar silinəcək və Google hesabından ayrılacaq. Google-dakı məlumatlar və bu cihaz toxunulmur.'), ok: L('Sil'), danger: true, icon: '🗑',
+      run() { needPin(() => { Object.assign(d, { cmd: 'wipe', ct: Date.now() }); touch(d); save(); render(); toast(L('Cihaz internetə qoşulan kimi məlumatları silinəcək')); }); } });
+  },
+  devDrop(v) { db.devs = db.devs.filter(x => x.id !== v); db.removed[v] = Date.now(); save(); render(); },
   syncNow() { if (!sync.account) return; if (loadBroken) return toast(L('Məlumat faylı zədələnib — Google-a göndərilmir')); toast(L('Google-a göndərilir…')); runSync('push'); },
   checkBackup() { if (!sync.account) return; state.checkResult = null; toast(L('Yoxlanılır…')); runSync('check'); },
-  syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; } }); },
+  syncUnlink() { ask({ title: L('Google hesabından ayrılsın?'), text: L('Telefondakı məlumatlar qalır, sadəcə Drive-a göndərilmə dayanır.'), ok: L('Ayır'), danger: true, icon: '☁', run() { needPin(() => { Android.syncUnlink(); sync.account = ''; sync.status = 'idle'; render(); }); } }); },
   xlsx() { openSheet({ kind: 'xlsx' }); },
   xlsxGo(v) {
     const td = today(), m0 = td.slice(0, 7) + '-01', pm = C.addMonths(m0, -1);
     const r = { month: [m0, td], prev: [pm, C.addDays(m0, -1)], all: ['', td], range: [val('f_xfrom'), val('f_xto') || td] }[v];
     if (v === 'range' && !r[0]) return toast(L('Başlanğıc tarixini seçin'));
     if (r[0] && r[0] > r[1]) return toast(L('Tarixlər səhvdir'));
-    closeSheet(); exportXlsx(r[0], r[1]);
+    closeSheet(); needPin(() => exportXlsx(r[0], r[1]));
   },
-  backupFile() { if (hasNative) Android.shareFile(JSON.stringify(db), 'MyFinance-yedek-' + today() + '.json'); },
-  importFile() { if (hasNative) Android.importFile(); },
+  importFile() { state.sheet = null; render(); if (hasNative) Android.importFile(); },
   theme() { theme = theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('mfTheme', theme); } catch (e) {} applyTheme(); setCfg('theme', theme); save(); render(); },
   langPick() { openSheet({ kind: 'lang' }); },
   setLang(v) { lang = v; try { localStorage.setItem('mfLang', v); } catch (e) {} if (hasNative && Android.setLang) Android.setLang(v); applyTheme(); state.sheet = null; setCfg('lang', v); save(); render(); },
@@ -1925,7 +2201,7 @@ const actions = {
   restoreAll() { ask({ title: L('Hamısı bərpa edilsin?'), text: L('Zibil qutusundakı {0} qeydin hamısı yerinə qaytarılacaq.', db.trash.length), ok: L('Bərpa et'), icon: '♻️', run() { restoreMany(db.trash.slice()); } }); },
   emptyTrash() {
     ask({ title: L('Zibil qutusu boşaldılsın?'), text: L('İçindəkilər həmişəlik silinəcək, geri qaytarmaq olmayacaq.'), ok: L('Boşalt'), danger: true,
-      run() { const t = Date.now(); for (const e of db.trash) db.removed[e.id] = t; db.trash = []; save(); } });
+      run() { needPin(() => { const t = Date.now(); for (const e of db.trash) db.removed[e.id] = t; db.trash = []; save(); render(); }); } });
   },
   pin() {
     if (!hasNative) return;
@@ -1947,19 +2223,22 @@ const actions = {
     if (P.entered.length === P.len) setTimeout(() => pinDone(), 60);
   },
   pinLen(v) { Object.assign(state.pin, { len: +v, entered: '', err: '' }); render(); },
-  pinCancel() { state.pin = null; render(); },
+  pinCancel() { state.pin = null; state.pinCb = null; render(); },
   bioAsk() { Android.bioPrompt(); },
   pinForgot() {
-    // Google qoşuludursa: həmin Google hesabına yenidən giriş (telefonda və kompüterdə eyni)
-    if (sync.account && Android.resetPinWithGoogle) {
-      return ask({ title: L('Kilidi unutmusunuz?'), text: L('Sıfırlamaq üçün proqrama qoşulu Google hesabına ({0}) yenidən giriş soruşulacaq. Məlumatlar silinmir.', sync.account), ok: L('Davam et'), icon: '🔑',
-        run() { Android.resetPinWithGoogle(); } });
-    }
-    if (Android.isPc && Android.isPc()) return toast(L('Google hesabı qoşulmayıb — kilidi sıfırlamaq mümkün deyil'));
-    // Google qoşulmayıb: telefonun öz ekran kilidi ilə
-    ask({ title: L('Kilidi unutmusunuz?'), text: L('Sıfırlamaq üçün telefonun öz ekran kilidi soruşulacaq.'), ok: L('Davam et'), icon: '🔑',
-      run() { if (!Android.resetPinWithPhone()) toast(L('Telefonda ekran kilidi qurulmayıb')); } });
-  }
+    // iki yol: proqrama qoşulu Google hesabı və ya cihazın öz kilidi (telefonda ekran kilidi, kompüterdə Windows Hello)
+    const pc = isPc(), g = !!(sync.account && Android.resetPinWithGoogle);
+    const dev = pc ? !!(Android.helloAvailable && Android.helloAvailable()) : true;
+    const devLbl = pc ? L('Windows kilidi ilə') : L('Telefonun ekran kilidi ilə');
+    const devRun = () => { if (!Android.resetPinWithPhone()) toast(pc ? L('Kompüterdə Windows Hello (PIN, barmaq izi və ya üz) qurulmayıb') : L('Telefonda ekran kilidi qurulmayıb')); };
+    if (!g && !dev) return toast(L('Google hesabı qoşulmayıb, Windows Hello da qurulmayıb — kilidi sıfırlamaq mümkün deyil'));
+    const o = { title: L('Kilidi unutmusunuz?'), text: L('Kilidi necə sıfırlamaq istəyirsiniz? Məlumatlar silinmir.') + (g ? ' ' + L('Google: {0}', sync.account) : ''), icon: '🔑' };
+    if (g) Object.assign(o, { ok: L('Google hesabı ilə'), run() { Android.resetPinWithGoogle(); } });
+    else Object.assign(o, { ok: devLbl, run: devRun });
+    if (g && dev) Object.assign(o, { alt: devLbl, altCls: 'ghost', runAlt: devRun });
+    ask(o);
+  },
+  mfMenu(v) { if (state.pin) return; state.sheet = null; state.confirm = null; if (v === 'settings') { state.pages = []; actions.settings(); } else if (v.startsWith('tab:')) actions.tab(v.slice(4)); else if (actions[v]) actions[v](); }
 };
 
 app.addEventListener('click', e => {
@@ -1996,6 +2275,19 @@ if (hasNative && Android.setLang) Android.setLang(lang);
 load();
 if (!loadBroken && (captureDeviceCfg() || startChanged)) save(); // telefondakı baza Google-dakı ilə tam eyni qalsın
 if (hasNative && Android.syncLinked) sync.account = Android.syncLinked();
+if (isPc()) document.documentElement.classList.add('pc');
+window.mfAct = v => actions.mfMenu(v); // kompüterdə yuxarı menyudan
+// 30 gündən çox açılmayıbsa, Google girişi silinir (yenidən qoşmaq lazımdır)
+(() => {
+  const last = lsNum('mfLastOpen');
+  if (sync.account && last && Date.now() - last > 30 * 86400000) {
+    try { Android.syncUnlink(); } catch (e) {}
+    sync.account = '';
+    setTimeout(() => toast(L('Proqram 30 gündən çox açılmadığı üçün Google hesabından çıxış edildi — Ayarlarda yenidən qoşun')), 1200);
+  }
+  lsSet('mfLastOpen', Date.now());
+})();
+if (!loadBroken && touchDevice()) save();
 if (hasNative && Android.pinSet && Android.pinSet() && Android.isLocked()) {
   state.pin = { mode: 'unlock', type: lockType(), len: Android.pinLength(), entered: '', err: '' };
   if (bioOn()) setTimeout(() => Android.bioPrompt(), 300);

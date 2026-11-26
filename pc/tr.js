@@ -262,6 +262,153 @@ Object.assign(M, {
  "Bu, proqrama qoşulu Google hesabı deyil": ["Это не тот аккаунт Google, что подключён к приложению", "Bu, uygulamaya bağlı Google hesabı değil", "This is not the Google account linked to the app"],
  "Google girişi alınmadı": ["Вход в Google не выполнен", "Google girişi yapılamadı", "Google sign-in failed"]
 });
+Object.assign(M, {
+ "Fayl": [
+  "Файл",
+  "Dosya",
+  "File"
+ ],
+ "Yeni əməliyyat": [
+  "Новая операция",
+  "Yeni işlem",
+  "New entry"
+ ],
+ "Excel faylı kimi yadda saxla": [
+  "Сохранить как файл Excel",
+  "Excel dosyası olarak kaydet",
+  "Save as Excel file"
+ ],
+ "Aylıq hesabat": [
+  "Месячный отчёт",
+  "Aylık rapor",
+  "Monthly report"
+ ],
+ "Ehtiyat nüsxə faylı": [
+  "Файл резервной копии",
+  "Yedek dosyası",
+  "Backup file"
+ ],
+ "Bağla": [
+  "Закрыть",
+  "Kapat",
+  "Close"
+ ],
+ "Bölmələr": [
+  "Разделы",
+  "Bölümler",
+  "Sections"
+ ],
+ "Ana": [
+  "Главная",
+  "Ana sayfa",
+  "Home"
+ ],
+ "Müştərilər": [
+  "Клиенты",
+  "Müşteriler",
+  "Customers"
+ ],
+ "Borclar": [
+  "Долги",
+  "Borçlar",
+  "Debts"
+ ],
+ "Xatırlat": [
+  "Напомнить",
+  "Hatırlat",
+  "Reminders"
+ ],
+ "Kassa": [
+  "Касса",
+  "Kasa",
+  "Cash desk"
+ ],
+ "Axtarış": [
+  "Поиск",
+  "Arama",
+  "Search"
+ ],
+ "Ayarlar": [
+  "Настройки",
+  "Ayarlar",
+  "Settings"
+ ],
+ "Google Drive": [
+  "Google Drive",
+  "Google Drive",
+  "Google Drive"
+ ],
+ "Təhlükəsizlik": [
+  "Безопасность",
+  "Güvenlik",
+  "Security"
+ ],
+ "Görünüş": [
+  "Вид",
+  "Görünüm",
+  "View"
+ ],
+ "Tam ekran": [
+  "Полный экран",
+  "Tam ekran",
+  "Full screen"
+ ],
+ "Böyüt": [
+  "Увеличить",
+  "Büyüt",
+  "Zoom in"
+ ],
+ "Kiçilt": [
+  "Уменьшить",
+  "Küçült",
+  "Zoom out"
+ ],
+ "Normal ölçü": [
+  "Обычный размер",
+  "Normal boyut",
+  "Actual size"
+ ],
+ "Tema (gündüz / gecə)": [
+  "Тема (день / ночь)",
+  "Tema (gündüz / gece)",
+  "Theme (day / night)"
+ ],
+ "Məbləğləri gizlət / göstər": [
+  "Скрыть / показать суммы",
+  "Tutarları gizle / göster",
+  "Hide / show amounts"
+ ],
+ "Kömək": [
+  "Справка",
+  "Yardım",
+  "Help"
+ ],
+ "Məxfilik siyasəti": [
+  "Политика конфиденциальности",
+  "Gizlilik politikası",
+  "Privacy policy"
+ ],
+ "Haqqında": [
+  "О программе",
+  "Hakkında",
+  "About"
+ ],
+ "Kompüter versiyası": [
+  "версия для компьютера",
+  "bilgisayar sürümü",
+  "desktop version"
+ ],
+ "Versiya": [
+  "Версия",
+  "Sürüm",
+  "Version"
+ ],
+ "Windows yoxlaması alınmadı": [
+  "Проверка Windows не пройдена",
+  "Windows doğrulaması başarısız",
+  "Windows verification failed"
+ ]
+});
 let lang = 'az';
 function setLang(l) { lang = l || 'az'; }
 function t(az) { const v = M[az]; if (!v || lang === 'az') return az; return lang === 'ru' ? v[0] : lang === 'tr' ? v[1] : lang === 'en' ? v[2] : az; }

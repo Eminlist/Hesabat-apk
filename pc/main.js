@@ -7,6 +7,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Tray, Menu, na
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const { execFile } = require('child_process');
 const T = require('./tr');
 const G = require('./google');
 
@@ -140,9 +142,26 @@ function tick() {
   if (due(s.time, s.fired)) { setPrefs({ summary: Object.assign({}, s, { fired: today }) }); notifySummary(); }
 }
 
+// ---------- Windows Hello (PowerShell vasitəsilə Windows-un öz yoxlama pəncərəsi) ----------
+let helloOk = false;
+function hello(kind) {
+  const head = "Add-Type -AssemblyName System.Runtime.WindowsRuntime\n" +
+    "$m = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]\n" +
+    "function Await($op, $t) { $task = $m.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(-1) | Out-Null; $task.Result }\n" +
+    "$V = [Windows.Security.Credentials.UI.UserConsentVerifier, Windows.Security.Credentials.UI, ContentType = WindowsRuntime]\n";
+  const body = kind === 'check'
+    ? "Write-Output (Await ($V::CheckAvailabilityAsync()) ([Windows.Security.Credentials.UI.UserConsentVerifierAvailability]))"
+    : "Write-Output (Await ($V::RequestVerificationAsync('My Finance')) ([Windows.Security.Credentials.UI.UserConsentVerificationResult]))";
+  const enc = Buffer.from(head + body, 'utf16le').toString('base64');
+  return new Promise(res => {
+    if (process.platform !== 'win32') return res('');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc], { windowsHide: true, timeout: kind === 'check' ? 20000 : 180000 }, (err, out) => res(String(out || '')));
+  });
+}
+
 // ---------- körpü: telefondakı «Android» obyektinin metodları ----------
 const H = {
-  setLang(l) { setPrefs({ lang: l || 'az' }); T.setLang(l || 'az'); buildTray(); },
+  setLang(l) { const ch = (l || 'az') !== (prefs().lang || 'az'); setPrefs({ lang: l || 'az' }); T.setLang(l || 'az'); buildTray(); if (ch || !Menu.getApplicationMenu()) Menu.setApplicationMenu(buildMenu()); },
   loadOld() { return ''; }, // köhnə «Emin Hesabat» kompüterdə olmayıb
   archiveOld() {},
   load,
@@ -215,10 +234,12 @@ const H = {
   notifAllowed() { return Notification.isSupported(); },
   openNotifSettings() { shell.openExternal('ms-settings:notifications'); },
   queueState() { const qq = prefs().queue || {}; return JSON.stringify({ pending: !!qq.pending, last: qq.last || 0 }); },
+  // aylıq ehtiyat nüsxə: D diskində gizli qovluq (D: yoxdursa, proqramın öz qovluğunda)
   saveToDownloads(json, name) {
     try {
-      const d = path.join(app.getPath('downloads'), 'MyFinance');
+      const d = fs.existsSync('D:\\') ? 'D:\\.MyFinance' : path.join(dir(), 'ehtiyat');
       fs.mkdirSync(d, { recursive: true });
+      if (process.platform === 'win32' && d.startsWith('D:')) execFile('attrib', ['+h', d], { windowsHide: true }, () => {});
       fs.writeFileSync(path.join(d, name), String(json), 'utf8');
       return true;
     } catch (e) { return false; }
@@ -243,7 +264,23 @@ const H = {
   },
   clearPin() { setPrefs({ pinHash: undefined, pinSalt: undefined, pinLen: undefined }); },
   isLocked() { return locked && pinSet(); },
-  resetPinWithPhone() { return false; },
+  // unudulmuş PIN: Windows-un öz kilidi (Windows Hello — PIN, barmaq izi və ya üz)
+  resetPinWithPhone() {
+    if (!helloOk) return false;
+    hello('verify').then(r => {
+      showWin();
+      if (r.trim() !== 'Verified') return pageToast(T.t('Windows yoxlaması alınmadı'));
+      setPrefs({ pinHash: undefined, pinSalt: undefined, pinLen: undefined });
+      locked = false;
+      js('window.onPinReset && window.onPinReset()');
+    });
+    return true;
+  },
+  helloAvailable() { return helloOk; },
+  deviceName() { return os.hostname() || 'PC'; },
+  notifyNow(title, text) { notify(title || 'My Finance™', text || ''); },
+  markUnlocked() { locked = false; },
+  lockNow() { locked = true; },
   isPc() { return true; },
   // unudulmuş PIN: proqrama qoşulu Google hesabına brauzerdə yenidən giriş — eyni hesabdırsa, kod silinir (məlumatlar qalır)
   async resetPinWithGoogle() {
@@ -283,6 +320,60 @@ function resumed() {
   lastResume = Date.now();
   js('window.onAppResume && window.onAppResume()');
 }
+// yuxarıdakı menyu (Fayl, Görünüş, Kömək) — proqramın dilində
+const act = v => () => { showWin(); js('window.mfAct && window.mfAct(' + q(v) + ')'); };
+function buildMenu() {
+  const M = [
+    { label: T.t('Fayl'), submenu: [
+      { label: T.t('Yeni əməliyyat'), accelerator: 'CmdOrCtrl+N', click: act('addMenu') },
+      { type: 'separator' },
+      { label: T.t('Excel faylı kimi yadda saxla'), accelerator: 'CmdOrCtrl+E', click: act('xlsx') },
+      { label: T.t('Aylıq hesabat'), click: act('openReport') },
+      { label: T.t('Ehtiyat nüsxə faylı'), click: act('bkMenu') },
+      { type: 'separator' },
+      { label: T.t('Bağla'), accelerator: 'CmdOrCtrl+W', click: () => win && win.close() },
+      { label: T.t('Çıxış'), accelerator: 'CmdOrCtrl+Q', click: quitApp }
+    ] },
+    { label: T.t('Bölmələr'), submenu: [
+      { label: T.t('Ana'), accelerator: 'CmdOrCtrl+1', click: act('tab:home') },
+      { label: T.t('Müştərilər'), accelerator: 'CmdOrCtrl+2', click: act('tab:people') },
+      { label: T.t('Borclar'), accelerator: 'CmdOrCtrl+3', click: act('tab:debts') },
+      { label: T.t('Xatırlat'), accelerator: 'CmdOrCtrl+4', click: act('tab:remind') },
+      { label: T.t('Kassa'), accelerator: 'CmdOrCtrl+K', click: act('openKassa') },
+      { label: T.t('Axtarış'), accelerator: 'CmdOrCtrl+F', click: act('openAll') },
+      { type: 'separator' },
+      { label: T.t('Ayarlar'), accelerator: 'CmdOrCtrl+,', click: act('settings') },
+      { label: T.t('Google Drive'), click: act('openSync') },
+      { label: T.t('Təhlükəsizlik'), click: act('openSecurity') }
+    ] },
+    { label: T.t('Görünüş'), submenu: [
+      { label: T.t('Tam ekran'), accelerator: 'F11', click: () => win && win.setFullScreen(!win.isFullScreen()) },
+      { type: 'separator' },
+      { label: T.t('Böyüt'), accelerator: 'CmdOrCtrl+=', click: () => zoom(+0.5) },
+      { label: T.t('Kiçilt'), accelerator: 'CmdOrCtrl+-', click: () => zoom(-0.5) },
+      { label: T.t('Normal ölçü'), accelerator: 'CmdOrCtrl+0', click: () => zoom(0) },
+      { type: 'separator' },
+      { label: T.t('Tema (gündüz / gecə)'), click: act('theme') },
+      { label: T.t('Məbləğləri gizlət / göstər'), accelerator: 'CmdOrCtrl+H', click: act('eye') }
+    ] },
+    { label: T.t('Kömək'), submenu: [
+      { label: T.t('Məxfilik siyasəti'), click: act('openPrivacy') },
+      { type: 'separator' },
+      { label: T.t('Haqqında'), click: about }
+    ] }
+  ];
+  return Menu.buildFromTemplate(M);
+}
+function zoom(d) {
+  if (!win) return;
+  const w = win.webContents, z = d === 0 ? 0 : Math.max(-3, Math.min(4, w.getZoomLevel() + d));
+  w.setZoomLevel(z); setPrefs({ zoom: z });
+}
+function about() {
+  dialog.showMessageBox(win, { type: 'info', title: 'My Finance™', icon: ICON, message: 'My Finance™ — ' + T.t('Kompüter versiyası'),
+    detail: T.t('Versiya') + ': ' + app.getVersion() + '\nKassa · Nisyə · Borclar\n© ProTechtor Group', buttons: ['OK'] });
+}
+function quitApp() { quitting = true; js('window.onAppPause && window.onAppPause()'); setTimeout(() => app.quit(), 1500); }
 function showWin() {
   if (!win) return;
   if (win.isMinimized()) win.restore();
@@ -291,16 +382,17 @@ function showWin() {
 }
 function createWindow() {
   win = new BrowserWindow({
-    width: 440, height: 880, minWidth: 360, minHeight: 560, show: false, title: 'My Finance™', icon: ICON,
-    backgroundColor: prefs().dark ? '#070708' : '#F4F7F9', autoHideMenuBar: true,
+    width: 1280, height: 820, minWidth: 900, minHeight: 600, show: false, title: 'My Finance™', icon: ICON,
+    backgroundColor: prefs().dark ? '#070708' : '#F4F7F9', autoHideMenuBar: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, backgroundThrottling: false }
   });
-  win.removeMenu();
+  Menu.setApplicationMenu(buildMenu());
   win.setContentProtection(!!prefs().secure);
   win.on('page-title-updated', e => e.preventDefault());
-  win.once('ready-to-show', () => { if (!hiddenStart) win.show(); });
+  win.once('ready-to-show', () => { if (!hiddenStart) { win.maximize(); win.show(); } });
   win.webContents.on('did-finish-load', () => {
     pageReady = true;
+    if (prefs().zoom) win.webContents.setZoomLevel(prefs().zoom);
     js("window.addEventListener('online', () => window.onOnline && window.onOnline())"); // internet qayıdanda növbə dərhal gedir
     for (const c of pendingJs.splice(0)) js(c);
   });
@@ -313,6 +405,7 @@ function createWindow() {
     if (i.key === 'Escape' || (i.alt && i.key === 'ArrowLeft')) js('window.onBack && window.onBack()');
     if ((i.control || i.meta) && ['r', 'R', 'w', 'W'].includes(i.key)) e.preventDefault();
     if (i.key === 'F5' || (i.control && i.shift && ['i', 'I'].includes(i.key))) e.preventDefault();
+    if (i.key === 'Escape' && win.isFullScreen()) win.setFullScreen(false);
   });
   win.on('app-command', (e, cmd) => { if (cmd === 'browser-backward') js('window.onBack && window.onBack()'); });
   // kiçildəndə kod soruşulmur; bağlayanda (X) soruşulur. Hər ikisində göndərilməmiş dəyişiklik dərhal Google-a gedir
@@ -335,7 +428,7 @@ function buildTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: T.t('Aç'), click: showWin },
     { type: 'separator' },
-    { label: T.t('Çıxış'), click: () => { quitting = true; js('window.onAppPause && window.onAppPause()'); setTimeout(() => app.quit(), 1500); } }
+    { label: T.t('Çıxış'), click: quitApp }
   ]));
 }
 
@@ -382,4 +475,5 @@ app.whenReady().then(() => {
   // telefonda yazılanlar kompüterə gəlsin: hər 2 dəqiqədən bir Google-dakı ilə birləşdirilir
   setInterval(() => { if (!(locked && pinSet())) js('window.onPull && window.onPull()'); }, 120000);
   updater();
+  hello('check').then(r => { helloOk = r.trim() === 'Available'; });
 });

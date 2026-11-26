@@ -1110,6 +1110,49 @@ public class MainActivity extends Activity {
             return true;
         }
 
+        /** Qoşulu cihazlar siyahısında görünən ad (məs. «Xiaomi Redmi Note 12»). */
+        @JavascriptInterface
+        public String deviceName() {
+            String m = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER, d = Build.MODEL == null ? "" : Build.MODEL;
+            if (!m.isEmpty()) m = Character.toUpperCase(m.charAt(0)) + m.substring(1);
+            return d.toLowerCase().startsWith(m.toLowerCase()) ? d : (m + " " + d).trim();
+        }
+
+        /** Bir dəfəlik bildiriş (yeni cihaz qoşuldu, cihaz uzaqdan ayrıldı və s.). */
+        @JavascriptInterface
+        public void notifyNow(String title, String text) {
+            try {
+                if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+                android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm == null) return;
+                android.app.Notification.Builder b;
+                if (Build.VERSION.SDK_INT >= 26) {
+                    nm.createNotificationChannel(new android.app.NotificationChannel("security", "My Finance™", android.app.NotificationManager.IMPORTANCE_HIGH));
+                    b = new android.app.Notification.Builder(MainActivity.this, "security");
+                } else {
+                    b = new android.app.Notification.Builder(MainActivity.this);
+                }
+                Intent open = new Intent(MainActivity.this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                android.app.PendingIntent pi = android.app.PendingIntent.getActivity(MainActivity.this, 3, open, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+                b.setSmallIcon(R.drawable.ic_notify).setContentTitle(title).setContentText(text)
+                        .setStyle(new android.app.Notification.BigTextStyle().bigText(text)).setContentIntent(pi).setAutoCancel(true);
+                nm.notify((int) (System.currentTimeMillis() % 100000) + 10, b.build());
+            } catch (Exception ignored) {
+            }
+        }
+
+        /** Gizli PIN ilə açılıb: proqram açıq sayılır. */
+        @JavascriptInterface
+        public void markUnlocked() {
+            locked = false;
+        }
+
+        /** Avtomatik kilid: proqram kilidləndi. */
+        @JavascriptInterface
+        public void lockNow() {
+            locked = true;
+        }
+
         /** Unudulmuş PIN: proqrama qoşulu Google hesabının parolu yenidən soruşulur; düzdürsə, kod silinir (məlumatlar qalır). */
         @JavascriptInterface
         public void resetPinWithGoogle() {
