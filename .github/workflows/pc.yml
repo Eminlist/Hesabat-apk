@@ -21,6 +21,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
 
       - uses: actions/setup-node@v4
         with:
@@ -54,7 +56,9 @@ jobs:
           # Google girişi (Google Cloud «Hesabat» layihəsinin «Desktop app» açarı)
           node -e 'const t=s=>String(s||"").replace(/[^A-Za-z0-9._-]/g,"");require("fs").writeFileSync("pc/config.json",JSON.stringify({clientId:t(process.env.GOOGLE_DESKTOP_ID),clientSecret:t(process.env.GOOGLE_DESKTOP_SECRET)}))'
           [ -n "$GOOGLE_DESKTOP_ID" ] || echo "::warning::GOOGLE_DESKTOP_ID secret yoxdur — Google sinxronu işləməyəcək"
-          git log -1 --format=%B > pc/res/release-notes.md
+          # «Nə dəyişdi» — son versiyanın öz yazısı (köməkçi commit-lər yox)
+          git log -1 --format=%B --grep='^My Finance™' | grep -v -E '^(Co-Authored-By|Claude-Session):' > pc/res/release-notes.md || true
+          [ -s pc/res/release-notes.md ] || echo "My Finance™ $(grep -o 'versionName="[^"]*"' emin/AndroidManifest.xml | cut -d'"' -f2)" > pc/res/release-notes.md
           cd pc && npm ci --no-audit --no-fund && npm pkg set version=3.1.${{ steps.v.outputs.code }}
 
       - name: Yığ
