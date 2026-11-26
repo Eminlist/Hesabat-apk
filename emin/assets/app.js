@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 306';
+const APP_VERSION = '3.1.3 Rev. 307';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -562,6 +562,30 @@ applyTheme();
 const state = { trashSel: new Set(), tab: 'home', pages: [], sheet: null, confirm: null, pin: null, kday: today(), seg: 'active', tag: '', sent: {}, side: 'lend', checkResult: null };
 const topPage = () => state.pages[state.pages.length - 1];
 const app = document.getElementById('app');
+// ---------- 3D ikonlar: mətndəki emoji-lər hər cihazda eyni görünən 3D şəkillərlə əvəz olunur (emo/ qovluğu) ----------
+const EMO_RE = /([🌐🌓🎉🏪🏷👤💬💳💵💻📄📅📇📈📊📌📍📝📞📤📥📱📵🔄🔍🔐🔑🔒🔔🔕🔗🔢🔴🕒🕶🖥🖼🗂🗑😊🛠🛡🤝↩⏰⏱⏳☁☝♻⚠⛓✅✍✏⬆⬇])\uFE0F?/gu;
+function emojify(root) {
+  const skip = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, INPUT: 1, SELECT: 1, OPTION: 1, TITLE: 1 };
+  const has = new RegExp(EMO_RE.source, 'u');
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => (!n.parentNode || skip[n.parentNode.nodeName] || !has.test(n.nodeValue)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  const list = []; while (w.nextNode()) list.push(w.currentNode);
+  for (const t of list) {
+    EMO_RE.lastIndex = 0;
+    const f = document.createDocumentFragment(), s = t.nodeValue; let i = 0, m;
+    while ((m = EMO_RE.exec(s))) {
+      if (m.index > i) f.appendChild(document.createTextNode(s.slice(i, m.index)));
+      const img = document.createElement('img'); img.className = 'emo'; img.alt = m[0]; img.draggable = false;
+      img.src = 'emo/' + m[1].codePointAt(0).toString(16) + '.webp';
+      f.appendChild(img); i = m.index + m[0].length;
+    }
+    if (i < s.length) f.appendChild(document.createTextNode(s.slice(i)));
+    t.parentNode.replaceChild(f, t);
+  }
+  EMO_RE.lastIndex = 0;
+}
+new MutationObserver(ms => { for (const m of ms) { if (m.type === 'characterData') { if (m.target.parentNode) emojify(m.target.parentNode); } else for (const n of m.addedNodes) { if (n.nodeType === 1) emojify(n); else if (n.nodeType === 3 && n.parentNode) emojify(n.parentNode); } } })
+  .observe(document.body, { childList: true, subtree: true, characterData: true });
+emojify(document.body);
 
 const I = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>',
@@ -602,7 +626,7 @@ function opTitle(o) {
   if (o.kind === 'nisye' || o.kind === 'pay') return L(KIND[o.kind].t) + ' · ' + (opCust(o) || '—');
   if (o.did) return L(KIND[o.kind].t) + ' · ' + ((debtRec(o.did) || {}).name || '—');
   if (o.kind === 'out' && o.rec) return (db.recs.find(r => r.id === o.rec) || {}).name || o.cat || o.note || L('Sabit xərc');
-  if (o.kind === 'in') return o.src || o.note || L('Gəlir');
+  if (o.kind === 'in') { const cn = o.cid ? opCust(o) : ''; return [o.src, cn && cn !== o.src ? cn : ''].filter(Boolean).join(' · ') || o.note || L('Gəlir'); }
   if (o.kind === 'out') return o.cat ? o.cat + (o.note ? ' — ' + o.note : '') : (o.note || L('Xərc'));
   return o.note || L(KIND[o.kind].t);
 }
@@ -890,7 +914,7 @@ function renderReport(pg) {
     <div class="section-title">${esc(L('Xərclər — kateqoriyalar'))}</div>
     <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'out' && !o.job), o => o.cat || o.note), F.expense)}</div>
     <div class="section-title">${esc(L('Gəlirlər — mənbələr'))}</div>
-    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'in' || o.kind === 'pay' || (o.kind === 'out' && o.job)).map(o => o.kind === 'out' ? Object.assign({}, o, { amount: -o.amount }) : o), o => o.kind === 'pay' ? L('Nisyədən ödəniş') : o.kind === 'out' ? cname(o.cid) || o.note : (o.src || o.note)).filter(p => p.v > 0), F.income)}</div>
+    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'in' || o.kind === 'pay' || (o.kind === 'out' && o.job)).map(o => o.kind === 'out' ? Object.assign({}, o, { amount: -o.amount }) : o), o => o.kind === 'pay' ? L('Nisyədən ödəniş') : o.kind === 'out' ? cname(o.cid) || o.note : (o.src || (o.cid && cname(o.cid)) || o.note)).filter(p => p.v > 0), F.income)}</div>
     <button class="btn ghost" data-a="xlsxMonth" data-v="${from}|${to}">📊 ${esc(L('Bu ayı Excel-ə çıxar'))}</button>
   </main></div>`;
 }
@@ -1149,7 +1173,7 @@ const fMethod = (v, withNisye) => `<label>${esc(L('Ödəniş üsulu'))}</label><
 const fDate = (o, d) => `<div class="two"><div><label>${esc(L('Tarix'))}</label><input class="field" id="f_date" type="date" value="${o && o.date || d || today()}" max="${today()}"></div><div><label>${esc(L('Saat'))}</label><input class="field" id="f_time" type="time" value="${o && o.time || nowHm()}"></div></div>`;
 const fNote = (v, label, ph) => `<label>${esc(label || L('Qeyd'))}</label><input class="field" id="f_note" value="${esc(v || '')}" placeholder="${esc(ph || '')}" autocomplete="off">`;
 const saveBtn = (a, label, cls) => `<button class="btn ${cls || 'primary'}" data-a="${a}">${esc(label || L('Yadda saxla'))}</button>`;
-const fWho = () => `<label>${esc(L('Müştəri'))}</label><div style="display:flex;gap:8px"><input class="field" id="f_name" placeholder="${esc(L('Ad yazın və ya seçin'))}" autocomplete="off"><button class="iconbtn" data-a="contact">📇</button></div>
+const fWho = lbl => `<label>${esc(lbl || L('Müştəri'))}</label><div style="display:flex;gap:8px"><input class="field" id="f_name" placeholder="${esc(L('Ad yazın və ya seçin'))}" autocomplete="off"><button class="iconbtn" data-a="contact">📇</button></div>
   <div class="whosug" id="whosug"></div>`;
 const dueChips = base => [['+' + L('{0} gün', 3), 3], ['+' + L('{0} gün', 7), 7], ['✍️ ' + L('Əl ilə'), 'hand']].map(([l, v]) => `<button class="chip" data-a="dueSet" data-v="${v}"${base ? ` data-base="${esc(base)}"` : ''}>${esc(l)}</button>`).join('');
 const fDue = (due, label) => `<label>${esc(label || L('Ödəmə günü'))}</label><div class="chips" style="margin:0 0 8px">${dueChips()}</div>
@@ -1192,11 +1216,12 @@ function renderSheet(s) {
     case 'in': {
       const m = (o && o.method) || 'cash';
       return `<h2>${esc(o ? L('Düzəliş: gəlir') : L('Gəlir'))}</h2>
+      ${o ? (o.cid ? `<div class="whofix">👤 <b>${esc(opCust(o))}</b></div>` : '') : `${fWho(L('Müştəri (istəyə bağlı)'))}<label>${esc(L('Telefon (istəyə bağlı)'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="off">`}
       ${fSuggest('f_src', L('Gəlir mənbəyi'), o ? o.src || '' : '', L('məs. satış, təmir'))}
       ${fAmount(o ? amountInput(o.amount) : '')}${fMethod(m, !o)}
       ${o ? '' : `<label>${esc(L('Əlavə xərc (varsa)'))}</label><input class="field num" id="f_extra" inputmode="decimal" placeholder="0" autocomplete="off">`}
       <div id="nisyebox" class="hidden"><div class="note" style="margin-top:8px">📝 ${esc(L('Nisyə gündəlik gəlirə yazılmır. Müştəri ödəyəndə ödənən məbləğ həmin günün gəliri olur və onun nisyəsindən çıxılır.'))}</div>
-        ${fWho()}<label>${esc(L('Telefon (istəyə bağlı)'))}</label><input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="off">${fDue(C.addDays(today(), 7))}</div>
+        ${fDue(C.addDays(today(), 7))}</div>
       ${fNote(o && o.note, L('Qeyd'), '')}${fDate(o, s.date)}
       ${saveBtn('saveIn', L('Yadda saxla'), 'payb')}${delBtn}`;
     }
@@ -1914,9 +1939,9 @@ const actions = {
     const o = s.id ? db.ops.find(x => x.id === s.id) : null;
     const method = picked('method') || 'cash', src = val('f_src').trim(), date = readDate(), time = val('f_time') || nowHm();
     const extra = o ? 0 : readExtra(); if (isNaN(extra)) return toast(L('Məbləği düzgün yazın'));
+    const name = o ? '' : val('f_name').trim(), n = document.getElementById('f_name');
     if (method === 'nisye' && !o) {
-      const name = val('f_name').trim(); if (!name) return toast(L('Müştərinin adını yazın'));
-      const n = document.getElementById('f_name');
+      if (!name) return toast(L('Müştərinin adını yazın'));
       const due = val('f_due');
       if (due && due < date) return toast(L('Ödəmə günü nisyə günündən əvvəl ola bilməz'));
       const c = ensureCustomer(name, val('f_phone') || (n && n.dataset.phone));
@@ -1925,7 +1950,10 @@ const actions = {
       save(); closeSheet(); return toast(L('Nisyə yazıldı (kassaya düşmür)'));
     }
     const data = { kind: 'in', amount, method, src, note: val('f_note').trim(), date, time };
-    if (o) Object.assign(touch(o), data); else addJobCost(extra, '', src || val('f_note').trim(), date, time, newOp(data));
+    // müştəri seçilibsə (nağd / kart): gəlir onun tarixçəsinə də yazılır
+    const c = name ? ensureCustomer(name, val('f_phone') || (n && n.dataset.phone)) : null;
+    if (c) data.cid = c.id;
+    if (o) Object.assign(touch(o), data); else addJobCost(extra, c ? c.id : '', c ? c.name : src || val('f_note').trim(), date, time, newOp(data));
     save(); closeSheet(); toast(L('Gəlir yazıldı'));
   },
   saveOut() {
