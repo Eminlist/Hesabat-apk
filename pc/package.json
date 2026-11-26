@@ -24,6 +24,7 @@
     "executableName": "MyFinance",
     "copyright": "© Emin",
     "directories": { "output": "dist", "buildResources": "res" },
+    "electronLanguages": ["en-US", "ru", "tr"],
     "files": ["main.js", "preload.js", "google.js", "tr.js", "app/**/*", "config.json", "package.json"],
     "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "res/icon.png" },
     "nsis": {

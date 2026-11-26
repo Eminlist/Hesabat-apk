@@ -111,12 +111,14 @@
 
   // ---- kassa ----
   function flow(db, from, to) {
-    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, count: 0 };
+    const f = { inCash: 0, inCard: 0, outCash: 0, outCard: 0, nisye: 0, payIn: 0, job: 0, count: 0 };
     for (const o of db.ops) {
       if (o.date < from || o.date > to) continue;
       f.count++;
       const card = o.method === 'card';
       if (isMoneyIn(o)) { if (card) f.inCard += o.amount; else f.inCash += o.amount; if (o.kind === 'pay') f.payIn += o.amount; }
+      // müştəri işinin xərci (job): xərc kimi yox, həmin günün gəlirindən çıxılır; kassadan isə yenə çıxır
+      else if (o.kind === 'out' && o.job) { if (card) f.inCard -= o.amount; else f.inCash -= o.amount; f.job += o.amount; }
       else if (o.kind === 'out') { if (card) f.outCard += o.amount; else f.outCash += o.amount; }
       else if (o.kind === 'nisye') f.nisye += o.amount;
     }

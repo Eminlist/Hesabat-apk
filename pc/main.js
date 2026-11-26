@@ -379,6 +379,7 @@ function showWin() {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+  checkUpdate();
 }
 function createWindow() {
   win = new BrowserWindow({
@@ -412,7 +413,7 @@ function createWindow() {
   win.on('minimize', () => js('window.onAppPause && window.onAppPause()'));
   win.on('hide', () => { js('window.onAppPause && window.onAppPause()'); lockNow(); });
   win.on('restore', resumed);
-  win.on('show', resumed);
+  win.on('show', () => { resumed(); checkUpdate(); });
   win.on('focus', () => { if (Date.now() - lastResume > 60000) resumed(); });
   // bağla düyməsi proqramı arxaya göndərir: xatırlatmalar telefondakı kimi gəlməyə davam edir
   win.on('close', e => {
@@ -433,27 +434,38 @@ function buildTray() {
 }
 
 // ---------- avtomatik yeniləmə (GitHub-dakı «pc» buraxılışı) ----------
+// telefondakı kimi: proqram hər açılanda yeni versiya yoxlanır, yüklənir və «Quraşdır» soruşulur
+let upd = null, updReady = null, updAsking = false, updLast = 0;
+async function offerUpdate() {
+  if (!updReady || updAsking || !(win && win.isVisible())) return; // proqram arxadadırsa — açılanda soruşulur
+  updAsking = true;
+  let notes = updReady.releaseNotes || '';
+  if (Array.isArray(notes)) notes = notes.map(n => n.note || '').join('\n');
+  notes = String(notes).replace(/<[^>]+>/g, '').trim();
+  const r = await dialog.showMessageBox(win, {
+    type: 'info', title: 'My Finance™', message: T.t('Yeni versiya hazırdır'),
+    detail: ((notes ? T.t('Nə dəyişdi:') + '\n' + notes : '') + T.t('\n\nYükləndi. Quraşdırmaq üçün «Quraşdır» basın. Məlumatlarınız silinmir.')).trim(),
+    buttons: [T.t('Quraşdır'), T.t('Sonra')], defaultId: 0, cancelId: 1, icon: ICON
+  });
+  updAsking = false;
+  if (r.response === 0) { quitting = true; setImmediate(() => upd.quitAndInstall(true, true)); }
+}
+function checkUpdate() {
+  if (!upd) return;
+  if (updReady) return offerUpdate();
+  if (Date.now() - updLast < 60000) return; // eyni dəqiqədə təkrar yoxlanmır
+  updLast = Date.now();
+  upd.checkForUpdates().catch(() => {});
+}
 function updater() {
   if (!app.isPackaged) return;
-  let U;
-  try { U = require('electron-updater').autoUpdater; } catch (e) { return; }
-  U.autoDownload = true;
-  U.autoInstallOnAppQuit = true;
-  U.on('update-downloaded', async info => {
-    let notes = info.releaseNotes || '';
-    if (Array.isArray(notes)) notes = notes.map(n => n.note || '').join('\n');
-    notes = String(notes).replace(/<[^>]+>/g, '').trim();
-    const r = await dialog.showMessageBox(win && win.isVisible() ? win : null, {
-      type: 'info', title: 'My Finance™', message: T.t('Yeni versiya hazırdır'),
-      detail: ((notes ? T.t('Nə dəyişdi:') + '\n' + notes : '') + T.t('\n\nYükləndi. Quraşdırmaq üçün «Quraşdır» basın. Məlumatlarınız silinmir.')).trim(),
-      buttons: [T.t('Quraşdır'), T.t('Sonra')], defaultId: 0, cancelId: 1, icon: ICON
-    });
-    if (r.response === 0) { quitting = true; setImmediate(() => U.quitAndInstall(true, true)); }
-  });
-  U.on('error', () => {});
-  const check = () => U.checkForUpdates().catch(() => {});
-  check();
-  setInterval(check, 6 * 3600 * 1000);
+  try { upd = require('electron-updater').autoUpdater; } catch (e) { return; }
+  upd.autoDownload = true;
+  upd.autoInstallOnAppQuit = true;
+  upd.on('update-downloaded', info => { updReady = info; offerUpdate(); });
+  upd.on('error', () => {});
+  checkUpdate();
+  setInterval(() => { updLast = 0; checkUpdate(); }, 6 * 3600 * 1000);
 }
 
 app.on('second-instance', showWin);

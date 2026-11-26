@@ -207,4 +207,18 @@ test('Köhnə Emin Hesabatdan borcların köçürülməsi', () => {
   assert.deepStrictEqual(C.migrateOld(old).debts.map(d => d.id), r.debts.map(d => d.id));
 });
 
+test('Müştəri işinin xərci gəlirdən çıxılır: 100 alındı, 20 xərc → gəlir 80', () => {
+  const db = empty();
+  db.ops.push(op({ kind: 'in', cid: 'a', amount: 10000, method: 'cash', date: '2026-11-26' }));
+  db.ops.push(op({ kind: 'out', job: 1, cid: 'a', amount: 2000, method: 'cash', cat: 'Əlavə xərc', date: '2026-11-26' }));
+  db.ops.push(op({ kind: 'out', amount: 500, method: 'cash', cat: 'Nahar', date: '2026-11-26' }));
+  const f = C.flow(db, '2026-11-26', '2026-11-26');
+  assert.strictEqual(f.income, 8000);
+  assert.strictEqual(f.inCash, 8000);
+  assert.strictEqual(f.expense, 500);
+  assert.strictEqual(f.net, 7500);
+  // kassada pul düzgün qalır: 100 − 20 − 5
+  assert.strictEqual(C.balances(db, '2026-11-26').cash, 7500);
+});
+
 console.log('\nHamısı düzgündür: ' + n + ' yoxlama');

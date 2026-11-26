@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 304';
+const APP_VERSION = '3.1.3 Rev. 305';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -68,9 +68,21 @@ function load() {
   fixDb();
   if (loadBroken) return;
   if (purgeTrash()) startChanged = true;
+  if (markJobCosts()) startChanged = true;
   importOldDebts();
 }
 let startChanged = false;
+// əvvəl «Yeni müştəri»də yazılmış «Əlavə xərc» (qeydi müştərinin adı) — bir dəfə iş xərci kimi işarələnir: gəlirdən çıxılır
+function markJobCosts() {
+  const cats = ['Əlavə xərc', 'Доп. расход', 'Ek gider', 'Extra expense'], low = t => String(t || '').trim().toLowerCase();
+  let n = 0;
+  for (const o of db.ops) {
+    if (o.kind !== 'out' || o.job || o.rec || !cats.includes(o.cat)) continue;
+    const c = db.customers.find(x => low(x.name) === low(o.note)); if (!c) continue;
+    Object.assign(touch(o), { job: 1, cid: c.id }); n++;
+  }
+  return n > 0;
+}
 // köhnə Emin Hesabatda yazılan borclar (verdiyim / aldığım) bir dəfə avtomatik köçürülür
 function importOldDebts() {
   if (db.cfg.oldDebts || !hasNative || !Android.loadOld) return;
@@ -875,9 +887,9 @@ function renderReport(pg) {
     <div class="card"><div class="bars">${per.map(x => `<i title="${x.d}"><b style="height:${x.i / mx * 100}%;background:var(--pay)"></b><b style="height:${x.e / mx * 100}%;background:var(--exp)"></b></i>`).join('')}</div>
       <div class="legend"><span style="--c:var(--pay)">${esc(L('Gəlir'))}</span><span style="--c:var(--exp)">${esc(L('Xərc'))}</span><span style="margin-left:auto;color:var(--muted)">1 — ${days.length}</span></div></div>
     <div class="section-title">${esc(L('Xərclər — kateqoriyalar'))}</div>
-    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'out'), o => o.cat || o.note), F.expense)}</div>
+    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'out' && !o.job), o => o.cat || o.note), F.expense)}</div>
     <div class="section-title">${esc(L('Gəlirlər — mənbələr'))}</div>
-    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'in' || o.kind === 'pay'), o => o.kind === 'pay' ? L('Nisyədən ödəniş') : (o.src || o.note)), F.income)}</div>
+    <div class="card">${donut(groupSum(ops.filter(o => o.kind === 'in' || o.kind === 'pay' || (o.kind === 'out' && o.job)).map(o => o.kind === 'out' ? Object.assign({}, o, { amount: -o.amount }) : o), o => o.kind === 'pay' ? L('Nisyədən ödəniş') : o.kind === 'out' ? cname(o.cid) || o.note : (o.src || o.note)).filter(p => p.v > 0), F.income)}</div>
     <button class="btn ghost" data-a="xlsxMonth" data-v="${from}|${to}">📊 ${esc(L('Bu ayı Excel-ə çıxar'))}</button>
   </main></div>`;
 }
@@ -1168,12 +1180,8 @@ function renderSheet(s) {
     case 'add': return `<h2>${esc(L('Yeni əməliyyat'))}</h2><div class="addgrid">
       ${opt('add', 'in', 'var(--pay-soft)', 'var(--pay)', '⬇', L('Gəlir'), L('Nağd, kart və ya nisyə'))}
       ${opt('add', 'out', 'var(--exp-soft)', 'var(--exp)', '⬆', L('Xərc'), L('Kateqoriya ilə'))}
-      ${opt('add', 'nisye', 'var(--debt-soft)', 'var(--debt)', '📝', L('Nisyə yaz'), L('Kassaya yazılmır'))}
-      ${opt('add', 'pay', 'var(--pay-soft)', 'var(--pay)', '💵', L('Ödəniş al'), L('Nisyədən'))}
       ${opt('newDebt', 'lend|', 'var(--amber-soft)', 'var(--amber)', '🤝', L('Borc verdim'), '')}
-      ${opt('newBack', 'lend|', 'var(--pay-soft)', 'var(--pay)', '↩️', L('Borc qaytarıldı'), L('Mənə'))}
       ${opt('newDebt', 'borrow|', 'var(--exp-soft)', 'var(--exp)', '📥', L('Borc aldım'), '')}
-      ${opt('newBack', 'borrow|', 'var(--red-soft)', 'var(--red)', '📤', L('Borcu qaytardım'), '')}
     </div><button class="btn ghost" data-a="newCust">👤 ${esc(L('Yeni müştəri'))}</button>`;
     case 'in': {
       const m = (o && o.method) || 'cash';
@@ -1955,7 +1963,7 @@ const actions = {
     const tags = [...app.querySelectorAll('[data-group="tags"] .on')].map(b => b.dataset.v);
     if (s.id) { const c = cust(s.id); Object.assign(touch(c), { name, phone: val('f_phone').trim(), tags }); save(); closeSheet(); }
     else {
-      // yeni müştəri: görülən iş nisyə kimi, ödədiyi pul həmin günün gəliri kimi, əlavə xərc xərc kimi yazılır; borclu qalan = iş − ödədi
+      // yeni müştəri: görülən iş nisyə kimi, ödədiyi pul həmin günün gəliri kimi yazılır, əlavə xərc həmin günün gəlirindən çıxılır; borclu qalan = iş − ödədi
       const amt = id => { const t = val(id).trim(); if (!t) return 0; const v = C.evalExpr(t); return v == null || isNaN(v) || v < 0 ? NaN : v; };
       // Nağd / Kart: iş tam ödənilib — həmin günün gəliri. Nisyə: iş müştərinin nisyəsinə, ilkin ödəniş gəlirə yazılır.
       const how = picked('method') || 'cash', nis = how === 'nisye';
@@ -1969,7 +1977,7 @@ const actions = {
       if (work && !nis) newOp({ kind: 'in', cid: c.id, amount: work, method: how, src: name, note: L('Görülən iş'), date, time });
       if (work && nis) newOp({ kind: 'nisye', cid: c.id, amount: work, note: L('Görülən iş'), date, time, due: work > paid ? due : '' });
       if (paid) newOp({ kind: 'pay', cid: c.id, amount: paid, method: 'cash', note: L('İlkin ödəniş'), date, time });
-      if (extra) newOp({ kind: 'out', amount: extra, method: 'cash', cat: L('Əlavə xərc'), note: name, date, time });
+      if (extra) newOp({ kind: 'out', job: 1, cid: c.id, amount: extra, method: 'cash', cat: L('Əlavə xərc'), note: name, date, time }); // gəlirdən çıxılır
       save(); state.sheet = null; pushPage({ kind: 'cust', id: c.id });
       if (work || extra) toast(nis && work - paid > 0 ? L('Yazıldı · borclu qaldı: {0}', money(work - paid)) : L('Yazıldı'));
     }
