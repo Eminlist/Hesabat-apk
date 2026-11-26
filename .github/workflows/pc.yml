@@ -1,0 +1,79 @@
+name: Build PC (Windows)
+
+# My Finance™ kompüter versiyası: emin/assets (telefondakı ilə eyni ekranlar və hesablamalar) + pc/ (Windows körpüsü).
+# Hazır quraşdırıcı «pc» buraxılışına yazılır: github.com/Eminlist/Hesabat-apk/releases/download/pc/MyFinance-Setup.exe
+# Kompüterdəki proqram yeniləməni də oradan götürür (latest.yml).
+on:
+  push:
+    branches: [main]
+    paths: ['emin/assets/**', 'emin/AndroidManifest.xml', 'pc/**', '.github/workflows/pc.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # hesablamalar yoxlanır: biri səhv çıxsa, proqram yığılmır
+      - name: Hesablamaları yoxla
+        run: node emin/tests/calc.test.js
+
+      - name: Versiya
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          C=$(grep -o 'versionCode="[0-9]*"' emin/AndroidManifest.xml | grep -o '[0-9]*')
+          V=$(grep -o 'versionName="[^"]*"' emin/AndroidManifest.xml | cut -d'"' -f2)
+          echo "code=$C" >> "$GITHUB_OUTPUT"
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+          # bu versiya artıq yığılıbsa (və əl ilə başladılmayıbsa) yenidən yığılmır
+          HAVE=$(gh release download pc -p latest.yml -O - 2>/dev/null | grep -m1 '^version:' | awk '{print $2}' || true)
+          echo "Google-dakı: $HAVE, yeni: 3.1.$C"
+          if [ "$HAVE" = "3.1.$C" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Hazırla
+        if: steps.v.outputs.skip != '1'
+        env:
+          GOOGLE_DESKTOP_ID: ${{ secrets.GOOGLE_DESKTOP_ID }}
+          GOOGLE_DESKTOP_SECRET: ${{ secrets.GOOGLE_DESKTOP_SECRET }}
+        run: |
+          rm -rf pc/app && cp -r emin/assets pc/app
+          # Google girişi (Google Cloud «Hesabat» layihəsinin «Desktop app» açarı)
+          node -e 'const t=s=>String(s||"").replace(/[^A-Za-z0-9._-]/g,"");require("fs").writeFileSync("pc/config.json",JSON.stringify({clientId:t(process.env.GOOGLE_DESKTOP_ID),clientSecret:t(process.env.GOOGLE_DESKTOP_SECRET)}))'
+          [ -n "$GOOGLE_DESKTOP_ID" ] || echo "::warning::GOOGLE_DESKTOP_ID secret yoxdur — Google sinxronu işləməyəcək"
+          git log -1 --format=%B > pc/build/release-notes.md
+          cd pc && npm ci --no-audit --no-fund && npm pkg set version=3.1.${{ steps.v.outputs.code }}
+
+      - name: Yığ
+        if: steps.v.outputs.skip != '1'
+        working-directory: pc
+        run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Release (yükləmə və avtoyeniləmə üçün)
+        if: steps.v.outputs.skip != '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          F="pc/dist/MyFinance-Setup.exe pc/dist/latest.yml"
+          [ -f pc/dist/MyFinance-Setup.exe.blockmap ] && F="$F pc/dist/MyFinance-Setup.exe.blockmap"
+          T="My Finance™ PC ${{ steps.v.outputs.name }}"
+          if gh release view pc >/dev/null 2>&1; then
+            gh release upload pc $F --clobber
+            gh release edit pc --title "$T" --notes-file pc/build/release-notes.md --latest=false
+          else
+            gh release create pc $F --title "$T" --notes-file pc/build/release-notes.md --latest=false
+          fi

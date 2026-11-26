@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 300';
+const APP_VERSION = '3.1.3 Rev. 301';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -139,7 +139,7 @@ function trashDebt(d) {
 }
 
 // ---------- Google ilə sinxron (hər dəyişiklik dərhal göndərilir) ----------
-const sync = { account: '', status: 'idle', msg: '', last: 0, running: false, again: false, queued: null, mode: '', timer: null, dirty: false, ver: 0, sent: -1, sentPending: 0, pending: 0, retry: null, wait: 0 };
+const sync = { pulled: 0, account: '', status: 'idle', msg: '', last: 0, running: false, again: false, queued: null, mode: '', timer: null, dirty: false, ver: 0, sent: -1, sentPending: 0, pending: 0, retry: null, wait: 0 };
 try { sync.last = +localStorage.getItem('mfLastSync') || 0; sync.dirty = localStorage.getItem('mfSyncDirty') === '1'; sync.pending = +localStorage.getItem('mfPending') || 0; } catch (e) {}
 function markDirty() {
   sync.ver++; sync.pending++;
@@ -230,7 +230,9 @@ function mergeDb(a, b) {
 }
 // ---------- Google sinxronu ----------
 // link    — ilk qoşulma: Google-dakı hər şey (məlumat + ayarlar) telefona gəlir, sonra birlikdə Google-a yazılır
-// push    — telefondakı tam baza Google-a yüklənir (hər əməliyyatdan sonra avtomatik və «Sinxron et» ilə)
+// push    — əvvəlcə Google-dakı götürülür və telefondakı ilə birləşdirilir (kompüterdə yazılanlar itməsin), sonra tam baza Google-a yüklənir
+//           (hər əməliyyatdan sonra avtomatik və «Sinxron et» ilə)
+// pull    — yalnız Google-dakını götürüb birləşdirir (kompüterdə/telefonda yazılanlar o birinə gəlsin); fərq varsa, Google-a da yazır
 // check   — yalnız müqayisə: Google və telefon eynidirmi (heç nə yükləmir, heç nə dəyişmir)
 const needLink = () => { try { return !!(hasNative && Android.needLink && Android.needLink()); } catch (e) { return false; } };
 function scheduleSync() {
@@ -241,13 +243,15 @@ function scheduleSync() {
 function runSync(kind) {
   kind = kind || 'push';
   if (!sync.account || !hasNative) return;
-  if (kind === 'push' && needLink()) kind = 'link'; // Google-dakı hələ gəlməyib: əvvəlcə onu götür
-  if (kind === 'push' && loadBroken) return; // zədələnmiş/boş baza heç vaxt Google-un üstünə yazılmır
-  clearTimeout(sync.timer); clearTimeout(sync.retry);
+  if ((kind === 'push' || kind === 'pull') && needLink()) kind = 'link'; // Google-dakı hələ gəlməyib: əvvəlcə onu götür
+  if ((kind === 'push' || kind === 'pull') && loadBroken) return; // zədələnmiş/boş baza heç vaxt Google-un üstünə yazılmır
+  if (kind === 'pull' && (sync.running || Date.now() - sync.pulled < 20000)) return;
+  if (kind !== 'pull') { clearTimeout(sync.timer); clearTimeout(sync.retry); }
   if (sync.running) { if (kind === 'push') sync.again = true; else sync.queued = kind; return; }
-  sync.running = true; sync.mode = kind; sync.status = 'syncing'; refreshSettings();
-  if (kind === 'push') upload();
-  else Android.syncStart();
+  sync.running = true; sync.mode = kind;
+  if (kind === 'pull') sync.pulled = Date.now();
+  else { sync.status = 'syncing'; refreshSettings(); }
+  Android.syncStart();
 }
 function upload() {
   sync.mode = 'push'; sync.sent = sync.ver; sync.sentPending = sync.pending;
@@ -311,10 +315,28 @@ window.onSyncRemote = function (text) {
     try { Android.linkDone(); } catch (e) {}
     return upload(); // birləşmiş tam baza Google-a
   }
+  // push / pull: o biri cihazda (telefon / kompüter) yazılanlar buradakı ilə birləşir — heç nə itmir
+  if (remote) {
+    const merged = mergeDb(db, remote);
+    if (canon(merged) !== canon(db)) {
+      db = merged; fixDb(); applyCfg();
+      try { Android.save(JSON.stringify(db)); } catch (e) {}
+      pushNative();
+      if (!state.sheet && !state.confirm && !state.pin) render();
+    }
+    if (mode === 'pull' && canon(db) === canon(remote)) {
+      sync.running = false;
+      if (sync.status !== 'syncing') sync.status = sync.dirty ? 'idle' : 'ok';
+      refreshSettings(); return nextSync();
+    }
+  }
   upload();
 };
+window.onPull = function () { if (sync.account && !state.pin) runSync(sync.dirty ? 'push' : 'pull'); };
 window.onSyncStatus = function (st, msg) {
   const mode = sync.mode;
+  // arxa planda yoxlama alınmadısa (internet yoxdur və s.), heç nə göstərilmir — növbəti dəfə yenə yoxlanır
+  if (mode === 'pull' && st === 'error') { sync.running = false; return nextSync(); }
   sync.running = false; sync.status = st; sync.msg = msg || '';
   if (st === 'ok' && mode === 'push') {
     sync.last = Date.now(); sync.wait = 0;
@@ -360,6 +382,7 @@ window.onAppResume = function () {
   if (openedDay !== today()) { openedDay = today(); state.kday = today(); if (!state.sheet) render(); }
   if (!sync.account && hasNative && Android.syncLinked) { sync.account = Android.syncLinked(); if (sync.account) { render(); return runSync('push'); } }
   if (sync.account && (sync.dirty || needLink())) runSync('push');
+  else if (sync.account) runSync('pull');
 };
 function refreshSettings() { if (topPage() && topPage().kind === 'settings' && !state.sheet && !state.confirm) render(); }
 

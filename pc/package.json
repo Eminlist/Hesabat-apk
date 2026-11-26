@@ -1,0 +1,43 @@
+{
+  "name": "my-finance",
+  "productName": "My Finance",
+  "version": "3.1.206",
+  "description": "My Finance™ — Kassa, Nisyə Dəftəri və Borclar (kompüter versiyası)",
+  "author": "Emin",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
+  "devDependencies": {
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "az.usta.hesab.pc",
+    "productName": "My Finance",
+    "executableName": "MyFinance",
+    "copyright": "© Emin",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "google.js", "tr.js", "app/**/*", "config.json", "package.json"],
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.png" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "MyFinance-Setup.exe",
+      "shortcutName": "My Finance™",
+      "uninstallDisplayName": "My Finance™",
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false
+    },
+    "publish": [{ "provider": "generic", "url": "https://github.com/Eminlist/Hesabat-apk/releases/download/pc" }]
+  }
+}
