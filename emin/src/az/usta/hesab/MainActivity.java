@@ -113,14 +113,10 @@ public class MainActivity extends Activity {
     }
     /** The fingerprint dialog is on screen / was already offered since the app was last left. */
     private boolean bioShowing, bioAsked;
-    /** Locks the app whenever the phone's screen goes off. */
+    /** Rev. 301: the screen going off no longer locks — the code is asked only when the app was closed and opened again. */
     private final BroadcastReceiver screenOff = new BroadcastReceiver() {
         @Override
         public void onReceive(Context c, Intent i) {
-            if (unlocking || !(pinSet() || lockOn())) return;
-            locked = true;
-            bioAsked = false;
-            if (pinSet()) js("window.showPinLock && window.showPinLock(false)");
         }
     };
 
@@ -367,22 +363,13 @@ public class MainActivity extends Activity {
         // proqramdan çıxdı: Google-a getməmiş dəyişiklik varsa, internet olan kimi arxada yüklənir
         SyncJob.appVisible = false;
         SyncJob.schedule(this);
+        // Rev. 301: proqramı kiçildəndə (arxaya keçəndə) kod soruşulmur — yalnız bağlanıb yenidən açılanda
         if (internalNav) navStoppedAt = System.currentTimeMillis();
-        if (unlocking || internalNav || !(pinSet() || lockOn())) return;
-        bioAsked = false;
-        // the user left the app: lock right away and draw the PIN screen while we're in the background
-        locked = true;
-        if (pinSet()) js("window.showPinLock && window.showPinLock(false)");
     }
 
     @Override
     protected void onRestart() {
         super.onRestart();
-        // left through a picker/share screen and came back minutes later (e.g. via the launcher): lock as if the app was left
-        if (internalNav && navStoppedAt > 0 && System.currentTimeMillis() - navStoppedAt > 60 * 1000 && (pinSet() || lockOn())) {
-            locked = true;
-            if (pinSet()) js("window.showPinLock && window.showPinLock(false)");
-        }
         navStoppedAt = 0;
         internalNav = false;
     }

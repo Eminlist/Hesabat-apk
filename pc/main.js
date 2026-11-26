@@ -3,7 +3,7 @@
 // Ekranlar, hesablamalar və bütün qaydalar telefondakı ilə eyni koddur (emin/assets → app/).
 // Bu fayl telefondakı MainActivity.java-nın işini görür: məlumat faylı, Google sinxronu, PIN kilidi,
 // xatırlatmalar, yedək faylları və avtomatik yeniləmə.
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Tray, Menu, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Tray, Menu, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -300,10 +300,9 @@ function createWindow() {
     if (i.key === 'F5' || (i.control && i.shift && ['i', 'I'].includes(i.key))) e.preventDefault();
   });
   win.on('app-command', (e, cmd) => { if (cmd === 'browser-backward') js('window.onBack && window.onBack()'); });
-  // proqramdan çıxdı (gizləndi / kiçildi): göndərilməmiş dəyişiklik dərhal Google-a gedir, kilid dərhal qoyulur
-  const left = () => { js('window.onAppPause && window.onAppPause()'); lockNow(); };
-  win.on('minimize', left);
-  win.on('hide', left);
+  // kiçildəndə kod soruşulmur; bağlayanda (X) soruşulur. Hər ikisində göndərilməmiş dəyişiklik dərhal Google-a gedir
+  win.on('minimize', () => js('window.onAppPause && window.onAppPause()'));
+  win.on('hide', () => { js('window.onAppPause && window.onAppPause()'); lockNow(); });
   win.on('restore', resumed);
   win.on('show', resumed);
   win.on('focus', () => { if (Date.now() - lastResume > 60000) resumed(); });
@@ -363,8 +362,6 @@ app.whenReady().then(() => {
   buildTray();
   // kompüter açılanda proqram arxada başlayır (xatırlatmalar üçün)
   if (app.isPackaged && process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
-  powerMonitor.on('lock-screen', lockNow);
-  powerMonitor.on('suspend', lockNow);
   setInterval(tick, 30000);
   tick();
   // telefonda yazılanlar kompüterə gəlsin: hər 2 dəqiqədən bir Google-dakı ilə birləşdirilir
