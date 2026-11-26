@@ -244,6 +244,21 @@ const H = {
   clearPin() { setPrefs({ pinHash: undefined, pinSalt: undefined, pinLen: undefined }); },
   isLocked() { return locked && pinSet(); },
   resetPinWithPhone() { return false; },
+  isPc() { return true; },
+  // unudulmuş PIN: proqrama qoşulu Google hesabına brauzerdə yenidən giriş — eyni hesabdırsa, kod silinir (məlumatlar qalır)
+  async resetPinWithGoogle() {
+    const acc = G.account();
+    if (!acc) return pageToast(T.t('Google hesabı qoşulmayıb'));
+    pageToast(T.t('Brauzerdə Google hesabınızı seçin və icazə verin'));
+    try {
+      const email = await G.verify(acc);
+      showWin();
+      if (!email || email.toLowerCase() !== acc.toLowerCase()) return pageToast(T.t('Bu, proqrama qoşulu Google hesabı deyil'));
+      setPrefs({ pinHash: undefined, pinSalt: undefined, pinLen: undefined });
+      locked = false;
+      js('window.onPinReset && window.onPinReset()');
+    } catch (e) { showWin(); pageToast(e.message || T.t('Google girişi alınmadı')); }
+  },
   setDarkBars(dark) { if (!!prefs().dark !== !!dark) setPrefs({ dark: !!dark }); if (win) win.setBackgroundColor(dark ? '#070708' : '#F4F7F9'); },
   setSecure(on) { setPrefs({ secure: !!on }); if (win) win.setContentProtection(!!on); },
   secureOn() { return !!prefs().secure; }

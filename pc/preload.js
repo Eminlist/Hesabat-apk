@@ -4,10 +4,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const SYNC = ['loadOld', 'load', 'save', 'needLink', 'syncLinked', 'summaryTime', 'dueTime', 'notifAllowed', 'queueState',
-  'saveToDownloads', 'bioAvailable', 'bioEnabled', 'pinSet', 'pinLength', 'checkPin', 'pinBlob', 'isLocked', 'resetPinWithPhone', 'secureOn'];
+  'saveToDownloads', 'bioAvailable', 'bioEnabled', 'pinSet', 'pinLength', 'checkPin', 'pinBlob', 'isLocked', 'resetPinWithPhone', 'secureOn', 'isPc'];
 const ASYNC = ['setLang', 'archiveOld', 'shareFile', 'importFile', 'pickContact', 'syncLink', 'syncUnlink', 'linkDone', 'syncStart',
   'syncUpload', 'pickPhoto', 'shareBase64', 'setSummaryTime', 'setSummary', 'setDueList', 'setDueTime', 'openNotifSettings',
-  'setWidget', 'haptic', 'setBio', 'bioPrompt', 'setPin', 'setPinBlob', 'clearPin', 'setDarkBars', 'updateShortcuts', 'setSecure', 'mailBase64'];
+  'setWidget', 'haptic', 'setBio', 'bioPrompt', 'setPin', 'setPinBlob', 'clearPin', 'resetPinWithGoogle', 'setDarkBars', 'updateShortcuts', 'setSecure', 'mailBase64'];
 
 const api = {};
 for (const n of SYNC) api[n] = (...a) => ipcRenderer.sendSync('A', n, a);

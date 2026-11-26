@@ -257,6 +257,11 @@ const M = {
   "Save"
  ]
 };
+Object.assign(M, {
+ "Google hesabı qoşulmayıb": ["Аккаунт Google не подключён", "Google hesabı bağlı değil", "No Google account is linked"],
+ "Bu, proqrama qoşulu Google hesabı deyil": ["Это не тот аккаунт Google, что подключён к приложению", "Bu, uygulamaya bağlı Google hesabı değil", "This is not the Google account linked to the app"],
+ "Google girişi alınmadı": ["Вход в Google не выполнен", "Google girişi yapılamadı", "Google sign-in failed"]
+});
 let lang = 'az';
 function setLang(l) { lang = l || 'az'; }
 function t(az) { const v = M[az]; if (!v || lang === 'az') return az; return lang === 'ru' ? v[0] : lang === 'tr' ? v[1] : lang === 'en' ? v[2] : az; }

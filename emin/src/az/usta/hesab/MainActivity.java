@@ -1110,6 +1110,47 @@ public class MainActivity extends Activity {
             return true;
         }
 
+        /** Unudulmuş PIN: proqrama qoşulu Google hesabının parolu yenidən soruşulur; düzdürsə, kod silinir (məlumatlar qalır). */
+        @JavascriptInterface
+        public void resetPinWithGoogle() {
+            final String name = gsync.account();
+            if (name.isEmpty()) {
+                pageToast(Tr.t(MainActivity.this, "Google hesabı qoşulmayıb"));
+                return;
+            }
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        internalNav = true;
+                        android.accounts.AccountManager.get(MainActivity.this).confirmCredentials(new android.accounts.Account(name, "com.google"), null, MainActivity.this,
+                                new android.accounts.AccountManagerCallback<Bundle>() {
+                                    @Override
+                                    public void run(android.accounts.AccountManagerFuture<Bundle> f) {
+                                        try {
+                                            Bundle b = f.getResult();
+                                            String got = b.getString(android.accounts.AccountManager.KEY_ACCOUNT_NAME, name);
+                                            if (!b.getBoolean(android.accounts.AccountManager.KEY_BOOLEAN_RESULT, false)) {
+                                                pageToast(Tr.t(MainActivity.this, "Google girişi alınmadı"));
+                                            } else if (!name.equalsIgnoreCase(got)) {
+                                                pageToast(Tr.t(MainActivity.this, "Bu, proqrama qoşulu Google hesabı deyil"));
+                                            } else {
+                                                appPrefs().edit().remove("pinHash").remove("pinSalt").remove("pinLen").apply();
+                                                locked = false;
+                                                js("window.onPinReset && window.onPinReset()");
+                                            }
+                                        } catch (Exception e) {
+                                            pageToast(Tr.t(MainActivity.this, "Google girişi alınmadı"));
+                                        }
+                                    }
+                                }, null);
+                    } catch (Exception e) {
+                        pageToast(Tr.t(MainActivity.this, "Google girişi alınmadı"));
+                    }
+                }
+            });
+        }
+
         @JavascriptInterface
         public void setDarkBars(final boolean dark) {
             runOnUiThread(new Runnable() {

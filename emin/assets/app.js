@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 302';
+const APP_VERSION = '3.1.3 Rev. 303';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -1950,6 +1950,13 @@ const actions = {
   pinCancel() { state.pin = null; render(); },
   bioAsk() { Android.bioPrompt(); },
   pinForgot() {
+    // Google qoşuludursa: həmin Google hesabına yenidən giriş (telefonda və kompüterdə eyni)
+    if (sync.account && Android.resetPinWithGoogle) {
+      return ask({ title: L('Kilidi unutmusunuz?'), text: L('Sıfırlamaq üçün proqrama qoşulu Google hesabına ({0}) yenidən giriş soruşulacaq. Məlumatlar silinmir.', sync.account), ok: L('Davam et'), icon: '🔑',
+        run() { Android.resetPinWithGoogle(); } });
+    }
+    if (Android.isPc && Android.isPc()) return toast(L('Google hesabı qoşulmayıb — kilidi sıfırlamaq mümkün deyil'));
+    // Google qoşulmayıb: telefonun öz ekran kilidi ilə
     ask({ title: L('Kilidi unutmusunuz?'), text: L('Sıfırlamaq üçün telefonun öz ekran kilidi soruşulacaq.'), ok: L('Davam et'), icon: '🔑',
       run() { if (!Android.resetPinWithPhone()) toast(L('Telefonda ekran kilidi qurulmayıb')); } });
   }

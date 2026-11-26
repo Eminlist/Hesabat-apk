@@ -68,8 +68,9 @@ function page(text) {
     text.replace(/[<>&]/g, '') + '</p></div></body>';
 }
 
-/** Brauzer açılır, istifadəçi Google hesabını seçir; nəticə: e-poçt ünvanı. */
-function login(hint) {
+/** Brauzer açılır, istifadəçi Google hesabını seçir; nəticə: e-poçt ünvanı.
+ *  verify = yalnız «bu kimdir?» yoxlaması (unudulmuş PIN): parol yenidən soruşulur, sinxron açarı dəyişmir. */
+function login(hint, verify) {
   if (!configured()) return Promise.reject(new SyncError(T.t('Google girişi qurulmayıb (proqram Google Cloud-da qeyd olunmayıb)')));
   if (loginRunning) return loginRunning;
   loginRunning = new Promise((resolve, reject) => {
@@ -87,6 +88,9 @@ function login(hint) {
       finish(async () => {
         if (!code) throw new SyncError(T.t('Google icazəsi verilmədi — yenidən «Sinxron et» basın və icazə verin'));
         const r = await tokenCall({ code, code_verifier: verifier, redirect_uri: redirect, grant_type: 'authorization_code' });
+        if (verify) {
+          try { return JSON.parse(Buffer.from(r.id_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')).email || ''; } catch (e) { return ''; }
+        }
         if (!r.access_token) throw new SyncError(T.t('Google icazə vermədi'));
         if (!String(r.scope || '').includes('drive.appdata')) throw new SyncError(T.t('Google icazəsi verilmədi — yenidən «Sinxron et» basın və icazə verin'));
         access = { token: r.access_token, exp: Date.now() + ((r.expires_in || 3600) - 120) * 1000 };
@@ -109,9 +113,11 @@ function login(hint) {
     server.listen(0, '127.0.0.1', () => {
       redirect = 'http://127.0.0.1:' + server.address().port;
       const q = new URLSearchParams({
-        client_id: cfg.clientId, redirect_uri: redirect, response_type: 'code', scope: SCOPE,
-        code_challenge: challenge, code_challenge_method: 'S256', state: stateKey, access_type: 'offline', prompt: 'consent select_account'
+        client_id: cfg.clientId, redirect_uri: redirect, response_type: 'code', scope: verify ? 'openid email' : SCOPE,
+        code_challenge: challenge, code_challenge_method: 'S256', state: stateKey
       });
+      if (verify) { q.set('prompt', 'select_account'); q.set('max_age', '0'); } // Google parolu yenidən soruşur
+      else { q.set('access_type', 'offline'); q.set('prompt', 'consent select_account'); }
       if (hint) q.set('login_hint', hint);
       shell.openExternal('https://accounts.google.com/o/oauth2/v2/auth?' + q.toString());
     });
@@ -244,4 +250,4 @@ function upload(json) {
   });
 }
 
-module.exports = { account, needLink, setNeedLink, link, unlink, download, upload, configured, setCanAsk: f => { canAsk = f; } };
+module.exports = { verify: hint => login(hint, true), account, needLink, setNeedLink, link, unlink, download, upload, configured, setCanAsk: f => { canAsk = f; } };

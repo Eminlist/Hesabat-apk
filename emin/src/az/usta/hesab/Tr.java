@@ -56,6 +56,9 @@ final class Tr {
         put("Quraşdır", "Установить", "Kur", "Install");
         put("Sonra", "Позже", "Sonra", "Later");
         put("İcazəni açın, sonra proqrama qayıdın", "Включите разрешение и вернитесь в приложение", "İzni açın, sonra uygulamaya dönün", "Allow the permission, then return to the app");
+        put("Google hesabı qoşulmayıb", "Аккаунт Google не подключён", "Google hesabı bağlı değil", "No Google account is linked");
+        put("Bu, proqrama qoşulu Google hesabı deyil", "Это не тот аккаунт Google, что подключён к приложению", "Bu, uygulamaya bağlı Google hesabı değil", "This is not the Google account linked to the app");
+        put("Google girişi alınmadı", "Вход в Google не выполнен", "Google girişi yapılamadı", "Google sign-in failed");
         put("Quraşdırmaq alınmadı", "Не удалось установить", "Kurulamadı", "Installation failed");
     }
 
