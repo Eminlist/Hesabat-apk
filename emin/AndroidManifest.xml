@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="az.usta.hesab"
-    android:versionCode="214"
-    android:versionName="3.1.3 Rev. 309">
+    android:versionCode="215"
+    android:versionName="3.1.3 Rev. 310">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
 

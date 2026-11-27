@@ -1,6 +1,6 @@
 'use strict';
 // My Finance™ — Kassa, Nisyə Dəftəri və Borclar
-const APP_VERSION = '3.1.3 Rev. 309';
+const APP_VERSION = '3.1.3 Rev. 310';
 const APP_NAME = 'My Finance™';
 const hasNative = typeof window.Android !== 'undefined';
 const C = window.MF;
@@ -829,12 +829,14 @@ function renderParty(pg) {
     <div class="list">${given.map(giveRow).join('')}</div>
   </main></div>`;
 }
+// mesajda ad: sonundakı durğu işarələri götürülür («Salam, Anar.!» əvəzinə «Salam, Anar!»)
+const msgName = n => String(n || '').trim().replace(/[\s.,;:!?_\-]+$/, '');
 function msgParty(g, lend) {
   const ids = new Set(g.recs.map(d => d.id));
   const given = g.recs.slice().sort(C.byWhen);
   const backs = db.ops.filter(o => ids.has(o.did)).sort(C.byWhen);
   const td = today(), out = [];
-  out.push(L('Salam, {0}!', g.name), '');
+  out.push(L('Salam, {0}!', msgName(g.name)), '');
   out.push(lend ? L('Borc haqqında məlumat:') : L('Sizdən aldığım borc haqqında məlumat:'), '');
   out.push('📅 ' + (lend ? L('Verilib:') : L('Alınıb:')));
   given.forEach(d => out.push('• ' + fmtDate(d.date) + ' — ' + money(C.debtTotal(d))));
@@ -842,7 +844,6 @@ function msgParty(g, lend) {
   out.push('', L('Cəmi: {0}', money(g.total)), (lend ? L('Ödənilib: {0}', money(g.back)) : L('Qaytarılıb: {0}', money(g.back))), L('Qalıq: {0}', money(g.left)));
   if (g.left > 0 && g.due) out.push(g.due < td ? '⏰ ' + L('Qaytarma günü: {0} ({1} gün gecikir)', fmtDate(g.due), C.daysBetween(g.due, td)) : '📅 ' + L('Qaytarma günü: {0}', fmtDate(g.due)));
   if (g.left <= 0) out.push(L('Borc tam bağlanıb. Təşəkkür edirəm!'));
-  out.push('', L('Hörmətlə.'));
   return out.join('\n');
 }
 
@@ -992,9 +993,9 @@ function waMessage(c, tone) {
   const pays = db.ops.filter(o => o.kind === 'pay' && o.cid === c.id).sort(C.byWhen);
   const shopName = shop.name || L('mağazamız');
   let head;
-  if (tone === 3) head = L('Hörmətli {0},', c.name) + '\n' + L('Bu, son xəbərdarlıqdır. {0} qarşısında olan borcunuzun ödəmə müddəti {1} gün əvvəl başa çatıb.', shopName, s.overdue);
-  else if (tone === 2) head = L('Hörmətli {0},', c.name) + '\n' + (s.overdue ? L('{0} qarşısında {1} gün gecikmiş borcunuz mövcuddur.', shopName, s.overdue) : L('{0} qarşısında borcunuz mövcuddur.', shopName));
-  else head = L('Salam, {0}! 😊', c.name) + '\n' + (s.due && s.due > today() ? L('{0} üzrə nisyə borcunuzun ödəmə vaxtı yaxınlaşır.', shopName) : L('{0} üzrə nisyə borcunuzun ödəmə vaxtı çatıb.', shopName));
+  if (tone === 3) head = L('Hörmətli {0},', msgName(c.name)) + '\n' + L('Bu, son xəbərdarlıqdır. {0} qarşısında olan borcunuzun ödəmə müddəti {1} gün əvvəl başa çatıb.', shopName, s.overdue);
+  else if (tone === 2) head = L('Hörmətli {0},', msgName(c.name)) + '\n' + (s.overdue ? L('{0} qarşısında {1} gün gecikmiş borcunuz mövcuddur.', shopName, s.overdue) : L('{0} qarşısında borcunuz mövcuddur.', shopName));
+  else head = L('Salam, {0}! 😊', msgName(c.name)) + '\n' + (s.due && s.due > today() ? L('{0} üzrə nisyə borcunuzun ödəmə vaxtı yaxınlaşır.', shopName) : L('{0} üzrə nisyə borcunuzun ödəmə vaxtı çatıb.', shopName));
   let det;
   if (pays.length) det = L('İlkin borc: {0}', money(s.given)) + '\n' + L('Edilən ödənişlər:') + '\n' + pays.map(p => `• ${fmtDate(p.date)} — ${money(p.amount)}`).join('\n') + '\n' + L('Qalan borc: {0}', money(s.debt));
   else det = L('Borc məbləği: {0}', money(s.debt));
@@ -1411,6 +1412,13 @@ function renderConfirm(c) {
 }
 
 // ---------- PIN və naxış kilidi ----------
+// kilid ekranında e-poçt tam göstərilmir: o55•••••44@gmail.com
+function maskMail(m) {
+  m = String(m || ''); const at = m.lastIndexOf('@');
+  if (at < 1) return m;
+  const u = m.slice(0, at), d = m.slice(at);
+  return (u.length > 5 ? u.slice(0, 3) + '•••••' + u.slice(-2) : u.slice(0, 1) + '•••••') + d;
+}
 const bioOn = () => hasNative && Android.bioEnabled && Android.bioEnabled() && Android.bioAvailable();
 function renderPin() {
   const P = state.pin, pat = P.type === 'pattern';
@@ -2293,7 +2301,7 @@ const actions = {
     const devLbl = pc ? L('Windows kilidi ilə') : L('Telefonun ekran kilidi ilə');
     const devRun = () => { if (!Android.resetPinWithPhone()) toast(pc ? L('Kompüterdə Windows Hello (PIN, barmaq izi və ya üz) qurulmayıb') : L('Telefonda ekran kilidi qurulmayıb')); };
     if (!g && !dev) return toast(L('Google hesabı qoşulmayıb, Windows Hello da qurulmayıb — kilidi sıfırlamaq mümkün deyil'));
-    const o = { title: L('Kilidi unutmusunuz?'), text: L('Kilidi necə sıfırlamaq istəyirsiniz? Məlumatlar silinmir.') + (g ? ' ' + L('Google: {0}', sync.account) : ''), icon: '🔑' };
+    const o = { title: L('Kilidi unutmusunuz?'), text: L('Kilidi necə sıfırlamaq istəyirsiniz? Məlumatlar silinmir.') + (g ? ' ' + L('Google: {0}', maskMail(sync.account)) : ''), icon: '🔑' };
     if (g) Object.assign(o, { ok: L('Google hesabı ilə'), run() { Android.resetPinWithGoogle(); } });
     else Object.assign(o, { ok: devLbl, run: devRun });
     if (g && dev) Object.assign(o, { alt: devLbl, altCls: 'ghost', runAlt: devRun });
