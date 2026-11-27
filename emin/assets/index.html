@@ -404,6 +404,8 @@
   .ktab:first-child b { color: var(--muted); font-size: 12.5px; }
   .btn.dangerb { background: var(--red); color: #fff; }
   .cfm-shade { position: fixed; inset: 0; z-index: 40; background: var(--shade); display: grid; place-items: center; padding: 24px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: shadeIn .2s ease-out; }
+  /* kilid ekranında açılan pəncərə («Kilidi unutmusunuz?») kilid ekranının üstündə görünsün — arxadakı məlumatlar açılmır */
+  .pinpage ~ .cfm-shade { z-index: 60; }
   .cfm { width: 100%; max-width: 360px; background: var(--card); border-radius: 26px; padding: 22px 18px 16px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,.3); animation: cfmIn .26s cubic-bezier(.2,.9,.3,1.2); }
   :root[data-theme="dark"] .cfm { border: 1px solid rgba(233,196,106,.28); }
   .cfm-ic { width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 20px; display: grid; place-items: center; font-size: 28px; background: var(--brand-soft); }
